@@ -1,0 +1,97 @@
+{
+	"Writes": [{
+			"address": "83",
+			"data": "0A00",
+			"txt": "设置寄存器为写模式",
+			"intervalTime": 50
+		},
+		{
+			"address": "80",
+			"data": "1F52",
+			"txt": "重置寄存器",
+			"intervalTime": 50
+		},
+		{
+			"address": "80",
+			"data": "2096",
+			"txt": "设置运动阈值寄存器低位为0x96",
+			"intervalTime": 50
+		},
+		{
+			"address": "80",
+			"data": "2100",
+			"txt": "设置运动阈值寄存器高位复位",
+			"intervalTime": 50
+		},
+		{
+			"address": "80",
+			"data": "2201",
+			"txt": "设置运动时间0x01",
+			"intervalTime": 50
+		},
+		{
+			"address": "80",
+			"data": "2701",
+			"txt": "设置运动使能0x01",
+			"intervalTime": 50
+		},
+		{
+			"address": "80",
+			"data": "2800",
+			"txt": "设置FIFO寄存器，复位、禁用状态",
+			"intervalTime": 50
+		},
+		{
+			"address": "80",
+			"data": "2980",
+			"txt": "复位FIFO样本寄存器",
+			"intervalTime": 50
+		},
+		{
+			"address": "80",
+			"data": "2A10",
+			"txt": "INT1/INT2低电平有效",
+			"intervalTime": 50
+		},
+		{
+			"address": "80",
+			"data": "2810",
+			"txt": "设置FIFO禁用",
+			"intervalTime": 50
+		},
+		{
+			"address": "80",
+			"data": "2C04",
+			"txt": "设置使用外部采样触发器",
+			"intervalTime": 50
+		},
+		{
+			"address": "80",
+			"data": "2D02",
+			"txt": "启用测量模式",
+			"intervalTime": 50
+		},
+		{
+			"address": "83",
+			"data": "000B",
+			"txt": "设置寄存器为读取模式",
+			"intervalTime": 50
+		},
+		{
+			"address": "84",
+			"data": "0E60",
+			"txt": "",
+			"intervalTime": 50
+		}
+	],
+	"Reads": [{
+			"address": "8C"
+		},
+		{
+			"address": "8D"
+		},
+		{
+			"address": "8E"
+		}
+	]
+}

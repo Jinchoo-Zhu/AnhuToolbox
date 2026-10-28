@@ -1,0 +1,3501 @@
+{
+  "schema": 1,
+  "generated_utc": "2026-10-28T07:18:12Z",
+  "files": [
+    {
+      "path": "README.md",
+      "size": 391,
+      "sha256": "f8380ce7b7ff1d977ef5228b554c02a4eb9e26f98b60a8d025d335148f49d6aa"
+    },
+    {
+      "path": "tools.json",
+      "size": 4422,
+      "sha256": "d28e2a923b74c30624d8ff2e01bf83097ac020a9eee4eef9173b2d20f87f998a"
+    },
+    {
+      "path": "海康工具/ClientDemo/AudioProcess.dll",
+      "size": 712192,
+      "sha256": "d26b2456e4faadb2eeab59d89b5719c2dab6a349e70d1d2a6f247ef0261f398e"
+    },
+    {
+      "path": "海康工具/ClientDemo/AudioRender.dll",
+      "size": 159744,
+      "sha256": "a81fc69c82079249c31abb31328f8915a05f8a14908c13c8c98e72dec7a01164"
+    },
+    {
+      "path": "海康工具/ClientDemo/ClientDemo.exe",
+      "size": 21753344,
+      "sha256": "4e41e4941daaf455313c03ffb343a7660c1250f10a2b04825a54ac25f5916a4d"
+    },
+    {
+      "path": "海康工具/ClientDemo/ClientDemo.png",
+      "size": 6243,
+      "sha256": "9b11b80522491aa958e77fe31163113c6228c3e88ee5ced7193ac09a44976958"
+    },
+    {
+      "path": "海康工具/ClientDemo/DemoLocalCfg.json",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "海康工具/ClientDemo/DeviceCfg.json",
+      "size": 20,
+      "sha256": "ec4c417773b9472e98041b5a34f6266e9b02f4a6e43aaa579931594b95ed11ae"
+    },
+    {
+      "path": "海康工具/ClientDemo/GdiPlus.dll",
+      "size": 2166272,
+      "sha256": "222095f88914695b96330e4f5f9ff7a55d670b1117ae378b636ac0daea638ccd"
+    },
+    {
+      "path": "海康工具/ClientDemo/GdiPlus.lib",
+      "size": 216144,
+      "sha256": "4d5818a7702367f63510b489f8ebe7d5630b8f4e94336445330005afb7699c76"
+    },
+    {
+      "path": "海康工具/ClientDemo/HCCore.dll",
+      "size": 3197440,
+      "sha256": "c53d9d56d42058523c1ef6911227e13adf74c0823f8ab8e11c2f232dbec60877"
+    },
+    {
+      "path": "海康工具/ClientDemo/HCCore.lib",
+      "size": 314396,
+      "sha256": "ff6dd8e237e21d35023d6173d6f1e752cef0d4443d58e18e3d8e1fb9212d220d"
+    },
+    {
+      "path": "海康工具/ClientDemo/HCNetSDK.dll",
+      "size": 1229312,
+      "sha256": "3a66693f0ee45ae0f3966862d5d8a4b35362faedcec2cf837803ae997719bfa7"
+    },
+    {
+      "path": "海康工具/ClientDemo/HCNetSDK.lib",
+      "size": 216462,
+      "sha256": "8517752a172c63cf9c968a75e531bc2f4d4f14bc40d0cd26a7e1b1dc544428a3"
+    },
+    {
+      "path": "海康工具/ClientDemo/HXVA.dll",
+      "size": 2355712,
+      "sha256": "124337a2bb6f5760acfbb0e0edb672dde0ff5f5f13c771dc6bf29183b029c14f"
+    },
+    {
+      "path": "海康工具/ClientDemo/HmMerge.dll",
+      "size": 385536,
+      "sha256": "24ee52a06d24a4f509f36770c3fdd1a6b5ffae44ab52c03df274f9e1f2176125"
+    },
+    {
+      "path": "海康工具/ClientDemo/LocalSensorAdd.dat",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "海康工具/ClientDemo/MP_Render.dll",
+      "size": 406016,
+      "sha256": "f512846c63b26275c456badb2785300e14a43edaf5468cf8ec65c3d2411dc6ae"
+    },
+    {
+      "path": "海康工具/ClientDemo/NPQos.dll",
+      "size": 1668608,
+      "sha256": "8806b27ee6d0c1c12486c1d18d482d804f4db801c1c2815f38293023874a3317"
+    },
+    {
+      "path": "海康工具/ClientDemo/OpenAL32.dll",
+      "size": 1339904,
+      "sha256": "1a747d7e810a1e9eb1b3810082118df05057562f3b6cb1c09a7bea569489f0ad"
+    },
+    {
+      "path": "海康工具/ClientDemo/PlayCtrl.dll",
+      "size": 8387072,
+      "sha256": "48f14e9bb73e1fd07a17fd3b5661d766734bb38ad50a11d6adeb990138932814"
+    },
+    {
+      "path": "海康工具/ClientDemo/PlayCtrl.lib",
+      "size": 179654,
+      "sha256": "f0caf0639a201edc0e4abed9ce7ec3edce7967205c21a3e8f1529107fbf13abd"
+    },
+    {
+      "path": "海康工具/ClientDemo/SuperRender.dll",
+      "size": 2149376,
+      "sha256": "a25be19b7ffdc7e0ebd190470e0e789b707f2e8c2a76dddf51b91a37220c8e28"
+    },
+    {
+      "path": "海康工具/ClientDemo/hlog.dll",
+      "size": 1267200,
+      "sha256": "0bdd53e07633ae7d07bdc6352f74c822c2d78681d1a510577c5d87c114e223b5"
+    },
+    {
+      "path": "海康工具/ClientDemo/hpr.dll",
+      "size": 151040,
+      "sha256": "103395e1e2e51c6cca0390e3be975d68b9fa70f1e859d9d97736725e72db3476"
+    },
+    {
+      "path": "海康工具/ClientDemo/libcrypto-3-x64.dll",
+      "size": 5596160,
+      "sha256": "8031fd17a82917bfac680e6b35ba1cc2f5baf7ff67979ec68ef7d939be5a1607"
+    },
+    {
+      "path": "海康工具/ClientDemo/libmmd.dll",
+      "size": 3249568,
+      "sha256": "6142bde15261bd7177252aa8f716560a5344004e1b97a0b3c6280fc10d22829b"
+    },
+    {
+      "path": "海康工具/ClientDemo/libsafefunc.dll",
+      "size": 160256,
+      "sha256": "8791b0780c4fe51f257d8cf6ba4d88a0fe4901dd52a1d14f9478d1c617702496"
+    },
+    {
+      "path": "海康工具/ClientDemo/libssl-3-x64.dll",
+      "size": 1259520,
+      "sha256": "e94c44d39521b4e06b941989896629cd8a99b41568b1509ec52a78dbbdc4410f"
+    },
+    {
+      "path": "海康工具/ClientDemo/zlib1.dll",
+      "size": 212992,
+      "sha256": "de93d1796492eef9e3d644afb431281455d194a235fca834df0eff958cf53e75"
+    },
+    {
+      "path": "海康工具/ClientDemo/ClientDemoDll/ReadMe.txt",
+      "size": 94,
+      "sha256": "1ed25ce5d2af20b20511142f820bd05b13aa2f45f72fa8bcc8baa436050ace4d"
+    },
+    {
+      "path": "海康工具/ClientDemo/ClientDemoDll/calib.dll",
+      "size": 92160,
+      "sha256": "2187da224306fac85a0813251d4b97a82ff235e63429de114d2b38b5c55d2c52"
+    },
+    {
+      "path": "海康工具/ClientDemo/ClientDemoDll/iconv.dll",
+      "size": 888832,
+      "sha256": "6cd69191469bf13f0cea70837bac9b1e7871c116f5f6f18bef5a6a9575c020c9"
+    },
+    {
+      "path": "海康工具/ClientDemo/ClientDemoDll/libcrypto-1_1-x64.dll",
+      "size": 2702336,
+      "sha256": "7be9058c95130da3edd05fb2056ac62bac5837c7378468d62a22fc10a09c7b44"
+    },
+    {
+      "path": "海康工具/ClientDemo/ClientDemoDll/libssl-1_1-x64.dll",
+      "size": 642560,
+      "sha256": "8fb7847ab2dd26060b0e7bfb0fd2faf7c919bb40667e005b73557ca2624ec8ff"
+    },
+    {
+      "path": "海康工具/ClientDemo/ClientDemoDll/libxml2.dll",
+      "size": 2219520,
+      "sha256": "7defb30ef09ec069049b0c6e37b10acf92797de031ee005b63ce4272123c4a28"
+    },
+    {
+      "path": "海康工具/ClientDemo/ClientDemoDll/zlib1.dll",
+      "size": 77824,
+      "sha256": "91ec6085e862e1eedc254bf88efecd4fa67f486216ab3b1473915d15462e71bb"
+    },
+    {
+      "path": "海康工具/ClientDemo/HCNetSDKCom/AnalyzeData.dll",
+      "size": 727552,
+      "sha256": "2132da23eebe38a36316a32e3c98da6036c38d6719b5e36549e668088b71b55b"
+    },
+    {
+      "path": "海康工具/ClientDemo/HCNetSDKCom/AudioIntercom.dll",
+      "size": 2715136,
+      "sha256": "aedf68bdbb23f8def4ab5abfce1f0735878e061c50e4f18c21daf834864fb4ef"
+    },
+    {
+      "path": "海康工具/ClientDemo/HCNetSDKCom/AudioProcess.dll",
+      "size": 571904,
+      "sha256": "a1605871de7b89f2af482f8920f99ac5dd896bdcb1cc1012b9ae1f23b282a1a7"
+    },
+    {
+      "path": "海康工具/ClientDemo/HCNetSDKCom/AudioRender.dll",
+      "size": 159744,
+      "sha256": "a81fc69c82079249c31abb31328f8915a05f8a14908c13c8c98e72dec7a01164"
+    },
+    {
+      "path": "海康工具/ClientDemo/HCNetSDKCom/HCAlarm.dll",
+      "size": 1236480,
+      "sha256": "3abe3684d1b18203052a3b226e11a2b0dae4af1d8c259acf34db0d17f1953157"
+    },
+    {
+      "path": "海康工具/ClientDemo/HCNetSDKCom/HCAlarm.lib",
+      "size": 14170,
+      "sha256": "5746204d03b39c767469677b73459aca8ef516b016328377700a15bbb6a547ec"
+    },
+    {
+      "path": "海康工具/ClientDemo/HCNetSDKCom/HCCoreDevCfg.dll",
+      "size": 1103360,
+      "sha256": "f898c052fb79ff09bacfc8da4bccac3507d408a4947b97d971bf537b1fc28383"
+    },
+    {
+      "path": "海康工具/ClientDemo/HCNetSDKCom/HCDisplay.dll",
+      "size": 1309184,
+      "sha256": "91f025acdc033b3838361d6100c65b6cd940fc5972df7dc23d34565c85d43498"
+    },
+    {
+      "path": "海康工具/ClientDemo/HCNetSDKCom/HCGeneralCfgMgr.dll",
+      "size": 2116608,
+      "sha256": "7a055d91793c0b4cfe1ff700429d1ea11eefd54b7e444116fff92c59e34bf004"
+    },
+    {
+      "path": "海康工具/ClientDemo/HCNetSDKCom/HCGeneralCfgMgr.lib",
+      "size": 45172,
+      "sha256": "68c9b74a4abda85ad7bee20aa5397c36a50b1dfb995ad0d53b00024043803c09"
+    },
+    {
+      "path": "海康工具/ClientDemo/HCNetSDKCom/HCIndustry.dll",
+      "size": 1668096,
+      "sha256": "31f844aae13f7b13c3acb228df4b436672b55e98e5b8d20b11be472b9837443b"
+    },
+    {
+      "path": "海康工具/ClientDemo/HCNetSDKCom/HCPlayBack.dll",
+      "size": 1079296,
+      "sha256": "237ec8d6d9327f1367408abbc706276480f5b0c424e4e4c51533f84973e674ae"
+    },
+    {
+      "path": "海康工具/ClientDemo/HCNetSDKCom/HCPreview.dll",
+      "size": 997376,
+      "sha256": "be1a619e054ad603bcb61e14ad2c49ae90095814720517f63b1d88b9cb0d328c"
+    },
+    {
+      "path": "海康工具/ClientDemo/HCNetSDKCom/HCPreview.lib",
+      "size": 39452,
+      "sha256": "b727187624056cfe8202a09bc0b084a778a71dce7c8282fd3a0ce46d75b2cf1d"
+    },
+    {
+      "path": "海康工具/ClientDemo/HCNetSDKCom/HCVoiceTalk.dll",
+      "size": 1367040,
+      "sha256": "8dc8cea1a5d928d4536197ac18d8252bd7786120810f5729b78ca876b2f9d3cc"
+    },
+    {
+      "path": "海康工具/ClientDemo/HCNetSDKCom/OpenAL32.dll",
+      "size": 1339904,
+      "sha256": "1a747d7e810a1e9eb1b3810082118df05057562f3b6cb1c09a7bea569489f0ad"
+    },
+    {
+      "path": "海康工具/ClientDemo/HCNetSDKCom/StreamTransClient.dll",
+      "size": 943104,
+      "sha256": "af880a75d372fc7365e4f65a12cc9585175c6f1d01b8978dad3791beef891c38"
+    },
+    {
+      "path": "海康工具/ClientDemo/HCNetSDKCom/SystemTransform.dll",
+      "size": 1133568,
+      "sha256": "5f6161c926da29d9ff84b76a019ab0550f73ef06d07ff81857bde5ca71a14d11"
+    },
+    {
+      "path": "海康工具/ClientDemo/HCNetSDKCom/libiconv2.dll",
+      "size": 987648,
+      "sha256": "371decacb5a85c1df945697436d8db234cc9545301df745ec173b6e6694a74b6"
+    },
+    {
+      "path": "海康工具/SADP/ColumnConfig.xml",
+      "size": 2434,
+      "sha256": "b791846e32e020740bdf48bc7e94610316092ed88b4cb2e4f63f0e56481a1a82"
+    },
+    {
+      "path": "海康工具/SADP/HCCore.dll",
+      "size": 1486336,
+      "sha256": "a872fe1878ca041af09e1a7bd8dae6a6f741771221638fadbee89e4840057a54"
+    },
+    {
+      "path": "海康工具/SADP/HCNetSDK.dll",
+      "size": 675328,
+      "sha256": "f0b78169ef91f1625f04fbb5d47ba71f15b1ecac725acafb78dfd325c5fa9ca0"
+    },
+    {
+      "path": "海康工具/SADP/HCNetUtils.dll",
+      "size": 660480,
+      "sha256": "0dc4f2e06fcfdf3822db197822215dc8233e0d3b3705484425131939a5cf20f8"
+    },
+    {
+      "path": "海康工具/SADP/HCSadpSDK_Log_Switch.xml",
+      "size": 157,
+      "sha256": "c3de0ae016e46c3b3ef55d0633d9b1ae3a3a919891ccf27579011fcc705919ad"
+    },
+    {
+      "path": "海康工具/SADP/NpfDetect.dll",
+      "size": 149504,
+      "sha256": "9e986deb7611d08eafa8abad73b43ae888465cbc24795321ce8d5b378bd66120"
+    },
+    {
+      "path": "海康工具/SADP/NpfDetectApp.exe",
+      "size": 62936,
+      "sha256": "320b61d8a470e5f78e0221aa1746e0f2b17b93e5bca780a3a2de2b54e2a022f3"
+    },
+    {
+      "path": "海康工具/SADP/QtCore4.dll",
+      "size": 2559488,
+      "sha256": "bf43b42ff070200980477f70cb3844350fa4933bec115639e6db28eb7e7b109f"
+    },
+    {
+      "path": "海康工具/SADP/QtGui4.dll",
+      "size": 8354816,
+      "sha256": "63f1b7a87a5fbaafafc5f55712b1d146f4757f3fe33ca2d85cac4c73e681bbad"
+    },
+    {
+      "path": "海康工具/SADP/QtNetwork4.dll",
+      "size": 1024000,
+      "sha256": "21850d83423613a171192444688fa0a58d16d48392aefaf00feb5292971177b1"
+    },
+    {
+      "path": "海康工具/SADP/QtQREncoder.dll",
+      "size": 35840,
+      "sha256": "06b70117d889a896fabe1e9251f88776f45f56fcabfc28840e62be9d8ecb778c"
+    },
+    {
+      "path": "海康工具/SADP/QtSql4.dll",
+      "size": 195072,
+      "sha256": "4cd303901e88229725a55a88db51a721b1167cc8abba56f5e32a01220b94d067"
+    },
+    {
+      "path": "海康工具/SADP/QtWebKit4.dll",
+      "size": 12747264,
+      "sha256": "e33c97007070f2f94943c1f685bb3ef8f06a7fdc66318c7d985bedb0edab1b2e"
+    },
+    {
+      "path": "海康工具/SADP/QtXml4.dll",
+      "size": 342016,
+      "sha256": "67c6254ee61ff09c19d4aaa266e226a68abac0557b4a1d9f0ce018637bfebbce"
+    },
+    {
+      "path": "海康工具/SADP/SADPTool.exe",
+      "size": 1797584,
+      "sha256": "1b2075dbe38ab1a6ee5ad7a0879303643196a5eda2130fdac6c63a3b99a3b2d4"
+    },
+    {
+      "path": "海康工具/SADP/SADPTool.png",
+      "size": 42195,
+      "sha256": "3adbe2583096324d843a7f64906401f0cb6dabf841098b0ededd25b69e7a8440"
+    },
+    {
+      "path": "海康工具/SADP/Sadp.dll",
+      "size": 1036288,
+      "sha256": "6bb912e5d4a6ce15f61241424ef29dd9a7b06016bd59cb716c0153f7b34567b3"
+    },
+    {
+      "path": "海康工具/SADP/Setup.xml",
+      "size": 361,
+      "sha256": "dbe10c451f6584c9ea78216672de689ad7a30e47b0898e7005add7755225c144"
+    },
+    {
+      "path": "海康工具/SADP/ToolGuiToolkit.dll",
+      "size": 2705920,
+      "sha256": "a63687ac13965dacbbf26ba7677fcd0dc7a949e7c57f192c1af212ca9bf5254f"
+    },
+    {
+      "path": "海康工具/SADP/Upgrade.dll",
+      "size": 60928,
+      "sha256": "565e65b1fc2e05d1b8fe9d886f7bfa2f9c6bca5ce9deb6ffba55ba25b03ccd5a"
+    },
+    {
+      "path": "海康工具/SADP/Upgrade.xml",
+      "size": 329,
+      "sha256": "2da6253fb25958e06702e9f6b408526ca3f7ca8b3abb62b18bbd7ef5b1a8985f"
+    },
+    {
+      "path": "海康工具/SADP/hpr.dll",
+      "size": 151607,
+      "sha256": "c0321c4841960960d198b3de744af97a28d8e205b53308278539495b6ad1e9ad"
+    },
+    {
+      "path": "海康工具/SADP/iVMSGUIToolkit.dll",
+      "size": 2173440,
+      "sha256": "79bd6913422726c9c452ddc364b83e37d8d02c2e8a5111be0327819ac1906541"
+    },
+    {
+      "path": "海康工具/SADP/libeay32.dll",
+      "size": 1218048,
+      "sha256": "d35f4ea1153e7be98e8157e9bc37c8506719d72c963966c0a957f30c1b19f877"
+    },
+    {
+      "path": "海康工具/SADP/npf.sys",
+      "size": 36600,
+      "sha256": "bb569c99360a631850537dc2eda0bf85d091cc30bd98b3fd2ac9dabdfb7741da"
+    },
+    {
+      "path": "海康工具/SADP/npf64.sys",
+      "size": 36600,
+      "sha256": "4bfaa99393f635cd05d91a64de73edb5639412c129e049f0fe34f88517a10fc6"
+    },
+    {
+      "path": "海康工具/SADP/ssleay32.dll",
+      "size": 277504,
+      "sha256": "e95da7459734fed900b29a57ef158a5b5cbdcdaaac992c8f7bcfc79926048841"
+    },
+    {
+      "path": "海康工具/SADP/vcredist_x86.exe",
+      "size": 4479832,
+      "sha256": "6b3e4c51c6c0e5f68c8a72b497445af3dbf976394cbb62aa23569065c28deeb6"
+    },
+    {
+      "path": "海康工具/SADP/设备网络搜索用户使用手册.pdf",
+      "size": 1252522,
+      "sha256": "4387893a006784b5950f1edcb0462b9abb2989793e110418b9a111be83acabb6"
+    },
+    {
+      "path": "海康工具/SADP/HCNetSDKCom/AnalyzeData.dll",
+      "size": 433664,
+      "sha256": "1a508e679f976d1c0550ba6be85278f8ba6fe85727401be84059d5f54ffee358"
+    },
+    {
+      "path": "海康工具/SADP/HCNetSDKCom/AudioIntercom.dll",
+      "size": 610816,
+      "sha256": "1d26a44ed11fbb85c4174fd1360642dfcdf71f4b72574d44353277bbf20008b1"
+    },
+    {
+      "path": "海康工具/SADP/HCNetSDKCom/HCAlarm.dll",
+      "size": 506368,
+      "sha256": "2d82ae7bea29c14c6cc4d7c5767a8d4b7e9a2f5c01826dc7dc81fd5a1f6ced30"
+    },
+    {
+      "path": "海康工具/SADP/HCNetSDKCom/HCCoreDevCfg.dll",
+      "size": 836608,
+      "sha256": "3de3ab41ab8f205237e0b5c44ce741ad3eaeab1d35ad53b925242e7009abccad"
+    },
+    {
+      "path": "海康工具/SADP/HCNetSDKCom/HCDisplay.dll",
+      "size": 616960,
+      "sha256": "110bbaf5281634f79e87b738065a590b668fda57c6617891812ed69a55ac5c83"
+    },
+    {
+      "path": "海康工具/SADP/HCNetSDKCom/HCGeneralCfgMgr.dll",
+      "size": 1083904,
+      "sha256": "ec4da919876cf8cae432fdebf4f8ad5e9b39cf4c86080f0ec983361dc820fcc0"
+    },
+    {
+      "path": "海康工具/SADP/HCNetSDKCom/HCIndustry.dll",
+      "size": 797696,
+      "sha256": "38c3b02fee449cc87bd539922f0bf9728faaf604847860ec14040c7efc01eb20"
+    },
+    {
+      "path": "海康工具/SADP/HCNetSDKCom/HCPlayBack.dll",
+      "size": 472064,
+      "sha256": "b40139e98c84992a9593859e0914dc414dc6be7a8f48b5bfaaa8769d2a665380"
+    },
+    {
+      "path": "海康工具/SADP/HCNetSDKCom/HCPreview.dll",
+      "size": 624128,
+      "sha256": "a459f8c528a38c63b798c0c197c95b097889a33582823c63ea52c8d1d5cd972c"
+    },
+    {
+      "path": "海康工具/SADP/HCNetSDKCom/HCVoiceTalk.dll",
+      "size": 601600,
+      "sha256": "0904211d828e9778961e0d719f39a091148082eeefa0bc6fb472f87ff092203c"
+    },
+    {
+      "path": "海康工具/SADP/HCNetSDKCom/OpenAL32.dll",
+      "size": 389632,
+      "sha256": "c9635809ba05d551502a24192aad4dbecbe67c4ec54d819e01034be6e9a022af"
+    },
+    {
+      "path": "海康工具/SADP/HCNetSDKCom/StreamTransClient.dll",
+      "size": 638464,
+      "sha256": "9b3a44c5e18d52e8c83176ac7f25c8acc1d8dde3103372ea1ea7324f2fbd89fc"
+    },
+    {
+      "path": "海康工具/SADP/HCNetSDKCom/SystemTransform.dll",
+      "size": 655360,
+      "sha256": "ce6653bb007eabebe0de0b6b751ee81b6257e1e577594a38ea50a3bf2c1e847c"
+    },
+    {
+      "path": "海康工具/SADP/HCNetSDKCom/libiconv2.dll",
+      "size": 978432,
+      "sha256": "cb016e794d3311c71f21d87803e10a0e1133995f62a485eb37b321cd9b9e1087"
+    },
+    {
+      "path": "海康工具/SADP/HCNetSDKCom/msvcr90.dll",
+      "size": 655872,
+      "sha256": "cf420aced0d810e1d75f6811dd986f2d9fded2fbb8d61fc9a7024520c475febb"
+    },
+    {
+      "path": "海康工具/SADP/Open Source Software Licenses/Open Source Software Licenses-SADPTool.txt",
+      "size": 66161,
+      "sha256": "85eb69530e20234d30e3ff382bb6b2207413e6bba4cd9e4e9711d5687dfa72ba"
+    },
+    {
+      "path": "海康工具/SADP/plugins/skins/CommonSkin.dll",
+      "size": 1199104,
+      "sha256": "af9132df38cfb25ae8e60b945ac53c506d0731e54d234069f24be721adf2aac3"
+    },
+    {
+      "path": "海康工具/SADP/plugins/styles/CommonStyle.dll",
+      "size": 19968,
+      "sha256": "87c6ff1eac0ce49561706240598626b32a16edf9344bf57a6bf14a1508ff9f8e"
+    },
+    {
+      "path": "海康工具/SADP/sqldrivers/qsqlite4.dll",
+      "size": 445440,
+      "sha256": "5ea0e102310b61a15d7e1a64e8a250c215f0a96ea72cc703e3587d68597e605d"
+    },
+    {
+      "path": "海康工具/SADP/sqldrivers/qsqlodbc4.dll",
+      "size": 89600,
+      "sha256": "33c7d936dd15db8ccd9d78fdd017a4ec049b08c9f084daaba22f821b0620b077"
+    },
+    {
+      "path": "海康工具/SADP/sqldrivers/qsqlpsql4.dll",
+      "size": 134144,
+      "sha256": "720a41671f8a75ad19c07e147f475318d3c16198a1b96189901dce84112f80dd"
+    },
+    {
+      "path": "海康工具/SADP/translations/iVMSGUIToolkit_zh.qm",
+      "size": 8006,
+      "sha256": "93b024cd5e97e43ef177ec85c1e856c9932924c1057c90c70c96320a007c0127"
+    },
+    {
+      "path": "海康工具/SADP/translations/qt_zh_CN.qm",
+      "size": 116873,
+      "sha256": "60a994185b605adcc85fe02fd52c8475fdaf2b94d5387f08b379a34fda7c40dd"
+    },
+    {
+      "path": "海康工具/SADP/translations/sadptool_en.qm",
+      "size": 67873,
+      "sha256": "2fc5a78a2534a65ce4da5b0ba4bab132e9cf328123e8b7b9e10bf482f337508b"
+    },
+    {
+      "path": "海康工具/SADP/translations/sadptool_zh.qm",
+      "size": 51454,
+      "sha256": "4a776af03fdfdb5dfbcdff2b90f504c537f65b87ac949b269ca451bd3c96b416"
+    },
+    {
+      "path": "海康工具/使用手册/SDK使用手册.png",
+      "size": 3866,
+      "sha256": "928ec37d3e59fdd2a84713d5448b3cdfad1a95fed11e0d0f634f8b6d15514883"
+    },
+    {
+      "path": "海康工具/使用手册/设备网络SDK使用手册.chm",
+      "size": 12939075,
+      "sha256": "e44f6a408f8cedce5faa555a0f52998a33abce69df3eeab70eddfb0a35d8dc62"
+    },
+    {
+      "path": "硬盘工具/DiskGenius/DGBCDX64.exe",
+      "size": 130672,
+      "sha256": "d4fb4bc930ca45ac352b9d927c23bf18b88ee0593d4541b2b2316fc364ba84d2"
+    },
+    {
+      "path": "硬盘工具/DiskGenius/DGFileViewer.exe",
+      "size": 7968736,
+      "sha256": "4798e684c807a5d5030421f3e46c0741abd21e9a8b7fedc6e211014e4cc97ed7"
+    },
+    {
+      "path": "硬盘工具/DiskGenius/DiskGenius.exe",
+      "size": 26517984,
+      "sha256": "2eec4046d712998b40bb4f5b8dc5cc7eb29263e1d3e241fffee8eeb04409760a"
+    },
+    {
+      "path": "硬盘工具/DiskGenius/DiskGenius.ico",
+      "size": 83863,
+      "sha256": "321d45e7f2bfe3976dbcd573af71a4fc4c5e02217b97731d9d8c210ba8086e47"
+    },
+    {
+      "path": "硬盘工具/DiskGenius/HdrwOffice.dll",
+      "size": 216544,
+      "sha256": "74f9c3cfe18141e0f87215d249b139686bb5e43d83dcdd192cd45ff08b775a95"
+    },
+    {
+      "path": "硬盘工具/DiskGenius/HdrwQcow.dll",
+      "size": 120800,
+      "sha256": "de24b329eed49f6c1c65285e3f73c6aa0fe7993a58d47a7c711aea0fb196b354"
+    },
+    {
+      "path": "硬盘工具/DiskGenius/HdrwVdi.dll",
+      "size": 100320,
+      "sha256": "b978620d28f813723c5889f8f03779ebfd5b790a981f5847a7e45b7209f94878"
+    },
+    {
+      "path": "硬盘工具/DiskGenius/HdrwVhd.dll",
+      "size": 106976,
+      "sha256": "9f187f3d9089c441f0ae2066391a83f9acbb0b74e2715b7863129b09f3c45564"
+    },
+    {
+      "path": "硬盘工具/DiskGenius/HdrwVhdd.dll",
+      "size": 173024,
+      "sha256": "a5052cb769db2c2c5da8d729aefebacefe51b0a12130f9a82af48793b02c75ed"
+    },
+    {
+      "path": "硬盘工具/DiskGenius/HdrwVhdx.dll",
+      "size": 118240,
+      "sha256": "f0ebdc44930879819286fd7993ba4e8c53ef36e18f0f09b8a52ea1daf9df74d0"
+    },
+    {
+      "path": "硬盘工具/DiskGenius/Hdrw_docx.dll",
+      "size": 169440,
+      "sha256": "cc141d77b59c029a50d38873e39654dfd7003a30255e2126860e18dc3df017fe"
+    },
+    {
+      "path": "硬盘工具/DiskGenius/Hdrw_pptx.dll",
+      "size": 273376,
+      "sha256": "87689d1002129b18918ddbf19769c66be27cb49ea4ed6b07315b7459e7b3cd1c"
+    },
+    {
+      "path": "硬盘工具/DiskGenius/Hdrw_xls.dll",
+      "size": 1118688,
+      "sha256": "7d8ffd7ae3dcbe064de307c049fd666a0ff4bdc508de7a4313d61f5e12f765b7"
+    },
+    {
+      "path": "硬盘工具/DiskGenius/Hdrw_xlsx.dll",
+      "size": 452064,
+      "sha256": "5a68b419b89d83d4a55a37b1e26576858a02a825f724fd4dbd89215de0612a32"
+    },
+    {
+      "path": "硬盘工具/DiskGenius/Hdrwvm.dll",
+      "size": 170464,
+      "sha256": "5fab63d2325e9f12fdedd8dd2ac56135e7d87fa3843bd4d9d591dfa2521c8d42"
+    },
+    {
+      "path": "硬盘工具/DiskGenius/Options.ini",
+      "size": 826,
+      "sha256": "274fe6f3c9a7f8f15a6ae7e136d6f45bd00cf0e9f062e4ca0e79abd2d1fd899f"
+    },
+    {
+      "path": "硬盘工具/DiskGenius/SDL2.dll",
+      "size": 1379912,
+      "sha256": "25f95833d1ce51cd7603c921c86f87b3d0a82b810e87ee4fa6e782f003bc6b4d"
+    },
+    {
+      "path": "硬盘工具/DiskGenius/VPreview.dll",
+      "size": 165856,
+      "sha256": "0a8b7f2f5344f6ebd24f2436e0b59c603ba718aced3805ea6aa67b4fd1c0b4c6"
+    },
+    {
+      "path": "硬盘工具/DiskGenius/avcodec-60.dll",
+      "size": 7597128,
+      "sha256": "164d4674ae5cc16911b060e276f36b914135ca627ae73631c8e5e8b01319b097"
+    },
+    {
+      "path": "硬盘工具/DiskGenius/avdevice-60.dll",
+      "size": 174664,
+      "sha256": "a9d4d754995f43ea83184b453e7b355a4b468ba43486dfd85323055bf38430ed"
+    },
+    {
+      "path": "硬盘工具/DiskGenius/avfilter-9.dll",
+      "size": 2738760,
+      "sha256": "4d0da97d58c1d0daed32a4087daeef0416dd75f613103834cee51b0fcd04e030"
+    },
+    {
+      "path": "硬盘工具/DiskGenius/avformat-60.dll",
+      "size": 1863752,
+      "sha256": "b14e06553a11594eef8fdf6d67a0d419083f6bb1342097d674628e8856e9bf2a"
+    },
+    {
+      "path": "硬盘工具/DiskGenius/avutil-58.dll",
+      "size": 664136,
+      "sha256": "f9ca545c9f036096176f00b195454d12b27b835e5e61d0dc520a7f4b3ce6a639"
+    },
+    {
+      "path": "硬盘工具/DiskGenius/dsoframer.ocx",
+      "size": 178184,
+      "sha256": "da964cafc6b425c1d5bf2a4e9299cd096988dd786e1287a50a445e61377b1dee"
+    },
+    {
+      "path": "硬盘工具/DiskGenius/libhefc.dll",
+      "size": 2357728,
+      "sha256": "02470153fbbedc5aae8640f9c3cffe33e234adaf84fe2edd0c29ad52be2626b0"
+    },
+    {
+      "path": "硬盘工具/DiskGenius/libwim.dll",
+      "size": 534616,
+      "sha256": "1025f91ef6527bfb4ea0efd403390fb63425dbbbfb78a531c9f76726992ac5a2"
+    },
+    {
+      "path": "硬盘工具/DiskGenius/msimg32.dll",
+      "size": 6144,
+      "sha256": "7400f335cdc201ca40851a8723495e803c8c3a81d4419490433b8a174346dda3"
+    },
+    {
+      "path": "硬盘工具/DiskGenius/swresample-4.dll",
+      "size": 183880,
+      "sha256": "625393db02a5d2e236c71baf451f53dda34417554e28752fbda73699f8ad3fe9"
+    },
+    {
+      "path": "硬盘工具/DiskGenius/swscale-7.dll",
+      "size": 477256,
+      "sha256": "0e0d3d479c9e738cae6f40433b5e075068d4893f7a05b1804da276ba35a53ea1"
+    },
+    {
+      "path": "硬盘工具/DiskGenius/version.dll",
+      "size": 2749952,
+      "sha256": "c7567cdf195ca02c7006a5765de5f4dbc9c15e87c5b2f7046f8df281f5414a9b"
+    },
+    {
+      "path": "硬盘工具/DiskGenius/lang/Language_Chinese_Simplified.lang",
+      "size": 209534,
+      "sha256": "1d0342b0cf8600aa7401736aed1cf028bb4606fbc84b798fb06a13956e5c09dd"
+    },
+    {
+      "path": "综合工具/DirectX_Repair/DirectX Repair.exe",
+      "size": 1069056,
+      "sha256": "bcccf0555f67fe4824a1ce271c19f3f2daf862de3659fe19f8b3532750323ea7"
+    },
+    {
+      "path": "综合工具/DirectX_Repair/DirectX Repair.exe.config",
+      "size": 195,
+      "sha256": "1de43261a6724f111fc3deffd81d9806a31282216b10275e43e28785aea4acde"
+    },
+    {
+      "path": "综合工具/DirectX_Repair/DirectX Repair.png",
+      "size": 15450,
+      "sha256": "4732a50b9b2ca571d6cbb235a6561e31fd6ccbfc0774028b10b7fa48bab2404f"
+    },
+    {
+      "path": "综合工具/DirectX_Repair/Settings.ini",
+      "size": 356,
+      "sha256": "c63645d13da90436ec4ee69092858654bd776c40f422a305f396ce88ec9282cb"
+    },
+    {
+      "path": "综合工具/geek/geek.exe",
+      "size": 7546512,
+      "sha256": "fe941fd1eea4da9d626773057bd81a713fa34721f8bd01c831c5fcae72a3e768"
+    },
+    {
+      "path": "综合工具/geek/geek.png",
+      "size": 47086,
+      "sha256": "cb40348aa6723a7c504df3c24785aa51ab020e39f13a8e620dabf27ebcb2fa60"
+    },
+    {
+      "path": "综合工具/TCPView/Eula.txt",
+      "size": 7490,
+      "sha256": "8329bcbadc7f81539a4969ca13f0be5b8eb7652b912324a1926fc9bfb6ec005a"
+    },
+    {
+      "path": "综合工具/TCPView/tcpvcon.exe",
+      "size": 202632,
+      "sha256": "37621bdac3ced1103278e8c0ef7b73dfa1cbe9becfbaff421a46fbc78d636b5f"
+    },
+    {
+      "path": "综合工具/TCPView/tcpvcon64.exe",
+      "size": 250816,
+      "sha256": "f9fdc027050d59608062a95c41e3965e3800fd5a91f35de080a432d62bd129c1"
+    },
+    {
+      "path": "综合工具/TCPView/tcpvcon64a.exe",
+      "size": 236952,
+      "sha256": "0e85278ca6617dcd61af1e84dea1e3049be0539ca492b5731ddf85545db00390"
+    },
+    {
+      "path": "综合工具/TCPView/tcpview.chm",
+      "size": 15932,
+      "sha256": "37b11010a35761703e914dfd88fb26776dbfb29531934244a3bab7b6219a764f"
+    },
+    {
+      "path": "综合工具/TCPView/tcpview.exe",
+      "size": 944520,
+      "sha256": "9775b4bbe23b8eb93727efe0a6d0b160ae5132a10b223f43200499cf0051a18f"
+    },
+    {
+      "path": "综合工具/TCPView/tcpview64.exe",
+      "size": 1087368,
+      "sha256": "0cbcb7ec4a042622b0d9d91b18f908e4208e4725ee1fa74a3555c4dcb622cfc1"
+    },
+    {
+      "path": "综合工具/TCPView/tcpview64.png",
+      "size": 29795,
+      "sha256": "a1cd38dac966d681a8a9fcf4806b92b3128cb08d0901daeca2337a946db36d06"
+    },
+    {
+      "path": "综合工具/TCPView/tcpview64a.exe",
+      "size": 1043864,
+      "sha256": "fca26bd5a35267a2ff19317c9e4f7642517d9d8795dcf50c65ff036298d6255b"
+    },
+    {
+      "path": "读写器工具/超高频读写器/物必联读写器/物必联ip搜索工具/物必联ip搜索工具.exe",
+      "size": 39936,
+      "sha256": "064c7fa3808a83c560a078df1fa244d7488096a0acfb3841343b763ced7c263c"
+    },
+    {
+      "path": "读写器工具/超高频读写器/物必联读写器/物必联测试Demo/UHFTOOL_v2.05/CustomControl.dll",
+      "size": 35328,
+      "sha256": "0a9e9e5d25f275c1eeae0bf4430fa53881955a62c331228a82e66debbc35dc84"
+    },
+    {
+      "path": "读写器工具/超高频读写器/物必联读写器/物必联测试Demo/UHFTOOL_v2.05/RFIDReaderNetwork_SerialSDK_ForCSharp.dll",
+      "size": 60416,
+      "sha256": "faa8987b94eff743781567e56688dc48b3f6fa2d9e953f29ebc3e02d1a255764"
+    },
+    {
+      "path": "读写器工具/超高频读写器/物必联读写器/物必联测试Demo/UHFTOOL_v2.05/RFIDReaderNetwork_SerialSDK_ForCSharp.pdb",
+      "size": 142848,
+      "sha256": "e787ad497f074a13d3f985bcad6ea5fc02da650cf7671bfc3cbc745cd178b8a6"
+    },
+    {
+      "path": "读写器工具/超高频读写器/物必联读写器/物必联测试Demo/UHFTOOL_v2.05/UHF.TOOL.exe",
+      "size": 115200,
+      "sha256": "c103881f58750319480c5ee8b55645cebc9e6746576663b6875a1964e30cf8f2"
+    },
+    {
+      "path": "读写器工具/超高频读写器/物必联读写器/物必联测试Demo/UHFTOOL_v2.05/UHF.TOOL.exe.config",
+      "size": 178,
+      "sha256": "a4ecb205cc1e5cc94d0782a67f8bf57b3865e411f9153f1df70fada0e71dc43e"
+    },
+    {
+      "path": "读写器工具/超高频读写器/物必联读写器/物必联测试Demo/UHFTOOL_v2.05/UHF.TOOL.vshost.exe",
+      "size": 22696,
+      "sha256": "58d46a3801c280908698ef4ff789546427b9be7cd78f61a7533cc2f56c1b881b"
+    },
+    {
+      "path": "读写器工具/超高频读写器/物必联读写器/物必联测试Demo/UHFTOOL_v2.05/UHF.TOOL.vshost.exe.config",
+      "size": 178,
+      "sha256": "a4ecb205cc1e5cc94d0782a67f8bf57b3865e411f9153f1df70fada0e71dc43e"
+    },
+    {
+      "path": "读写器工具/超高频读写器/物必联读写器/物必联测试Demo/UHFTOOL_v2.05/UHF.TOOL.vshost.exe.manifest",
+      "size": 490,
+      "sha256": "c0085eb467d2fc9c9f395047e057183b3cd1503a4087d0db565161c13527a76f"
+    },
+    {
+      "path": "读写器工具/超高频读写器/物必联读写器/物必联测试Demo/UHFTOOL_v2.05/info.ini",
+      "size": 98,
+      "sha256": "3b6130fe02875bbb3b5e6462ab838a472f4e175752fe0e0f6edc1570ba2368f2"
+    },
+    {
+      "path": "读写器工具/超高频读写器/物必联读写器/电力测温测试软件/CustomControl.dll",
+      "size": 35328,
+      "sha256": "0a9e9e5d25f275c1eeae0bf4430fa53881955a62c331228a82e66debbc35dc84"
+    },
+    {
+      "path": "读写器工具/超高频读写器/物必联读写器/电力测温测试软件/RFIDReaderNetwork_SerialSDK_ForCSharp.dll",
+      "size": 60416,
+      "sha256": "5205302691f4d33d61e8a11615a868d3edb2517c0247153939aee25d630404ed"
+    },
+    {
+      "path": "读写器工具/超高频读写器/物必联读写器/电力测温测试软件/UHF.TOOL.exe",
+      "size": 115712,
+      "sha256": "77db20184f6a6b66e92b7d69c5099eaad740d5ffce3e58165dad88a7804f1dff"
+    },
+    {
+      "path": "读写器工具/超高频读写器/物必联读写器/电力测温测试软件/UHF.TOOL.exe.config",
+      "size": 178,
+      "sha256": "a4ecb205cc1e5cc94d0782a67f8bf57b3865e411f9153f1df70fada0e71dc43e"
+    },
+    {
+      "path": "读写器工具/超高频读写器/物必联读写器/电力测温测试软件/UHF.TOOL.pdb",
+      "size": 192000,
+      "sha256": "53d57ea79274f53aa8f446382075b1f5336c6d861e20f05f96c17a24ff35415a"
+    },
+    {
+      "path": "读写器工具/超高频读写器/物必联读写器/电力测温测试软件/UHF.TOOL.vshost.exe",
+      "size": 22696,
+      "sha256": "58d46a3801c280908698ef4ff789546427b9be7cd78f61a7533cc2f56c1b881b"
+    },
+    {
+      "path": "读写器工具/超高频读写器/物必联读写器/电力测温测试软件/UHF.TOOL.vshost.exe.config",
+      "size": 178,
+      "sha256": "a4ecb205cc1e5cc94d0782a67f8bf57b3865e411f9153f1df70fada0e71dc43e"
+    },
+    {
+      "path": "读写器工具/超高频读写器/物必联读写器/电力测温测试软件/UHF.TOOL.vshost.exe.manifest",
+      "size": 490,
+      "sha256": "c0085eb467d2fc9c9f395047e057183b3cd1503a4087d0db565161c13527a76f"
+    },
+    {
+      "path": "读写器工具/超高频读写器/物必联读写器/电力测温测试软件/info.ini",
+      "size": 98,
+      "sha256": "68397ee86991003fa9a2f11f8ec94575d284df38002cd9fd9cb1324040645534"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ControlzEx.dll",
+      "size": 250432,
+      "sha256": "f15d89d9720eedb94c09b1db32ca6a514e9eff2906da91396ffd7f877714911e"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ControlzEx.pdb",
+      "size": 843264,
+      "sha256": "d1632349a5bed60c6cd6118a5559c794c6cd6b6e30a33b4af0b00f2abc867e31"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ControlzEx.xml",
+      "size": 172506,
+      "sha256": "88bbce0eb7059680c253db0b2f8db11d284d1e5bdf44b7dd329e25e270b2a18e"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/LiveCharts.Wpf.dll",
+      "size": 217600,
+      "sha256": "1bdbb1b5c1a50653e5c26161e9b7c03edc518721a6e10ea180a84049d967106b"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/LiveCharts.Wpf.pdb",
+      "size": 499200,
+      "sha256": "718ff471c7ccfa31e9cf905dfa01c9925d692835ea646e95754fd801a5ee4ca8"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/LiveCharts.Wpf.xml",
+      "size": 175954,
+      "sha256": "c18a11b019a56ec8e5916042a9f23a8655ea199bf2a4319573b18b7e035e3914"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/LiveCharts.dll",
+      "size": 152064,
+      "sha256": "9fcf89837b60f69c1c501e4cfa4d2860887afd0b8f325803367e795a4e3bc9ca"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/LiveCharts.pdb",
+      "size": 364032,
+      "sha256": "cb8b4cdeb2ba07ecfc6686840a94c2ac626a2f9d577aff2d16e4d69ea086200c"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/LiveCharts.xml",
+      "size": 220470,
+      "sha256": "ce3283e4afd74377d313f9c1d247afe8164e626c95f710f928734da6cfab9311"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/MahApps.Metro.dll",
+      "size": 3641344,
+      "sha256": "cd49de696562d046510be81f7a43ec357568b73ea99321ec92f792ef768c85f8"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/MaterialDesignColors.dll",
+      "size": 302080,
+      "sha256": "60db449f3f52128c1f5ba0202f8cc6e9f6cacbbaf171e8aab531b84c11b797d1"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/MaterialDesignThemes.Wpf.dll",
+      "size": 9061376,
+      "sha256": "8a2fe93a18acfd8221a003810b0b16b95a589a66415a618eb73d0ca3c4de11f9"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/Microsoft.Web.WebView2.Core.dll",
+      "size": 777808,
+      "sha256": "d34ae19e628f187f0d14d5d816764435086b4ab25df98a211636b4a51edbf85b"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/Microsoft.Web.WebView2.Core.xml",
+      "size": 690644,
+      "sha256": "2da42509068b1662c646c82bb91b423e873c21296789b0b4d239b753bfa2262e"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/Microsoft.Web.WebView2.WinForms.dll",
+      "size": 38464,
+      "sha256": "fc2b7964f3279711b9573d99c673817a4f97b793f25be7ea2f030eae4cba75cb"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/Microsoft.Web.WebView2.WinForms.xml",
+      "size": 41393,
+      "sha256": "4b40e49aec5dbda597224f997d57a16645ddc2eb00f31a6329204d1853a2245a"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/Microsoft.Web.WebView2.Wpf.dll",
+      "size": 81992,
+      "sha256": "0abe32fbcbde73d01cf5c7d821ffcde7512fd238f0c5d7e96152ba7f48f48818"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/Microsoft.Web.WebView2.Wpf.xml",
+      "size": 141904,
+      "sha256": "2e533a08da4d5e9e44de5007b75811dc8f41c656782b003b77e318ea3db370fe"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/Microsoft.Xaml.Behaviors.dll",
+      "size": 144768,
+      "sha256": "ff75938fedee596706171916db763ac100bc7164a7346dd739ad61660e068b5a"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/Microsoft.Xaml.Behaviors.pdb",
+      "size": 52032,
+      "sha256": "fb216ddb86bd1e6053bf8bad8e67557e2922d56d83b913197142c872907bc79a"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/Microsoft.Xaml.Behaviors.xml",
+      "size": 139226,
+      "sha256": "0672969b6adf9fc6d56873ff17fc8f45e9febc2fd6e997b19d5cb7ef2546db70"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ModuleAPI.dll",
+      "size": 589824,
+      "sha256": "dd9232cd880e6dc06e9a0c31de22ced5bd5d3fc66b30ad4272fc00f4c7743ec2"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ModuleAPI.pdb",
+      "size": 1543680,
+      "sha256": "5a6f866fb862d01e09840e21130d0b5a9d06bd763a2919b98254081556a0a8f8"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/Newtonsoft.Json.dll",
+      "size": 711952,
+      "sha256": "e1e27af7b07eeedf5ce71a9255f0422816a6fc5849a483c6714e1b472044fa9d"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/Newtonsoft.Json.xml",
+      "size": 713541,
+      "sha256": "79ee87d4ede8783461de05b93379d576f6e8575d4ab49359f15897a854b643c4"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe",
+      "size": 1228800,
+      "sha256": "4bcfa046f20d8d968ef98ea2dbfbd80d26af76aa1bced795a1ff8f114ac888de"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.config",
+      "size": 1411,
+      "sha256": "ac6e8415bb29659ce853631e9f0060c2b5bdc95c95a20d2df0bdfe63be567b66"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.pdb",
+      "size": 943616,
+      "sha256": "916fa89093d3ac8c4d76564aa0641be9e40ec8d5ba1943f155747920bac0fac9"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/SPI.json",
+      "size": 1737,
+      "sha256": "c4d04d5365e95025e10c8d0b72b54e63b05b44895ab450cdd5ba87098ec995c6"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/hidapi.dll",
+      "size": 18432,
+      "sha256": "d9b95f292381fc7de8bde1998848bd81038ddc26df1aa6b7c4ba46e910c0ccd3"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/双语版使用手册.docx",
+      "size": 2672535,
+      "sha256": "6e5197130d373cf1ff4610c7d2363adf6aa90085cfca9aba040d87c09eef4f59"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/html/charts.html",
+      "size": 9076,
+      "sha256": "4c7291f3a94ca696fc69b0be613be0e5491e057c95f5bbbdb8d611f238f300d8"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/html/assets/css/modal-gloss.png",
+      "size": 2717,
+      "sha256": "37c13c885d694f1e6d0601bbbbe3398ccf0435bca3689f0e29de77af883a5ca7"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/html/assets/css/portal.css",
+      "size": 162895,
+      "sha256": "8018a0e055464ba13dd8cb413c172ce0f00d100a9790e1acf12320801cf3d936"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/html/assets/css/reveal.css",
+      "size": 1288,
+      "sha256": "f11d8da24eed9930161d1628e7198cd220ee448231253b82be439fac6d770523"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/html/assets/js/app.js",
+      "size": 996,
+      "sha256": "2d20f81073e2fbbdad379023e8c4aa618198d926d62ef0311cd738787652fc27"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/html/assets/js/charts-demo.js",
+      "size": 4473,
+      "sha256": "34d7a11d5d54c9b9154d05d847314e398794f82f0b67a4249368b7f72aed9334"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/html/assets/js/exl.js",
+      "size": 7082,
+      "sha256": "c3c94c6aee67c6db48f60bb7be5b175a64326a2879d5cddc94435afb311f90a0"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/html/assets/js/index-charts.js",
+      "size": 2797,
+      "sha256": "959652d52765e2aef95577d9367ee2974cda66776861260f3cf961133f3eed51"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/html/assets/js/jquery.reveal.js",
+      "size": 4835,
+      "sha256": "9e45d6827083dfbbbfc950c0eac0605cd35075b6cfe8feb83628d1b9a5b52d60"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/html/assets/plugins/popper.min.js",
+      "size": 21194,
+      "sha256": "5ccae8e986c1c858b2f3df79bfdd0d12a1ae4bb6a89c839d3bfc70a43cf58285"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/html/assets/plugins/bootstrap/js/bootstrap.min.js",
+      "size": 63422,
+      "sha256": "2d76265176d14bcc3402057a0812e61fc177981afa4ef63ce99398bcda93cab6"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/html/assets/plugins/chart.js/chart.min.js",
+      "size": 172817,
+      "sha256": "04c370f745396e4281e4b0ef2d954f12c3505da23a0d45d945324768eea232c2"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/imgaes/20240523153937.png",
+      "size": 17802,
+      "sha256": "c19c608c8bac5ef9560eff72cc28f62582908219249c3c3ee6fc13fa42634f37"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/imgaes/20240523161451.png",
+      "size": 7438,
+      "sha256": "a67ecdc844d39004c110e7c919e85a2cdb03a6db23e0af0f383ffe78d70f1c8c"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/imgaes/20240523161459.png",
+      "size": 8091,
+      "sha256": "7f493142f27386777dd18e6b65ffebce6ec14766c761108544944dfcc5be4cf2"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/Lang/En.xaml",
+      "size": 48986,
+      "sha256": "5d43fbac4a78739bfca01e10a029691bf5df10f8267f7108defd6038230786fc"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/Lang/zh-CN.xaml",
+      "size": 47607,
+      "sha256": "64a0292dd4dec66f67b85248d8ba36fa8e6192a1bea55bc1fafd11fcf7a2b4a4"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/BrowserMetrics-spare.pma",
+      "size": 1310720,
+      "sha256": "439292e489a0a35e4a3a0fe304ea1a680337243fa53b135aa9310881e1d7e078"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/CrashpadMetrics-active.pma",
+      "size": 16384,
+      "sha256": "ad9334d3318afea2d3c9c4f42b94a040c8bf657d612825573fc2b2d1189d3090"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Last Version",
+      "size": 13,
+      "sha256": "03e7832f2fafa9e23d1d589d466d8fc4c3e4ee79685751be130f7f1caf02c6a3"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Local State",
+      "size": 17568,
+      "sha256": "4f90bbb2aa76a31debdbd7854f495a20e1398f5a2c7a629f6b4f0ba6a78942a0"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Variations",
+      "size": 85,
+      "sha256": "b26da4f8c7e283aa74386da0229d66af14a37986b8ca828e054fc932f68dd557"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/AutoLaunchProtocolsComponent/1.0.0.9/manifest.fingerprint",
+      "size": 66,
+      "sha256": "df55a9464ee22a0f860c0f3b4a75ec62471d37b4d8cb7a0e460eef98cb83ebe7"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/AutoLaunchProtocolsComponent/1.0.0.9/manifest.json",
+      "size": 134,
+      "sha256": "c36944790c4a1fa2f2acec5f7809a4d6689ecb7fb3b2f19c831c9adb4e17fc54"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/AutoLaunchProtocolsComponent/1.0.0.9/protocols.json",
+      "size": 3278,
+      "sha256": "5f21978e992a53ebd9c138cb5391c481def7769e3525c586a8a94f276b3cd8d6"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/BrowserMetrics/BrowserMetrics-685261D2-3958.pma",
+      "size": 1310720,
+      "sha256": "dfd33e4563a917f69e622f8acc5d1822b60ec11209e582f6a69e2c976feada16"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/CertificateRevocation/6498.2024.12.2/crl-set",
+      "size": 22512,
+      "sha256": "124b7eeba31f0e3d9b842a62f3441204beb13fade81da38b854aecba0e03a5b4"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/CertificateRevocation/6498.2024.12.2/manifest.fingerprint",
+      "size": 66,
+      "sha256": "a84789942c4436967dba5d0ce45a3f6767bcfebf67b951fbef75cca32e9acd96"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/CertificateRevocation/6498.2024.12.2/manifest.json",
+      "size": 114,
+      "sha256": "63dfb8d99ce83b3ca282eb697dc76b17b4a48e4065fc7efafb77724739074a9d"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/component_crx_cache/00AF3F07B5ABB71F6D30337E1EEF62FA280F06EF19485C0CF6B72171F92CCC0A",
+      "size": 1093663,
+      "sha256": "00af3f07b5abb71f6d30337e1eef62fa280f06ef19485c0cf6b72171f92ccc0a"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/component_crx_cache/1AB07E887ACCA305058EEAB9053C96DC531C2C5C067AB4F30AFA2B31F1EDD966",
+      "size": 22812,
+      "sha256": "1ab07e887acca305058eeab9053c96dc531c2c5c067ab4f30afa2b31f1edd966"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/component_crx_cache/455D1A3B5F7FA199F27CB165FA6F54DF7972FBB6C62D422A14C2415791175931",
+      "size": 52493,
+      "sha256": "455d1a3b5f7fa199f27cb165fa6f54df7972fbb6c62d422a14c2415791175931"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/component_crx_cache/4B81B4DF3AD971287E1AE02C449344FCFA5D20431DE17B2BA8854CC9CDCE4089",
+      "size": 850645,
+      "sha256": "4b81b4df3ad971287e1ae02c449344fcfa5d20431de17b2ba8854cc9cdce4089"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/component_crx_cache/5110A67904F33F66A66CC9BE4DD3DA419A596DE32DAAE8F62BAA998D3BE5CA83",
+      "size": 1674025,
+      "sha256": "5110a67904f33f66a66cc9be4dd3da419a596de32daae8f62baa998d3be5ca83"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/component_crx_cache/56E96B6819FAF673A2CC4750059D5D42BB2E89FEFC7C4D81896F64B01B35E789",
+      "size": 228660,
+      "sha256": "56e96b6819faf673a2cc4750059d5d42bb2e89fefc7c4d81896f64b01b35e789"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/component_crx_cache/6B1561D18D6D7D238C1FA4FB8AEF54E1F1E6B574D958BC0A41CA955F90AFD7DC",
+      "size": 7893,
+      "sha256": "6b1561d18d6d7d238c1fa4fb8aef54e1f1e6b574d958bc0a41ca955f90afd7dc"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/component_crx_cache/95FD9D48E4FC245A3F3A99A3A16ECD1355050BA3F4AFC555F19A97C7F9B49677",
+      "size": 1355,
+      "sha256": "95fd9d48e4fc245a3f3a99a3a16ecd1355050ba3f4afc555f19a97c7f9b49677"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/component_crx_cache/A81D1959892AE4180554347DF1B97834ABBA2E1A5E6B9AEBA000ECEA26EABECC",
+      "size": 975576,
+      "sha256": "a81d1959892ae4180554347df1b97834abba2e1a5e6b9aeba000ecea26eabecc"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/component_crx_cache/A99D66CFCE8CA170740CE0403956F4DFAF4683829A89F4B7AD9C95303871E284",
+      "size": 1884,
+      "sha256": "a99d66cfce8ca170740ce0403956f4dfaf4683829a89f4b7ad9c95303871e284"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/component_crx_cache/metadata.json",
+      "size": 1872,
+      "sha256": "bbb0e2b1dacf110040007f504dc8c0ae128c540838c4b8a070b0bca74e223efb"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Crashpad/metadata",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Crashpad/settings.dat",
+      "size": 280,
+      "sha256": "e19c963f4562f5fb207c32d54bdbf1817f3212a1f1582172f7aa670ceed8121d"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Crashpad/throttle_store.dat",
+      "size": 20,
+      "sha256": "41c91a9c93d76295746a149dce7ebb3b9ee2cb551d84365fff108e59a61cc304"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/BookmarkMergedSurfaceOrdering",
+      "size": 6,
+      "sha256": "4489f9e3e454748b3521eb214e0a5694d562cff3d9ff511cb456953c8f534c00"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/BrowsingTopicsSiteData",
+      "size": 28672,
+      "sha256": "bd0b1d6c6c14625782b18b60f732b60ad73c92afac08d6fd70d64363ea351950"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/BrowsingTopicsSiteData-journal",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/BrowsingTopicsState",
+      "size": 414,
+      "sha256": "b86e572959d26ca99231b030b321e8148b45a3f69097a6cde14803fa5fe12073"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/DIPS",
+      "size": 36864,
+      "sha256": "841f72a3e3cb1c578df2c91de8f1124dbcb46872128e871710de69a134476bc0"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/DashTrackerDatabase",
+      "size": 10240,
+      "sha256": "8b8709028b74b91898d1cf6ca21a26dc7636b657d477654e7cf83e87fdec0450"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/DashTrackerDatabase-journal",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/ExtensionActivityComp",
+      "size": 4096,
+      "sha256": "ffa17ae9c2eee72116c00ff2834ebc526879621c72b498b4db6978199483cbd1"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/ExtensionActivityComp-journal",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/ExtensionActivityEdge",
+      "size": 32768,
+      "sha256": "10b2ac916531f10b1adfc2e0a487c5e9f8e5bf549c2b45161e80b86c289f2068"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/ExtensionActivityEdge-journal",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Favicons",
+      "size": 20480,
+      "sha256": "b8002c97a04300037c9f88ad5fb75551da086609042aca91bcd152966fbb4a2e"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Favicons-journal",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/History",
+      "size": 204800,
+      "sha256": "88622545d9418bee8e92801c24fb82ada9a41eb5aa3bb80b8b3aa05722deae5a"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/History-journal",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/LOCK",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/LOG",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/LOG.old",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Login Data",
+      "size": 43008,
+      "sha256": "47a1207c79b65ead26107e6b2615a988da0ffc22d0c6e93b8ac2f6fab9b03e79"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Login Data-journal",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Network Action Predictor",
+      "size": 53248,
+      "sha256": "9542bb14ece0ca1d26fa2e49341cf9dfdf3bd64bce50bcc9115812e9b12b8454"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Network Action Predictor-journal",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Preferences",
+      "size": 8378,
+      "sha256": "fd670ec19f90fe3f34b0bc8bb7cee1239cf4aeba199698858be9acb4a2b77ab2"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/PreferredApps",
+      "size": 33,
+      "sha256": "42b55d126d1e640b1ed7a6bdcb9a46c81df461fa7e131f4f8c7108c2c61c14de"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/README",
+      "size": 182,
+      "sha256": "a0c9abae18599f0a65fc654ad36251f6330794bea66b718a09d8b297f3e38e87"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Secure Preferences",
+      "size": 6527,
+      "sha256": "9a335a0a8f9a749fbfd0e037bb9c827e3e9a143dbbf699233bd603f6d2d66d79"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/ServerCertificate",
+      "size": 20480,
+      "sha256": "21e64c05726cbeabe0c3f83de4522278c95edda1230569dc49dd26efde4378f6"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/ServerCertificate-journal",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/SharedStorage",
+      "size": 4096,
+      "sha256": "42f67cde08aaa4db17432058fdd3521a7199a1dfd4afe740ca486d6b49226302"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Top Sites",
+      "size": 20480,
+      "sha256": "35bea7951ce862312fcdba2313cf0ecc42e73bcb1676592109c45ee2dff047ce"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Top Sites-journal",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Web Data",
+      "size": 215040,
+      "sha256": "91d253fab8dc708dee23f07a53fb67e2eff21a0ebba5eccf6a4c6634c8426fb2"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Web Data-journal",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/favorites_diagnostic.log",
+      "size": 372,
+      "sha256": "f58df04da8aafccdb49b8a189c1561d2fdffe3eb6cb17e7f55dd7eb22d5cfdad"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/heavy_ad_intervention_opt_out.db",
+      "size": 16384,
+      "sha256": "7f3cc77bf6a40702aaf288d47a672d4f4bf13cab7cf0477e73fb886d0d95148a"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/heavy_ad_intervention_opt_out.db-journal",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/AutofillStrikeDatabase/LOCK",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/AutofillStrikeDatabase/LOG",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/AutofillStrikeDatabase/LOG.old",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/BudgetDatabase/LOCK",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/BudgetDatabase/LOG",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/BudgetDatabase/LOG.old",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Cache/Cache_Data/data_0",
+      "size": 45056,
+      "sha256": "b8bd16123535bb2124205a80e63a1ebe9acd0f4637824a2ac27b3000eda35a6e"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Cache/Cache_Data/data_1",
+      "size": 270336,
+      "sha256": "310789a2a4d4c95b49faa6a88d2feb4af7f958c294200a66db585fd6c7e088e3"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Cache/Cache_Data/data_2",
+      "size": 1056768,
+      "sha256": "56fbade2ac4ef246d5a889b73eb2d57a56edcdaffc160c7c979e68101f62fb78"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Cache/Cache_Data/data_3",
+      "size": 4202496,
+      "sha256": "52493d8d90cd313b6944ba6839e4748df55aa7e727c8ef8b33c6b36f9f934d54"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Cache/Cache_Data/f_000001",
+      "size": 32107,
+      "sha256": "490dd1e799143d297f3ad2f47cd18daac6978976f7a05288697412db410d27e2"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Cache/Cache_Data/f_000002",
+      "size": 437458,
+      "sha256": "4e29bbdd5a79a2391fbc276df3077aaed77f8493ff9fc510cfabf96eea802923"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Cache/Cache_Data/index",
+      "size": 524656,
+      "sha256": "6a43a5cf9d959c8262dd7ac5946a18cc00b9b156077fd37bfc75bca2df21b0ca"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/ClientCertificates/LOCK",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/ClientCertificates/LOG",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/ClientCertificates/LOG.old",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Code Cache/js/index",
+      "size": 24,
+      "sha256": "fbcfe23a2ecb82b7100c50811691dde0a33aa3da8d176be9882a9db485dc0f2d"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Code Cache/js/index-dir/the-real-index",
+      "size": 48,
+      "sha256": "0853eedba534669585a55e2095fc476f8116f9d7a2b49a5143be6fe1ef611e5f"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Code Cache/wasm/index",
+      "size": 24,
+      "sha256": "fbcfe23a2ecb82b7100c50811691dde0a33aa3da8d176be9882a9db485dc0f2d"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Code Cache/wasm/index-dir/the-real-index",
+      "size": 48,
+      "sha256": "0853eedba534669585a55e2095fc476f8116f9d7a2b49a5143be6fe1ef611e5f"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/commerce_subscription_db/LOCK",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/commerce_subscription_db/LOG",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/commerce_subscription_db/LOG.old",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/DawnGraphiteCache/data_0",
+      "size": 8192,
+      "sha256": "d6a5fe39cd672781b256e0e3102f7022635f1d4bb7cfcc90a80fffe4d0f3877e"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/DawnGraphiteCache/data_1",
+      "size": 270336,
+      "sha256": "a68f4fe23be907eb2859467a5cb7d2d97dc680931ef44b5c53c9d51bce8b3f40"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/DawnGraphiteCache/data_2",
+      "size": 8192,
+      "sha256": "ec1702806f4cc7c42a82fc2b38e89835fde7c64bb32060e0823c9077ca92efb7"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/DawnGraphiteCache/data_3",
+      "size": 8192,
+      "sha256": "e09f42c398d688dce168570291f1f92d079987deda3099a34adb9e8c0522b30c"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/DawnGraphiteCache/index",
+      "size": 262512,
+      "sha256": "a1d3ec637cb34c0cff079700827932f2150f9bad61b166df4699eaa8f9f34af0"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/DawnWebGPUCache/data_0",
+      "size": 8192,
+      "sha256": "d6a5fe39cd672781b256e0e3102f7022635f1d4bb7cfcc90a80fffe4d0f3877e"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/DawnWebGPUCache/data_1",
+      "size": 270336,
+      "sha256": "2a9b6d487411b083c68b2ac8009090e7af615225006b449c8311459aa8f496af"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/DawnWebGPUCache/data_2",
+      "size": 8192,
+      "sha256": "ec1702806f4cc7c42a82fc2b38e89835fde7c64bb32060e0823c9077ca92efb7"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/DawnWebGPUCache/data_3",
+      "size": 8192,
+      "sha256": "e09f42c398d688dce168570291f1f92d079987deda3099a34adb9e8c0522b30c"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/DawnWebGPUCache/index",
+      "size": 262512,
+      "sha256": "0629e33082a52624ada014c2e34a521e9cf65df11c59ca896089dc74e2a5682a"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/discounts_db/LOCK",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/discounts_db/LOG",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/discounts_db/LOG.old",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Download Service/EntryDB/LOCK",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Download Service/EntryDB/LOG",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Download Service/EntryDB/LOG.old",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/EdgeEDrop/EdgeEDropSQLite.db",
+      "size": 32768,
+      "sha256": "be38f595d1d4fd29ed0d2dbb0c45ddc6574f2c57148bd916943426363cdff934"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/EdgeEDrop/EdgeEDropSQLite.db-journal",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Extension Rules/000003.log",
+      "size": 38,
+      "sha256": "1c43a1bda1e458863c46dfae7fb43bfb3e27802169f37320399b1dd799a819ac"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Extension Rules/CURRENT",
+      "size": 16,
+      "sha256": "0f1bad70c7bd1e0a69562853ec529355462fcd0423263a3d39d6d0d70b780443"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Extension Rules/LOCK",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Extension Rules/LOG",
+      "size": 339,
+      "sha256": "e97052b0f8cfcfdddcf2658638d8712a4c4e4c11e005b2d63c9e49cc02abdff7"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Extension Rules/MANIFEST-000001",
+      "size": 41,
+      "sha256": "f9d31b278e215eb0d0e9cd709edfa037e828f36214ab7906f612160fead4b2b4"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Extension Scripts/000003.log",
+      "size": 38,
+      "sha256": "1c43a1bda1e458863c46dfae7fb43bfb3e27802169f37320399b1dd799a819ac"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Extension Scripts/CURRENT",
+      "size": 16,
+      "sha256": "0f1bad70c7bd1e0a69562853ec529355462fcd0423263a3d39d6d0d70b780443"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Extension Scripts/LOCK",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Extension Scripts/LOG",
+      "size": 343,
+      "sha256": "6b7f945e6d0a966f729ab6b85d46f172d23368e969b2a62395684a5e0cb31c20"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Extension Scripts/MANIFEST-000001",
+      "size": 41,
+      "sha256": "f9d31b278e215eb0d0e9cd709edfa037e828f36214ab7906f612160fead4b2b4"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Extension State/000003.log",
+      "size": 114,
+      "sha256": "e2610960c3757d1757f206c7b84378efa22d86dcf161a98096a5f0e56e1a367e"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Extension State/CURRENT",
+      "size": 16,
+      "sha256": "0f1bad70c7bd1e0a69562853ec529355462fcd0423263a3d39d6d0d70b780443"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Extension State/LOCK",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Extension State/LOG",
+      "size": 380,
+      "sha256": "02cece4febe28d73e11a2591a70f3a2a46046d650102fae8786cf945f24f039d"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Extension State/LOG.old",
+      "size": 380,
+      "sha256": "f35270b5bea5ddf2d11f44498a277c80dbda18e0d9be32e67f50cb5a92fb8ec7"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Extension State/MANIFEST-000001",
+      "size": 41,
+      "sha256": "f9d31b278e215eb0d0e9cd709edfa037e828f36214ab7906f612160fead4b2b4"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Feature Engagement Tracker/AvailabilityDB/LOCK",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Feature Engagement Tracker/AvailabilityDB/LOG",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Feature Engagement Tracker/AvailabilityDB/LOG.old",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Feature Engagement Tracker/EventDB/LOCK",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Feature Engagement Tracker/EventDB/LOG",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Feature Engagement Tracker/EventDB/LOG.old",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/GPUCache/data_0",
+      "size": 8192,
+      "sha256": "d6a5fe39cd672781b256e0e3102f7022635f1d4bb7cfcc90a80fffe4d0f3877e"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/GPUCache/data_1",
+      "size": 270336,
+      "sha256": "0c864ea2355c65b7bf74cf1bfeb0c5c265ee7d31ae397c5436ce909643d4e0d0"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/GPUCache/data_2",
+      "size": 8192,
+      "sha256": "ec1702806f4cc7c42a82fc2b38e89835fde7c64bb32060e0823c9077ca92efb7"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/GPUCache/data_3",
+      "size": 8192,
+      "sha256": "e09f42c398d688dce168570291f1f92d079987deda3099a34adb9e8c0522b30c"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/GPUCache/index",
+      "size": 262512,
+      "sha256": "e4197629b1e5216c00510c0be1db0f5cf8d6f3f69ecff3fe011acab72d66edc5"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Local Storage/leveldb/000003.log",
+      "size": 114,
+      "sha256": "e2610960c3757d1757f206c7b84378efa22d86dcf161a98096a5f0e56e1a367e"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Local Storage/leveldb/CURRENT",
+      "size": 16,
+      "sha256": "0f1bad70c7bd1e0a69562853ec529355462fcd0423263a3d39d6d0d70b780443"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Local Storage/leveldb/LOCK",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Local Storage/leveldb/LOG",
+      "size": 389,
+      "sha256": "66e1a5fa14549cbff881435d9b8947f9e5971452ddc79c23e8d58ca09d8cf4f9"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Local Storage/leveldb/LOG.old",
+      "size": 392,
+      "sha256": "8b7c452f492065fea66dd01c25456933d2a74e7a60a516401d20d6dd83ea9138"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Local Storage/leveldb/MANIFEST-000001",
+      "size": 41,
+      "sha256": "f9d31b278e215eb0d0e9cd709edfa037e828f36214ab7906f612160fead4b2b4"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Network/Cookies",
+      "size": 20480,
+      "sha256": "5cc2a9ac5c9711e59be451d892df04c840d3ff68f32ca37f5fe81e7666a5a477"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Network/Cookies-journal",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Network/Network Persistent State",
+      "size": 448,
+      "sha256": "01ba24987898b95a75967b601525cf27d961e223e083b56890b8693617bcb38a"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Network/NetworkDataMigrated",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Network/Reporting and NEL",
+      "size": 36864,
+      "sha256": "489b0fa17d9058e5b65744df96bcbe6003afe566db2b0be3a1ae1d327b4ebd8a"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Network/Reporting and NEL-journal",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Network/SCT Auditing Pending Reports",
+      "size": 2,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Network/Sdch Dictionaries",
+      "size": 40,
+      "sha256": "6028bd681dbf11a0a58dde8a0cd884115c04caa59d080ba51bde1b086ce0079d"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Network/Trust Tokens",
+      "size": 36864,
+      "sha256": "2497dfe8391697f82088b1e9e38cb4717adf02228503527321ebf071f0affa66"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Network/Trust Tokens-journal",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/optimization_guide_hint_cache_store/LOCK",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/optimization_guide_hint_cache_store/LOG",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/optimization_guide_hint_cache_store/LOG.old",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/parcel_tracking_db/LOCK",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/parcel_tracking_db/LOG",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/parcel_tracking_db/LOG.old",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/PersistentOriginTrials/LOCK",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/PersistentOriginTrials/LOG",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/PersistentOriginTrials/LOG.old",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Safe Browsing Network/NetworkDataMigrated",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Safe Browsing Network/Safe Browsing Cookies",
+      "size": 20480,
+      "sha256": "5cc2a9ac5c9711e59be451d892df04c840d3ff68f32ca37f5fe81e7666a5a477"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Safe Browsing Network/Safe Browsing Cookies-journal",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Session Storage/000003.log",
+      "size": 1125,
+      "sha256": "000144577fb699d3aaa9c0102e0e6a8cf31faf3275c219728d84d89665a446c2"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Session Storage/CURRENT",
+      "size": 16,
+      "sha256": "0f1bad70c7bd1e0a69562853ec529355462fcd0423263a3d39d6d0d70b780443"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Session Storage/LOCK",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Session Storage/LOG",
+      "size": 377,
+      "sha256": "5cd1d38c89fb90381fd9f293439265df592c54d95590f637ecfe4369940b9d7d"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Session Storage/LOG.old",
+      "size": 380,
+      "sha256": "3c70fa608090f0b18b9c9d756b86d04d96326ff7c9e78be5b1999e3c52978357"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Session Storage/MANIFEST-000001",
+      "size": 41,
+      "sha256": "f9d31b278e215eb0d0e9cd709edfa037e828f36214ab7906f612160fead4b2b4"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Shared Dictionary/db",
+      "size": 45056,
+      "sha256": "2e8e32fe633e2edf36070c754e1f6ccec8c798d60bbc87cd23258a20dc50003c"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Shared Dictionary/db-journal",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Shared Dictionary/cache/index",
+      "size": 24,
+      "sha256": "fbcfe23a2ecb82b7100c50811691dde0a33aa3da8d176be9882a9db485dc0f2d"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Shared Dictionary/cache/index-dir/the-real-index",
+      "size": 48,
+      "sha256": "7b31c3e2b016b06c1f2859a69aea5a2bd46eb40e1d98153ae1434502755befaa"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/shared_proto_db/000003.log",
+      "size": 3824,
+      "sha256": "988ee16975dd345d3f0fa2a05ab6e37161628adc6397dc2edd24ce6a283ff702"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/shared_proto_db/CURRENT",
+      "size": 16,
+      "sha256": "0f1bad70c7bd1e0a69562853ec529355462fcd0423263a3d39d6d0d70b780443"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/shared_proto_db/LOCK",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/shared_proto_db/LOG",
+      "size": 380,
+      "sha256": "7855b240ce891ce196fc1ae6f2fd19c6c5e489838317c6f89c483fe9644d587c"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/shared_proto_db/LOG.old",
+      "size": 380,
+      "sha256": "d7001d622cb73cb7528a7124f9faf2d69d68a6ca27cfb8fcf1a907091cdbef0f"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/shared_proto_db/MANIFEST-000001",
+      "size": 41,
+      "sha256": "f9d31b278e215eb0d0e9cd709edfa037e828f36214ab7906f612160fead4b2b4"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/shared_proto_db/metadata/000003.log",
+      "size": 928,
+      "sha256": "f7c87df5a8d7061b499b1c080c4aa6597fd0382a59005bf6e005f4d5889519dd"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/shared_proto_db/metadata/CURRENT",
+      "size": 16,
+      "sha256": "0f1bad70c7bd1e0a69562853ec529355462fcd0423263a3d39d6d0d70b780443"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/shared_proto_db/metadata/LOCK",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/shared_proto_db/metadata/LOG",
+      "size": 398,
+      "sha256": "d2d8eee53eef0a38bbb49c2d3c1fe567fe1b40df8fdbec6e0944dcd4bf28f326"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/shared_proto_db/metadata/LOG.old",
+      "size": 398,
+      "sha256": "201c4e9da5c1403af41c7294320be318b71862b2c55d4308f0590609b11765bc"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/shared_proto_db/metadata/MANIFEST-000001",
+      "size": 41,
+      "sha256": "f9d31b278e215eb0d0e9cd709edfa037e828f36214ab7906f612160fead4b2b4"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Site Characteristics Database/000003.log",
+      "size": 40,
+      "sha256": "f096bc366a931fba656bdcd77b24af15a5f29fc53281a727c79f82c608ecfab8"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Site Characteristics Database/CURRENT",
+      "size": 16,
+      "sha256": "0f1bad70c7bd1e0a69562853ec529355462fcd0423263a3d39d6d0d70b780443"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Site Characteristics Database/LOCK",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Site Characteristics Database/LOG",
+      "size": 408,
+      "sha256": "47ec31549e315b0be825173ae6bba56a96313b9b4a35011a01c60ce62f36e176"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Site Characteristics Database/LOG.old",
+      "size": 408,
+      "sha256": "bcc544183f97d9824378219bfbef0e50a347ae55b3fe01c2c64ce08daa7411a8"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Site Characteristics Database/MANIFEST-000001",
+      "size": 41,
+      "sha256": "f9d31b278e215eb0d0e9cd709edfa037e828f36214ab7906f612160fead4b2b4"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Sync Data/LevelDB/000003.log",
+      "size": 46,
+      "sha256": "a2ca52e34b6138624ac2dd20349cde28482143b837db40a7f0fbda023077c26a"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Sync Data/LevelDB/CURRENT",
+      "size": 16,
+      "sha256": "0f1bad70c7bd1e0a69562853ec529355462fcd0423263a3d39d6d0d70b780443"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Sync Data/LevelDB/LOCK",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Sync Data/LevelDB/LOG",
+      "size": 384,
+      "sha256": "2f1da67f42ef56442b0886f97322d69cb78bf5826fc20fe45e2f8e4d336b5910"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Sync Data/LevelDB/LOG.old",
+      "size": 384,
+      "sha256": "6b5d879e66e4587b8bc1cd6c9df99637fdada180f1fb05fdce2b0dd30d00fae8"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Default/Sync Data/LevelDB/MANIFEST-000001",
+      "size": 41,
+      "sha256": "f9d31b278e215eb0d0e9cd709edfa037e828f36214ab7906f612160fead4b2b4"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Domain Actions/3.0.0.14/domain_actions.dll",
+      "size": 65592,
+      "sha256": "3206d84d8ba6e423eb48b6c75ae499600e17ee93f62f2bb51195fb6a007f141d"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Domain Actions/3.0.0.14/manifest.fingerprint",
+      "size": 66,
+      "sha256": "096bad2e8963369bec551f6dfab22aa68918a9b5a300758bbb67de456844ec7e"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Domain Actions/3.0.0.14/manifest.json",
+      "size": 165,
+      "sha256": "760c80b1f93aaaa32ac6179b77185ed1b421b79049a021ddd1e401274c8ec7bb"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/extensions_crx_cache/metadata.json",
+      "size": 13,
+      "sha256": "2771d13c637c267132afff9db67537bef95708534b79ae8d954254c4e64e4e0f"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/GraphiteDawnCache/data_0",
+      "size": 8192,
+      "sha256": "d6a5fe39cd672781b256e0e3102f7022635f1d4bb7cfcc90a80fffe4d0f3877e"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/GraphiteDawnCache/data_1",
+      "size": 270336,
+      "sha256": "4eb7cb60095e0a51d344a7c183a61c38319eedc42c9e125505903f052393c516"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/GraphiteDawnCache/data_2",
+      "size": 8192,
+      "sha256": "ec1702806f4cc7c42a82fc2b38e89835fde7c64bb32060e0823c9077ca92efb7"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/GraphiteDawnCache/data_3",
+      "size": 8192,
+      "sha256": "e09f42c398d688dce168570291f1f92d079987deda3099a34adb9e8c0522b30c"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/GraphiteDawnCache/index",
+      "size": 262512,
+      "sha256": "4d029f7a447cd0de96a420fcafb68901573c0cd4239eec5ec71c8b6b7055fd2e"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/GrShaderCache/data_0",
+      "size": 45056,
+      "sha256": "9d874515cf01c78d5d23a4c0facfde9ce8c5e721fb674bf514daee54bc44c338"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/GrShaderCache/data_1",
+      "size": 270336,
+      "sha256": "d1d523b0a5317ddfa3ec68f78f2a32a90543a333106f9cb3c5f03f72ee6ed27f"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/GrShaderCache/data_2",
+      "size": 8192,
+      "sha256": "ec1702806f4cc7c42a82fc2b38e89835fde7c64bb32060e0823c9077ca92efb7"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/GrShaderCache/data_3",
+      "size": 4202496,
+      "sha256": "e39d249224b17382b085d9c4a90a1dcf22f52a0077e524193c92c7df28d1ccf6"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/GrShaderCache/f_000001",
+      "size": 16700,
+      "sha256": "83e02d414b520b49edc48ada2f05a0d43250059ee8ba4eafcc824fe1412c2f26"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/GrShaderCache/index",
+      "size": 262512,
+      "sha256": "d33c261c08624a40565bc8a0c6f5a57cb780c2150856b5d3d16d8fc0af107f25"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/OriginTrials/0.0.1.7/manifest.fingerprint",
+      "size": 66,
+      "sha256": "946f3a9e019b0d80f5671de782f295132341f663f74aebad7628f22e528d6d52"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/OriginTrials/0.0.1.7/manifest.json",
+      "size": 43,
+      "sha256": "81bd82ac27612a58be30a72dd8956b13f883e32ffb54a58076bd6a42b8afaeea"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/PKIMetadata/24.0.0.0/crs.pb",
+      "size": 298857,
+      "sha256": "8ba4acc8582041e5caa5dc4c73ade421b52a8b018e70f12b7a1437f74c6a955e"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/PKIMetadata/24.0.0.0/ct_config.pb",
+      "size": 12273,
+      "sha256": "6a350094ab9a19b758f6660a58afdecc44e83b3ce8c3521fe3b831d5945a3911"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/PKIMetadata/24.0.0.0/kp_pinslist.pb",
+      "size": 12020,
+      "sha256": "2efcd280779456d767025a4f2915012cb9b11af2b8e199d3f32152232bf09460"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/PKIMetadata/24.0.0.0/manifest.fingerprint",
+      "size": 66,
+      "sha256": "6ec69655420295110323ab5dd26914e3a7f0e01c8df3b5b8bf24901fa9e0e63b"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/PKIMetadata/24.0.0.0/manifest.json",
+      "size": 102,
+      "sha256": "b2c8ee75956c3bb7ea6865137c441b916badfb99c922c17785875e784c96e29a"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/ShaderCache/data_0",
+      "size": 8192,
+      "sha256": "d6a5fe39cd672781b256e0e3102f7022635f1d4bb7cfcc90a80fffe4d0f3877e"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/ShaderCache/data_1",
+      "size": 270336,
+      "sha256": "eb7cbb5b9ee1e76acf98dad23beb9e058bccd828b58c9e2faab2270efbe0bb8e"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/ShaderCache/data_2",
+      "size": 8192,
+      "sha256": "ec1702806f4cc7c42a82fc2b38e89835fde7c64bb32060e0823c9077ca92efb7"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/ShaderCache/data_3",
+      "size": 8192,
+      "sha256": "e09f42c398d688dce168570291f1f92d079987deda3099a34adb9e8c0522b30c"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/ShaderCache/index",
+      "size": 262512,
+      "sha256": "3eaffa286354f05085f5d51739df275f091881e6cb7871d573ddc216ca453368"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/SmartScreen/RemoteData/customSettings",
+      "size": 47,
+      "sha256": "d8d672f953e823063955bd9981532fc3453800c2e74c0cc3653d091088abd3b3"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/SmartScreen/RemoteData/customSettings_F95BA787499AB4FA9EFFF472CE383A14",
+      "size": 35,
+      "sha256": "2bae8302f9bd2d87ae26acf692663df1639b8e2068157451da4773bd8bd30a2b"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/SmartScreen/RemoteData/edgeSettings",
+      "size": 18,
+      "sha256": "42ccb5159b168dbe5d5ddf026e5f7ed3dbf50873cfe47c7c3ef0677bb07b90d4"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/SmartScreen/RemoteData/edgeSettings_2.0-0",
+      "size": 3532,
+      "sha256": "66a11664c82fc1982ac068012d0eb2900ca83768aff96d5486b07fa38e69d8a9"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Speech Recognition/1.15.0.1/Microsoft.CognitiveServices.Speech.core.dll",
+      "size": 2692424,
+      "sha256": "62a13d8459e0992c311dc3551bf3c2d1ce167ea7fa40f0ec62193f3bd760b36e"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Speech Recognition/1.15.0.1/manifest.fingerprint",
+      "size": 66,
+      "sha256": "22b55f5d9b1bafb80e00c1304cf5e0d6057a304a2e8757b4f021b416f4397297"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Speech Recognition/1.15.0.1/manifest.json",
+      "size": 76,
+      "sha256": "0d664bc422a696452111b9a48e7da9043c03786c8d5401282cff9d77bcc34b11"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Subresource Filter/Indexed Rules/36/10.34.0.80/LICENSE",
+      "size": 24621,
+      "sha256": "ed0f972d56566a96fb2f128a7b58091dfbf32dc365b975bc9318c9701677f44d"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Subresource Filter/Indexed Rules/36/10.34.0.80/Ruleset Data",
+      "size": 4492360,
+      "sha256": "2955fc50e2e968e8cedef006fdf27b9e52184278c5503659d2a5029394aaed9e"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Subresource Filter/Unindexed Rules/10.34.0.80/Filtering Rules",
+      "size": 1850151,
+      "sha256": "192ca12bc520edee8b5a8844cc870cc4a669fb9c1449dad33a69fc5ce112c750"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Subresource Filter/Unindexed Rules/10.34.0.80/Filtering Rules-AA",
+      "size": 414218,
+      "sha256": "d36eb7f3da47d7cd92f7bbec4314cdd30b58197cd898b13f11729febbd3f75f2"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Subresource Filter/Unindexed Rules/10.34.0.80/Filtering Rules-CA",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Subresource Filter/Unindexed Rules/10.34.0.80/LICENSE",
+      "size": 24621,
+      "sha256": "ed0f972d56566a96fb2f128a7b58091dfbf32dc365b975bc9318c9701677f44d"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Subresource Filter/Unindexed Rules/10.34.0.80/Part-DE",
+      "size": 227487,
+      "sha256": "cbab2692330b73e6dab4705e0ba5d9bc7829912b7c09eaf5c5f8e6c5e219e2dd"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Subresource Filter/Unindexed Rules/10.34.0.80/Part-ES",
+      "size": 158161,
+      "sha256": "f47f8980472678dd2caf6c728411ea4a2611c2eed99938ccf4a158296c0a0830"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Subresource Filter/Unindexed Rules/10.34.0.80/Part-FR",
+      "size": 766923,
+      "sha256": "c875167cbb5484ecbb6974c6b2b70fa4b28e57c58588964a737605016077ab2e"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Subresource Filter/Unindexed Rules/10.34.0.80/Part-IT",
+      "size": 510292,
+      "sha256": "39a9601eb6c69437ab63ff48bb96d63ae38846d99ef954491bcc803e7cfe6e6a"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Subresource Filter/Unindexed Rules/10.34.0.80/Part-NL",
+      "size": 51875,
+      "sha256": "9300c145e737397b404d877ba0e909ed687e8b7add82a6f3b9f3cb9931e0e25b"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Subresource Filter/Unindexed Rules/10.34.0.80/Part-RU",
+      "size": 1211531,
+      "sha256": "daa8547f1dbc8c994eed3725f3076aaf6c4e298b963fb712e53eb0fa2dc1e789"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Subresource Filter/Unindexed Rules/10.34.0.80/Part-ZH",
+      "size": 860023,
+      "sha256": "04ee35c1660783cc17d89b80d5bb76c9c92a4e052d52b2e4cab00897d9c5655b"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Subresource Filter/Unindexed Rules/10.34.0.80/adblock_snippet.js",
+      "size": 2323,
+      "sha256": "9aa899e0bf660ee8f894b97c28f05db06cc486915953b7f3b2ff9902fa8da690"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Subresource Filter/Unindexed Rules/10.34.0.80/manifest.fingerprint",
+      "size": 66,
+      "sha256": "aaeb2ad14748b6fbb87a912e0d4e33ea87b8fa2fcab2af69270c81063aaa2c8d"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/Subresource Filter/Unindexed Rules/10.34.0.80/manifest.json",
+      "size": 116,
+      "sha256": "aaca603fa9d65fefeaa198a93d03f2511de66b6398cc34dde6233eab492eebfd"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/TrustTokenKeyCommitments/2025.5.15.1/LICENSE",
+      "size": 1558,
+      "sha256": "3dbd2c90050b652d63656481c3e5871c52261575292db77d4ea63419f187a55b"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/TrustTokenKeyCommitments/2025.5.15.1/keys.json",
+      "size": 7887,
+      "sha256": "f967e18d5b1839ba801212f032e7e6dd92f7ba6958bc3ae9b122d9fadf2b1bf4"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/TrustTokenKeyCommitments/2025.5.15.1/manifest.fingerprint",
+      "size": 66,
+      "sha256": "1dd3e484ca31941f6ef68e2e6e2761bd9eb8da37052497726d5b9fe9f0b8f3b4"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/TrustTokenKeyCommitments/2025.5.15.1/manifest.json",
+      "size": 79,
+      "sha256": "6722a860c855cf94a54fd1ffdd3801c4c949f5b67d8601ad300264931057f2bb"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/TrustTokenKeyCommitments/2025.5.15.1/_metadata/verified_contents.json",
+      "size": 1864,
+      "sha256": "dffc70ab907b5344d39db12c1a71815b08b066376424459f1c299c2f49b31ef8"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/ZxcvbnData/3.1.0.0/english_wikipedia.txt",
+      "size": 277015,
+      "sha256": "b29af10c62218f948eb299e0c68b176ab1c5ecdfe9813bd957bf2c434e90813e"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/ZxcvbnData/3.1.0.0/female_names.txt",
+      "size": 26708,
+      "sha256": "08346ad80d8d829fda1064485420da1e0771ba1e0dcd954252d43b61c5116aaf"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/ZxcvbnData/3.1.0.0/male_names.txt",
+      "size": 6672,
+      "sha256": "34519e42ef61ea5eae6b9f74a735926c86ed8d1c19d21726da1af6039a66c688"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/ZxcvbnData/3.1.0.0/manifest.fingerprint",
+      "size": 66,
+      "sha256": "5d0a3dfcedb4d70e2c78eb294f80646aefdf460606e982be3687c41930590767"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/ZxcvbnData/3.1.0.0/manifest.json",
+      "size": 69,
+      "sha256": "dc6a19395ad3a24ee3805f6e90c6b16fdc141a51ac7fbb99fb784e423f8962f3"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/ZxcvbnData/3.1.0.0/passwords.txt",
+      "size": 241951,
+      "sha256": "f65b16793f0d335c87bf5bb4b19bcfc457462396169080b8c11a7c6f1d8b3731"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/ZxcvbnData/3.1.0.0/ranked_dicts",
+      "size": 886570,
+      "sha256": "5820d0bf9cfc363ff929492b1eb6df430039f4ac0e212a5b5411f7c2614f79d0"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/ZxcvbnData/3.1.0.0/surnames.txt",
+      "size": 76077,
+      "sha256": "3362648c77af4ee84a6383800fb5a5cb0493703d4bfc1557e05f315fc41b2699"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/ZxcvbnData/3.1.0.0/test.txt",
+      "size": 15,
+      "sha256": "92b772380a3f8e27a93e57e6deeca6c01da07f5aadce78bb2fbb20de10a66925"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe.WebView2/EBWebView/ZxcvbnData/3.1.0.0/us_tv_and_film.txt",
+      "size": 164290,
+      "sha256": "f146e15ecba3f37adcd7aa4fb23797555d1ab55489fbb0b989c60073f638aaa0"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/runtimes/win-arm64/native/WebView2Loader.dll",
+      "size": 139864,
+      "sha256": "6e586831a6dc04c883b03bb8121f1ba4ad18d4981ccd81e4e580b8475226cd2f"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/runtimes/win-x64/native/WebView2Loader.dll",
+      "size": 165976,
+      "sha256": "401ee3057ad852ce9026a5cabfc5a407ebb291b98b412295417aec8053fe0de0"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/runtimes/win-x86/native/WebView2Loader.dll",
+      "size": 116288,
+      "sha256": "010fc6f17ce7b1df6bb4d4e6a593f53518864be944706d0fa035d25a28038a83"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/versionUpdating/ControlzEx.dll",
+      "size": 250944,
+      "sha256": "8cfcc7c590c9deeb2b4c18bc3d3236db25d2a11b8c33e26a6004d023d7d0bf2f"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/versionUpdating/ControlzEx.pdb",
+      "size": 845312,
+      "sha256": "12fd9b5e19747a656be79922e821527d0368ac3016f5a2d9bc727d86d5f538cb"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/versionUpdating/ControlzEx.xml",
+      "size": 174260,
+      "sha256": "eb0a3e7366d118b92ff731fb4c25bffa7de0588844722720310ba15698bad688"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/versionUpdating/LiveCharts.Wpf.dll",
+      "size": 217600,
+      "sha256": "1bdbb1b5c1a50653e5c26161e9b7c03edc518721a6e10ea180a84049d967106b"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/versionUpdating/LiveCharts.Wpf.pdb",
+      "size": 499200,
+      "sha256": "718ff471c7ccfa31e9cf905dfa01c9925d692835ea646e95754fd801a5ee4ca8"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/versionUpdating/LiveCharts.Wpf.xml",
+      "size": 175954,
+      "sha256": "c18a11b019a56ec8e5916042a9f23a8655ea199bf2a4319573b18b7e035e3914"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/versionUpdating/LiveCharts.dll",
+      "size": 152064,
+      "sha256": "9fcf89837b60f69c1c501e4cfa4d2860887afd0b8f325803367e795a4e3bc9ca"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/versionUpdating/LiveCharts.pdb",
+      "size": 364032,
+      "sha256": "cb8b4cdeb2ba07ecfc6686840a94c2ac626a2f9d577aff2d16e4d69ea086200c"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/versionUpdating/LiveCharts.xml",
+      "size": 220470,
+      "sha256": "ce3283e4afd74377d313f9c1d247afe8164e626c95f710f928734da6cfab9311"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/versionUpdating/MahApps.Metro.dll",
+      "size": 3566880,
+      "sha256": "4ec98cb9c86b38b721de7aa5e9f392407a6a57df950742bc089ee2f75c37177c"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/versionUpdating/MahApps.Metro.pdb",
+      "size": 1883648,
+      "sha256": "23ad3d5e803328b51100fd520584aef40b98e0f248dda16c99bd4e66a7f11ba4"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/versionUpdating/MahApps.Metro.xml",
+      "size": 600720,
+      "sha256": "b5b13d3a2432f21725881a43455ec8d8c88553311841fc74051e5dab5744695d"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/versionUpdating/MaterialDesignColors.dll",
+      "size": 302080,
+      "sha256": "d4360d786d921e21f9efee7f4c92d953784f5ccb195c49eb718de36c3699cc6a"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/versionUpdating/MaterialDesignColors.pdb",
+      "size": 17992,
+      "sha256": "f4f056ce850f679cbbd22fe5ce71294762894ae6922ef7556ded3af8d6f89392"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/versionUpdating/MaterialDesignThemes.Wpf.dll",
+      "size": 9102336,
+      "sha256": "bfe82bd0be7e708c1fb24b9c178ed0c5f5931954b41d0c493d14cd40225a3451"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/versionUpdating/MaterialDesignThemes.Wpf.pdb",
+      "size": 105784,
+      "sha256": "503a2077d68227dbb5781602530f1e498b401c95682c354e3c91d0ec34821511"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/versionUpdating/MaterialDesignThemes.Wpf.xml",
+      "size": 104338,
+      "sha256": "4d27fe20b8156e5d6e900b926efc10e8e6e1be77cf5468a4b529727381e1ca41"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/versionUpdating/Microsoft.Xaml.Behaviors.dll",
+      "size": 144768,
+      "sha256": "ff75938fedee596706171916db763ac100bc7164a7346dd739ad61660e068b5a"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/versionUpdating/Microsoft.Xaml.Behaviors.pdb",
+      "size": 52032,
+      "sha256": "fb216ddb86bd1e6053bf8bad8e67557e2922d56d83b913197142c872907bc79a"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/versionUpdating/Microsoft.Xaml.Behaviors.xml",
+      "size": 139226,
+      "sha256": "0672969b6adf9fc6d56873ff17fc8f45e9febc2fd6e997b19d5cb7ef2546db70"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/versionUpdating/ReaderUpgrade.exe",
+      "size": 29184,
+      "sha256": "7f53b0d161dfad34fab71592a2cbd00d600216a9cf0a911fb3a2c13e38327828"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/versionUpdating/ReaderUpgrade.exe.config",
+      "size": 161,
+      "sha256": "d524761c17cf0dea94109f3fcdacd2ecb67550115ff9e0307f78c05055419efe"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/versionUpdating/ReaderUpgrade.pdb",
+      "size": 67072,
+      "sha256": "3f55acd0c2a22a0ea60ca1fde0df20b5ceb6afef762387f2c0ebb95bc99ea940"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/versionUpdating/de/MahApps.Metro.resources.dll",
+      "size": 10752,
+      "sha256": "7f20905ac7a927b0405124273cd9f0d79a5b73ea413426929f8da34618152438"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/UDP搜索记录_2026.09.02.csv",
+      "size": 7286,
+      "sha256": "af6f48b1a3bde095ebef00a2db2c9cfe145866e3d372ddb8f323648107983c30"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/UDP搜索读写器IP+修改网络参数+导出csv.exe",
+      "size": 5804439,
+      "sha256": "f25319af6936d68b7845223242d64d526cb4568483a547c10da3c6c0c0fe08eb"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/双语.lnk",
+      "size": 1279,
+      "sha256": "f4ad345f33719c02cda8a9a2e36cb4f0115f4ac8955ca36a25f44f23461200c1"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/双语版使用手册.docx",
+      "size": 3113969,
+      "sha256": "587d77e19d231565c70acc788ccfee4a07c72e62e9ab6d739725a72d27055623"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/回波检测.exe",
+      "size": 5862209,
+      "sha256": "422e13202b0f92ceb0eb90bfc9129642198a45d6cb3c57f4626544fccce2fa78"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准.lnk",
+      "size": 1327,
+      "sha256": "e351ea3bb5d5c3056a59b411ad63f2a69a6255877c20c308b5023cafb19445e7"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准版DEMO使用说明.docx",
+      "size": 1494467,
+      "sha256": "3afce59f37b4cc554088a4eeddb0d9552b6c41c436b0a769c64b684e8e040f9b"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/双语/ControlzEx.dll",
+      "size": 250944,
+      "sha256": "8cfcc7c590c9deeb2b4c18bc3d3236db25d2a11b8c33e26a6004d023d7d0bf2f"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/双语/Ex10.json",
+      "size": 45784,
+      "sha256": "a649ac8beac7e2e76497eb0a3e3564822298626fef6bf070dd9fef9d52efaa11"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/双语/MahApps.Metro.dll",
+      "size": 3641344,
+      "sha256": "cd49de696562d046510be81f7a43ec357568b73ea99321ec92f792ef768c85f8"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/双语/ManagedWifi.dll",
+      "size": 29696,
+      "sha256": "a883042101a92d1cacb1a488421c3ba834d166640c53f6137d9d8783028f7d17"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/双语/MaterialDesignColors.dll",
+      "size": 302080,
+      "sha256": "60db449f3f52128c1f5ba0202f8cc6e9f6cacbbaf171e8aab531b84c11b797d1"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/双语/MaterialDesignThemes.Wpf.dll",
+      "size": 9061376,
+      "sha256": "8a2fe93a18acfd8221a003810b0b16b95a589a66415a618eb73d0ca3c4de11f9"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/双语/ModuleAPI.dll",
+      "size": 622080,
+      "sha256": "41973730961477120c2d621d7c1b39240e04aaf0c503fc772c3a56ff903318a2"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/双语/ModuleAPI.pdb",
+      "size": 1605120,
+      "sha256": "ebc196381d99d5d9184f73b9452c41222d37f2abd1d537709a1b7f8d7ad823d8"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/双语/ModuleAPI.xml",
+      "size": 381621,
+      "sha256": "488f18b1dc600af8bad1faafb755505cd4f8b497500b5cf3b0346ad96fa9a573"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/双语/RFID-Manager-User-Manual-EN.docx",
+      "size": 3024519,
+      "sha256": "3c77ac4851dc5b6e053eecfa977dab9d268b8526c10760c5a9695d5016359917"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/双语/ReaderManager.exe",
+      "size": 4286976,
+      "sha256": "f32f78d05a2f63f78755bc7be02ea8d814117277dcbf1704b26fc41b9edc1dfc"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/双语/ReaderManager.exe.config",
+      "size": 1411,
+      "sha256": "ac6e8415bb29659ce853631e9f0060c2b5bdc95c95a20d2df0bdfe63be567b66"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/双语/ReaderManager.pdb",
+      "size": 1302016,
+      "sha256": "8be3a430e785acd2dd69bd0f86598fa14625b7395caeba910c8dc291d4bcbb83"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/双语/hidapi.dll",
+      "size": 18432,
+      "sha256": "d9b95f292381fc7de8bde1998848bd81038ddc26df1aa6b7c4ba46e910c0ccd3"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/双语/Lang/En.xaml",
+      "size": 55090,
+      "sha256": "7e3281dd690656f826786edc3fe5d636f0ff4114b5cec7a6c6ab78938d9b104c"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/双语/Lang/zh-CN.xaml",
+      "size": 53678,
+      "sha256": "9540d694ec6266821ed8285323e1232b497c487ef385f77df097954b4a72d42f"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/双语/libs/ControlzEx.dll",
+      "size": 250944,
+      "sha256": "8cfcc7c590c9deeb2b4c18bc3d3236db25d2a11b8c33e26a6004d023d7d0bf2f"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/双语/libs/LiveCharts.Wpf.dll",
+      "size": 217600,
+      "sha256": "1bdbb1b5c1a50653e5c26161e9b7c03edc518721a6e10ea180a84049d967106b"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/双语/libs/LiveCharts.Wpf.pdb",
+      "size": 499200,
+      "sha256": "718ff471c7ccfa31e9cf905dfa01c9925d692835ea646e95754fd801a5ee4ca8"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/双语/libs/LiveCharts.Wpf.xml",
+      "size": 175954,
+      "sha256": "c18a11b019a56ec8e5916042a9f23a8655ea199bf2a4319573b18b7e035e3914"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/双语/libs/LiveCharts.dll",
+      "size": 152064,
+      "sha256": "9fcf89837b60f69c1c501e4cfa4d2860887afd0b8f325803367e795a4e3bc9ca"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/双语/libs/LiveCharts.pdb",
+      "size": 364032,
+      "sha256": "cb8b4cdeb2ba07ecfc6686840a94c2ac626a2f9d577aff2d16e4d69ea086200c"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/双语/libs/LiveCharts.xml",
+      "size": 220470,
+      "sha256": "ce3283e4afd74377d313f9c1d247afe8164e626c95f710f928734da6cfab9311"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/双语/libs/MahApps.Metro.dll",
+      "size": 3641344,
+      "sha256": "cd49de696562d046510be81f7a43ec357568b73ea99321ec92f792ef768c85f8"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/双语/libs/MaterialDesignColors.dll",
+      "size": 302080,
+      "sha256": "60db449f3f52128c1f5ba0202f8cc6e9f6cacbbaf171e8aab531b84c11b797d1"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/双语/libs/Microsoft.Web.WebView2.Core.dll",
+      "size": 777808,
+      "sha256": "d34ae19e628f187f0d14d5d816764435086b4ab25df98a211636b4a51edbf85b"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/双语/libs/Microsoft.Web.WebView2.Core.xml",
+      "size": 690644,
+      "sha256": "2da42509068b1662c646c82bb91b423e873c21296789b0b4d239b753bfa2262e"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/双语/libs/Microsoft.Web.WebView2.WinForms.dll",
+      "size": 38464,
+      "sha256": "fc2b7964f3279711b9573d99c673817a4f97b793f25be7ea2f030eae4cba75cb"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/双语/libs/Microsoft.Web.WebView2.WinForms.xml",
+      "size": 41393,
+      "sha256": "4b40e49aec5dbda597224f997d57a16645ddc2eb00f31a6329204d1853a2245a"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/双语/libs/Microsoft.Web.WebView2.Wpf.dll",
+      "size": 81992,
+      "sha256": "0abe32fbcbde73d01cf5c7d821ffcde7512fd238f0c5d7e96152ba7f48f48818"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/双语/libs/Microsoft.Web.WebView2.Wpf.xml",
+      "size": 141904,
+      "sha256": "2e533a08da4d5e9e44de5007b75811dc8f41c656782b003b77e318ea3db370fe"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/双语/libs/Microsoft.Xaml.Behaviors.dll",
+      "size": 144768,
+      "sha256": "ff75938fedee596706171916db763ac100bc7164a7346dd739ad61660e068b5a"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/双语/libs/Microsoft.Xaml.Behaviors.pdb",
+      "size": 52032,
+      "sha256": "fb216ddb86bd1e6053bf8bad8e67557e2922d56d83b913197142c872907bc79a"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/双语/libs/Microsoft.Xaml.Behaviors.xml",
+      "size": 139226,
+      "sha256": "0672969b6adf9fc6d56873ff17fc8f45e9febc2fd6e997b19d5cb7ef2546db70"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/双语/libs/ModuleAPI.dll",
+      "size": 607232,
+      "sha256": "8a12ff989b92e4ff59e5b0bbf022f9dc5ce179e2ab4f8055ff2e64ac33124974"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/双语/libs/ModuleAPI.pdb",
+      "size": 1568256,
+      "sha256": "d0c2f314b852b167f1d8e8614a0a74836cc9d753582a900f48855e0c0d3816fa"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/双语/libs/Newtonsoft.Json.dll",
+      "size": 711952,
+      "sha256": "e1e27af7b07eeedf5ce71a9255f0422816a6fc5849a483c6714e1b472044fa9d"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/双语/libs/Newtonsoft.Json.xml",
+      "size": 713541,
+      "sha256": "79ee87d4ede8783461de05b93379d576f6e8575d4ab49359f15897a854b643c4"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/双语/libs/ReaderManager.pdb",
+      "size": 1041920,
+      "sha256": "e6e7c8fa6f0326263444f33ca6413337af651937517aac0b1b8c8ddbd4a71459"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/双语/runtimes/win-arm64/native/WebView2Loader.dll",
+      "size": 139864,
+      "sha256": "6e586831a6dc04c883b03bb8121f1ba4ad18d4981ccd81e4e580b8475226cd2f"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/双语/runtimes/win-x64/native/WebView2Loader.dll",
+      "size": 165976,
+      "sha256": "401ee3057ad852ce9026a5cabfc5a407ebb291b98b412295417aec8053fe0de0"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/双语/runtimes/win-x86/native/WebView2Loader.dll",
+      "size": 116288,
+      "sha256": "010fc6f17ce7b1df6bb4d4e6a593f53518864be944706d0fa035d25a28038a83"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/Ex10.json",
+      "size": 1175,
+      "sha256": "f915aa5986e3f9da2ec1d76a03fc91e1da45d66013944c108e6c154f3efa1d40"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/ModuleAPI.dll",
+      "size": 622080,
+      "sha256": "41973730961477120c2d621d7c1b39240e04aaf0c503fc772c3a56ff903318a2"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/ModuleAPI.pdb",
+      "size": 1605120,
+      "sha256": "ebc196381d99d5d9184f73b9452c41222d37f2abd1d537709a1b7f8d7ad823d8"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/ModuleAPI.xml",
+      "size": 381621,
+      "sha256": "488f18b1dc600af8bad1faafb755505cd4f8b497500b5cf3b0346ad96fa9a573"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/ModuleReaderManager.exe",
+      "size": 951808,
+      "sha256": "02c2b77b069f4938d296e086e31bad36cb8d9fa7a39b36953952553d4815ad42"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/ModuleReaderManager.exe.config",
+      "size": 421,
+      "sha256": "12189d5b7ca1cb4986f6cda4fa30c76fd967161f81b0bf860bf9d2e94d319f3f"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/ModuleReaderManager.pdb",
+      "size": 1467904,
+      "sha256": "5db8305322943c4cc429b8406ff4d538b77bf80268e2cdf208e2df05c3272175"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/Newtonsoft.Json.dll",
+      "size": 506920,
+      "sha256": "9165e595b3a0de91ac91a38e742597e12ebb2a5a8fa53058d964a06ceaef7735"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/Newtonsoft.Json.xml",
+      "size": 551673,
+      "sha256": "80e3a276428f8bbd223eef4d14f8c9ed952f87a6419879595f3c3c5766884372"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/hidapi.dll",
+      "size": 18432,
+      "sha256": "d9b95f292381fc7de8bde1998848bd81038ddc26df1aa6b7c4ba46e910c0ccd3"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/标准版DEMO使用说明.pdf",
+      "size": 2510038,
+      "sha256": "75e3aec0472828edc4013e911f934ac1cc26678f2df307aa5735df99112e54ae"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/html/charts.html",
+      "size": 9109,
+      "sha256": "4373be599da6a193173b32f2e02d44122dd4ab873466203a92c95b491aab2f3b"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/html/assets/css/modal-gloss.png",
+      "size": 2717,
+      "sha256": "37c13c885d694f1e6d0601bbbbe3398ccf0435bca3689f0e29de77af883a5ca7"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/html/assets/css/portal.css",
+      "size": 162895,
+      "sha256": "8018a0e055464ba13dd8cb413c172ce0f00d100a9790e1acf12320801cf3d936"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/html/assets/css/reveal.css",
+      "size": 1288,
+      "sha256": "f11d8da24eed9930161d1628e7198cd220ee448231253b82be439fac6d770523"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/html/assets/images/app-logo.svg",
+      "size": 1725,
+      "sha256": "6741cde730e654c3fbd26cfe95b13fe06c64ff143ab996ed3cacdeb807e2e8aa"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/html/assets/images/doc-thumb-1.jpg",
+      "size": 20076,
+      "sha256": "3d00d23ae92f0aef2ac927a148bbf0c4751708c73bdef4c51bef5dc17bef8e85"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/html/assets/images/doc-thumb-2.jpg",
+      "size": 18553,
+      "sha256": "f3530d64784c0c738171c6b773dd61c1162d1116658f20b718e2c92c36c1aa07"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/html/assets/images/user.png",
+      "size": 6261,
+      "sha256": "50bdf91a9011f1fe6885dfb075665c85f7735373d5f637ff14c47acdf2ac33bb"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/html/assets/images/background/background-1.jpg",
+      "size": 44423,
+      "sha256": "77ce8700020670eccb0f0fdf35d0c905a319ac057b2b8ff811c3afe5a49e9e07"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/html/assets/images/background/background-2.jpg",
+      "size": 55227,
+      "sha256": "38ed083ec8437283503b89e8f7998d15ef7f646aa4a6ac45a60577d5c2d0aa8b"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/html/assets/images/background/background-3.jpg",
+      "size": 61122,
+      "sha256": "9468b943cc0fbb2fd5ba71a599a6de3689723852e9a7369d9dc3a3d499e2ef0e"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/html/assets/images/profiles/profile-1.png",
+      "size": 6708,
+      "sha256": "1b5866041e01d212ae5c1d0338f528f1e0b2516cc39c33495a8fa12f797a9221"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/html/assets/images/profiles/profile-2.png",
+      "size": 6743,
+      "sha256": "709455fe6e350924124eec8e92f1e5cb2043092065093035b37a83a7346816fa"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/html/assets/images/profiles/profile-3.png",
+      "size": 6481,
+      "sha256": "39ef2450c32ee35dbe0f8e9ababa100cef82e015b7253ceffe7058ea9e76d9ca"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/html/assets/js/app.js",
+      "size": 996,
+      "sha256": "2d20f81073e2fbbdad379023e8c4aa618198d926d62ef0311cd738787652fc27"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/html/assets/js/charts-demo.js",
+      "size": 4473,
+      "sha256": "34d7a11d5d54c9b9154d05d847314e398794f82f0b67a4249368b7f72aed9334"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/html/assets/js/exl.js",
+      "size": 7082,
+      "sha256": "c3c94c6aee67c6db48f60bb7be5b175a64326a2879d5cddc94435afb311f90a0"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/html/assets/js/index-charts.js",
+      "size": 2797,
+      "sha256": "959652d52765e2aef95577d9367ee2974cda66776861260f3cf961133f3eed51"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/html/assets/js/jquery-1.6.2.min.js",
+      "size": 91556,
+      "sha256": "d16d07a0353405fcec95f7efc50a2621bc7425f9a5e8895078396fb0dc460c4f"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/html/assets/js/jquery.reveal.js",
+      "size": 4835,
+      "sha256": "9e45d6827083dfbbbfc950c0eac0605cd35075b6cfe8feb83628d1b9a5b52d60"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/html/assets/plugins/popper.min.js",
+      "size": 21194,
+      "sha256": "5ccae8e986c1c858b2f3df79bfdd0d12a1ae4bb6a89c839d3bfc70a43cf58285"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/html/assets/plugins/bootstrap/js/bootstrap.min.js",
+      "size": 63422,
+      "sha256": "2d76265176d14bcc3402057a0812e61fc177981afa4ef63ce99398bcda93cab6"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/html/assets/plugins/chart.js/chart.min.js",
+      "size": 172817,
+      "sha256": "04c370f745396e4281e4b0ef2d954f12c3505da23a0d45d945324768eea232c2"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/json/115200 (1).json",
+      "size": 274,
+      "sha256": "d7221e4136378dd4d129d47975d0460e0545d03efadcad80522f280d53e2303b"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/json/115200 (2).json",
+      "size": 273,
+      "sha256": "84094b557cc5449813ca7c6e37289288f77e827494aa484660ec2110e00b5708"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/json/115200 (3).json",
+      "size": 273,
+      "sha256": "f93fd60eaad89de1345580eef3234674f4ac9b06fc3221b8cd5a1e83398294e5"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/json/115200-6.Json",
+      "size": 172,
+      "sha256": "f096465eef1c4101ec4a318f3a367ab36fd826eb3f1d9617806f77dc01f51283"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/json/921600 (1).json",
+      "size": 376,
+      "sha256": "7b29943e4f0182cd42747c6a5bc756326f15e19cd15a2dbc26b497630a5ea9a2"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/json/921600 (10).json",
+      "size": 376,
+      "sha256": "5431ddff5c624b4d9d7b23e3c57d8df0fdfc6145682f0c0134a1d709c59e6b2d"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/json/921600 (11).json",
+      "size": 376,
+      "sha256": "f2c783b6324558974e4f45ab4ec461e47fc0daf5fef2615cc0a8f72cffdd368a"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/json/921600 (12).json",
+      "size": 376,
+      "sha256": "97bd1355a2953e129d14f9764677e75a891ade37878ebd4f5d5715f2240d61b4"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/json/921600 (13).json",
+      "size": 377,
+      "sha256": "96c51e128b5468a55352698e97d8e7587f07ec1e802dd4a610948990e7d3e81b"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/json/921600 (14).json",
+      "size": 377,
+      "sha256": "5885aec480380585a462ced87b57b702076600ebfba434d8b9fc64340d9bd2f3"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/json/921600 (15).json",
+      "size": 377,
+      "sha256": "5f0ead2e224729b685e96a51e49dca85974ae311a53bbc1ea138084086a0d553"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/json/921600 (16).json",
+      "size": 377,
+      "sha256": "4cf601e917b4bdeb7dd3151a3bfe70e31a03013e0decf4917446f89750b58155"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/json/921600 (17).json",
+      "size": 377,
+      "sha256": "6466951c021462389e2ccde1fa6b3c34c504333cbb82821eed4d19a116b7d706"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/json/921600 (18).json",
+      "size": 377,
+      "sha256": "e0f7967a92bd35c5c9c10b07ae2c3b6befde6cb484a62527c14b33413d4ff4d7"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/json/921600 (19).json",
+      "size": 377,
+      "sha256": "fa2c99dcb280e54d4fa79639b018797969fe28ab0aeb89d957ba20762dd5b7aa"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/json/921600 (2).json",
+      "size": 376,
+      "sha256": "b7551d0caf3fc5839191b7c5d97e1aff4c3073aacb1f45a4c99d5a7b5102ef13"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/json/921600 (20).json",
+      "size": 377,
+      "sha256": "6074f3accf775fab3b50948685bee9b452fe0abc7511cf18754e46621fa7d858"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/json/921600 (21).json",
+      "size": 378,
+      "sha256": "d50db48bdb6db715c954062e251b4c282e7ddfcc152fbb63cacc6300379cc64f"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/json/921600 (22).json",
+      "size": 378,
+      "sha256": "f0e3f30d69dcc36fd97f519e4fd8cfb856ee917a67df1842013bdfee95ffe8ce"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/json/921600 (3).json",
+      "size": 376,
+      "sha256": "5e95a187055e1c1e6da228f2f8fd142f274f1d5b49aedcaba90f546b617bdce2"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/json/921600 (4).json",
+      "size": 376,
+      "sha256": "7b29943e4f0182cd42747c6a5bc756326f15e19cd15a2dbc26b497630a5ea9a2"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/json/921600 (5).json",
+      "size": 376,
+      "sha256": "b7551d0caf3fc5839191b7c5d97e1aff4c3073aacb1f45a4c99d5a7b5102ef13"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/json/921600 (6).json",
+      "size": 376,
+      "sha256": "5e95a187055e1c1e6da228f2f8fd142f274f1d5b49aedcaba90f546b617bdce2"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/json/921600 (7).json",
+      "size": 376,
+      "sha256": "4f8725016a1b2fed50bdf72db8a5ac1ee469220830db0ab24a106644e10a8b94"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/json/921600 (8).json",
+      "size": 376,
+      "sha256": "ccf03d3b7d5fc5ea9ad0af676343ed0253b05b76b423169e6904ff8b480abf75"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/标准/json/921600 (9).json",
+      "size": 376,
+      "sha256": "ec6c1b38f82829f4d1b3f43bc257bfc8cfdf2d46c5741d08c746ce0bad87e4ab"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/FileComponent.dll",
+      "size": 19456,
+      "sha256": "6571d24306c380c54f4708ad122637c3b11b7b71894061e5ab9a4f1039db0332"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/ICSharpCode.SharpZipLib.dll",
+      "size": 200704,
+      "sha256": "40b3d590f95191f3e33e5d00e534fa40f823d9b1bb2a9afe05f139c4e0a3af8d"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/Microsoft.Office.Interop.Excel.dll",
+      "size": 1638128,
+      "sha256": "d5fbf3f71c40ca63b27601b5275c1cf5dc0cfd187c972579e2100f9215a375fe"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/ModuleAPI.dll",
+      "size": 587264,
+      "sha256": "a2449805d7e5701af4ac55c474688e97200467def4d65b839781b72649108a7c"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/ModuleAPI.pdb",
+      "size": 1539584,
+      "sha256": "1b903ca133825c050589a67edbf67321f6599de668ab59bca99c05d2561baafc"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/ModuleAPI.xml",
+      "size": 378134,
+      "sha256": "fc1be841573932c4d8f7155ef56cdf7916cc5bb9ef803b241faea8a316ed19a3"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/ModuleReaderManager.exe",
+      "size": 681984,
+      "sha256": "519ba399122cb22d3ea5d214f60ad2da2f845f1d1f78c01bbb34b8e9d2af9dd2"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/ModuleReaderManager.exe.config",
+      "size": 351,
+      "sha256": "8f2e375ccd400eaebc355e33bbc1791eed3e2eaa29ffd464c60c9f311042e5c7"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/ModuleReaderManager.pdb",
+      "size": 1060352,
+      "sha256": "e3bef514e2fb64428d9f753f0ac0f77ef4fc6fe79ecedb997b751f9e229061ae"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/ModuleReaderManager.vshost.exe",
+      "size": 14328,
+      "sha256": "c7b2e4e4fb2fcc44c953673ff57c3d14bdf5d2008f35e9a84c2a11735f2d268f"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/NPOI.OOXML.dll",
+      "size": 494080,
+      "sha256": "6424b3dfb23a5096fa1e21f46d0e21eeab23cf54db60cf7125704aca6f984f89"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/NPOI.OpenXml4Net.dll",
+      "size": 91136,
+      "sha256": "f9a0f3c43a96e038412ddb9b51ec585f3f47d25b5a0e5d7ae23b84d99ec75d62"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/NPOI.OpenXmlFormats.dll",
+      "size": 2120192,
+      "sha256": "203e999e5693f7f28303c5f90387e2e8ba1c357c08e50a740855303894b45e23"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/NPOI.dll",
+      "size": 1678336,
+      "sha256": "ed0ba68f5f5a934ca2df797b9c8ca14f4ae0a1827b1473bd4c53eb3940adfb76"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/NPOI.xml",
+      "size": 2254144,
+      "sha256": "6b28710829a735710b6be5b75de61bb4c63b68c421dec900a159422d0a490ece"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/Newtonsoft.Json.dll",
+      "size": 506920,
+      "sha256": "9165e595b3a0de91ac91a38e742597e12ebb2a5a8fa53058d964a06ceaef7735"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/Newtonsoft.Json.xml",
+      "size": 551673,
+      "sha256": "80e3a276428f8bbd223eef4d14f8c9ed952f87a6419879595f3c3c5766884372"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/hidapi.dll",
+      "size": 18432,
+      "sha256": "d9b95f292381fc7de8bde1998848bd81038ddc26df1aa6b7c4ba46e910c0ccd3"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/html/charts.html",
+      "size": 9122,
+      "sha256": "f254402a7847e0b7ecc166cdbbc1042ca8b99734ba58292c8d3d87bc6bcec75b"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/html/assets/css/modal-gloss.png",
+      "size": 2717,
+      "sha256": "37c13c885d694f1e6d0601bbbbe3398ccf0435bca3689f0e29de77af883a5ca7"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/html/assets/css/portal.css",
+      "size": 162895,
+      "sha256": "8018a0e055464ba13dd8cb413c172ce0f00d100a9790e1acf12320801cf3d936"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/html/assets/css/reveal.css",
+      "size": 1288,
+      "sha256": "f11d8da24eed9930161d1628e7198cd220ee448231253b82be439fac6d770523"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/html/assets/js/app.js",
+      "size": 996,
+      "sha256": "2d20f81073e2fbbdad379023e8c4aa618198d926d62ef0311cd738787652fc27"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/html/assets/js/charts-demo.js",
+      "size": 4473,
+      "sha256": "34d7a11d5d54c9b9154d05d847314e398794f82f0b67a4249368b7f72aed9334"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/html/assets/js/exl.js",
+      "size": 7082,
+      "sha256": "c3c94c6aee67c6db48f60bb7be5b175a64326a2879d5cddc94435afb311f90a0"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/html/assets/js/index-charts.js",
+      "size": 2797,
+      "sha256": "959652d52765e2aef95577d9367ee2974cda66776861260f3cf961133f3eed51"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/html/assets/js/jquery.reveal.js",
+      "size": 4835,
+      "sha256": "9e45d6827083dfbbbfc950c0eac0605cd35075b6cfe8feb83628d1b9a5b52d60"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/html/assets/plugins/popper.min.js",
+      "size": 21194,
+      "sha256": "5ccae8e986c1c858b2f3df79bfdd0d12a1ae4bb6a89c839d3bfc70a43cf58285"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/html/assets/plugins/bootstrap/js/bootstrap.min.js",
+      "size": 63422,
+      "sha256": "2d76265176d14bcc3402057a0812e61fc177981afa4ef63ce99398bcda93cab6"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/html/assets/plugins/chart.js/chart.min.js",
+      "size": 172817,
+      "sha256": "04c370f745396e4281e4b0ef2d954f12c3505da23a0d45d945324768eea232c2"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/json/115200 (1).json",
+      "size": 274,
+      "sha256": "d7221e4136378dd4d129d47975d0460e0545d03efadcad80522f280d53e2303b"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/json/115200 (2).json",
+      "size": 273,
+      "sha256": "84094b557cc5449813ca7c6e37289288f77e827494aa484660ec2110e00b5708"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/json/115200 (3).json",
+      "size": 273,
+      "sha256": "f93fd60eaad89de1345580eef3234674f4ac9b06fc3221b8cd5a1e83398294e5"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/json/115200-6.Json",
+      "size": 172,
+      "sha256": "f096465eef1c4101ec4a318f3a367ab36fd826eb3f1d9617806f77dc01f51283"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/json/921600 (1).json",
+      "size": 376,
+      "sha256": "7b29943e4f0182cd42747c6a5bc756326f15e19cd15a2dbc26b497630a5ea9a2"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/json/921600 (10).json",
+      "size": 376,
+      "sha256": "5431ddff5c624b4d9d7b23e3c57d8df0fdfc6145682f0c0134a1d709c59e6b2d"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/json/921600 (11).json",
+      "size": 376,
+      "sha256": "f2c783b6324558974e4f45ab4ec461e47fc0daf5fef2615cc0a8f72cffdd368a"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/json/921600 (12).json",
+      "size": 376,
+      "sha256": "97bd1355a2953e129d14f9764677e75a891ade37878ebd4f5d5715f2240d61b4"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/json/921600 (13).json",
+      "size": 377,
+      "sha256": "96c51e128b5468a55352698e97d8e7587f07ec1e802dd4a610948990e7d3e81b"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/json/921600 (14).json",
+      "size": 377,
+      "sha256": "5885aec480380585a462ced87b57b702076600ebfba434d8b9fc64340d9bd2f3"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/json/921600 (15).json",
+      "size": 377,
+      "sha256": "5f0ead2e224729b685e96a51e49dca85974ae311a53bbc1ea138084086a0d553"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/json/921600 (16).json",
+      "size": 377,
+      "sha256": "4cf601e917b4bdeb7dd3151a3bfe70e31a03013e0decf4917446f89750b58155"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/json/921600 (17).json",
+      "size": 377,
+      "sha256": "6466951c021462389e2ccde1fa6b3c34c504333cbb82821eed4d19a116b7d706"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/json/921600 (18).json",
+      "size": 377,
+      "sha256": "e0f7967a92bd35c5c9c10b07ae2c3b6befde6cb484a62527c14b33413d4ff4d7"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/json/921600 (19).json",
+      "size": 377,
+      "sha256": "fa2c99dcb280e54d4fa79639b018797969fe28ab0aeb89d957ba20762dd5b7aa"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/json/921600 (2).json",
+      "size": 376,
+      "sha256": "b7551d0caf3fc5839191b7c5d97e1aff4c3073aacb1f45a4c99d5a7b5102ef13"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/json/921600 (20).json",
+      "size": 377,
+      "sha256": "6074f3accf775fab3b50948685bee9b452fe0abc7511cf18754e46621fa7d858"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/json/921600 (21).json",
+      "size": 378,
+      "sha256": "d50db48bdb6db715c954062e251b4c282e7ddfcc152fbb63cacc6300379cc64f"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/json/921600 (22).json",
+      "size": 378,
+      "sha256": "f0e3f30d69dcc36fd97f519e4fd8cfb856ee917a67df1842013bdfee95ffe8ce"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/json/921600 (3).json",
+      "size": 376,
+      "sha256": "5e95a187055e1c1e6da228f2f8fd142f274f1d5b49aedcaba90f546b617bdce2"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/json/921600 (4).json",
+      "size": 376,
+      "sha256": "7b29943e4f0182cd42747c6a5bc756326f15e19cd15a2dbc26b497630a5ea9a2"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/json/921600 (5).json",
+      "size": 376,
+      "sha256": "b7551d0caf3fc5839191b7c5d97e1aff4c3073aacb1f45a4c99d5a7b5102ef13"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/json/921600 (6).json",
+      "size": 376,
+      "sha256": "5e95a187055e1c1e6da228f2f8fd142f274f1d5b49aedcaba90f546b617bdce2"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/json/921600 (7).json",
+      "size": 376,
+      "sha256": "4f8725016a1b2fed50bdf72db8a5ac1ee469220830db0ab24a106644e10a8b94"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/json/921600 (8).json",
+      "size": 376,
+      "sha256": "ccf03d3b7d5fc5ea9ad0af676343ed0253b05b76b423169e6904ff8b480abf75"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/json/921600 (9).json",
+      "size": 376,
+      "sha256": "ec6c1b38f82829f4d1b3f43bc257bfc8cfdf2d46c5741d08c746ce0bad87e4ab"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/versionUpdating/ControlzEx.dll",
+      "size": 250944,
+      "sha256": "8cfcc7c590c9deeb2b4c18bc3d3236db25d2a11b8c33e26a6004d023d7d0bf2f"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/versionUpdating/ControlzEx.pdb",
+      "size": 845312,
+      "sha256": "12fd9b5e19747a656be79922e821527d0368ac3016f5a2d9bc727d86d5f538cb"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/versionUpdating/ControlzEx.xml",
+      "size": 174260,
+      "sha256": "eb0a3e7366d118b92ff731fb4c25bffa7de0588844722720310ba15698bad688"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/versionUpdating/LiveCharts.Wpf.dll",
+      "size": 217600,
+      "sha256": "1bdbb1b5c1a50653e5c26161e9b7c03edc518721a6e10ea180a84049d967106b"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/versionUpdating/LiveCharts.Wpf.pdb",
+      "size": 499200,
+      "sha256": "718ff471c7ccfa31e9cf905dfa01c9925d692835ea646e95754fd801a5ee4ca8"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/versionUpdating/LiveCharts.Wpf.xml",
+      "size": 175954,
+      "sha256": "c18a11b019a56ec8e5916042a9f23a8655ea199bf2a4319573b18b7e035e3914"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/versionUpdating/LiveCharts.dll",
+      "size": 152064,
+      "sha256": "9fcf89837b60f69c1c501e4cfa4d2860887afd0b8f325803367e795a4e3bc9ca"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/versionUpdating/LiveCharts.pdb",
+      "size": 364032,
+      "sha256": "cb8b4cdeb2ba07ecfc6686840a94c2ac626a2f9d577aff2d16e4d69ea086200c"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/versionUpdating/LiveCharts.xml",
+      "size": 220470,
+      "sha256": "ce3283e4afd74377d313f9c1d247afe8164e626c95f710f928734da6cfab9311"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/versionUpdating/MahApps.Metro.dll",
+      "size": 3566880,
+      "sha256": "4ec98cb9c86b38b721de7aa5e9f392407a6a57df950742bc089ee2f75c37177c"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/versionUpdating/MahApps.Metro.pdb",
+      "size": 1883648,
+      "sha256": "23ad3d5e803328b51100fd520584aef40b98e0f248dda16c99bd4e66a7f11ba4"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/versionUpdating/MahApps.Metro.xml",
+      "size": 600720,
+      "sha256": "b5b13d3a2432f21725881a43455ec8d8c88553311841fc74051e5dab5744695d"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/versionUpdating/MaterialDesignColors.dll",
+      "size": 302080,
+      "sha256": "d4360d786d921e21f9efee7f4c92d953784f5ccb195c49eb718de36c3699cc6a"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/versionUpdating/MaterialDesignColors.pdb",
+      "size": 17992,
+      "sha256": "f4f056ce850f679cbbd22fe5ce71294762894ae6922ef7556ded3af8d6f89392"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/versionUpdating/MaterialDesignThemes.Wpf.dll",
+      "size": 9102336,
+      "sha256": "bfe82bd0be7e708c1fb24b9c178ed0c5f5931954b41d0c493d14cd40225a3451"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/versionUpdating/MaterialDesignThemes.Wpf.pdb",
+      "size": 105784,
+      "sha256": "503a2077d68227dbb5781602530f1e498b401c95682c354e3c91d0ec34821511"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/versionUpdating/MaterialDesignThemes.Wpf.xml",
+      "size": 104338,
+      "sha256": "4d27fe20b8156e5d6e900b926efc10e8e6e1be77cf5468a4b529727381e1ca41"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/versionUpdating/Microsoft.Xaml.Behaviors.dll",
+      "size": 144768,
+      "sha256": "ff75938fedee596706171916db763ac100bc7164a7346dd739ad61660e068b5a"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/versionUpdating/Microsoft.Xaml.Behaviors.pdb",
+      "size": 52032,
+      "sha256": "fb216ddb86bd1e6053bf8bad8e67557e2922d56d83b913197142c872907bc79a"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/versionUpdating/Microsoft.Xaml.Behaviors.xml",
+      "size": 139226,
+      "sha256": "0672969b6adf9fc6d56873ff17fc8f45e9febc2fd6e997b19d5cb7ef2546db70"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/versionUpdating/ReaderUpgrade.exe",
+      "size": 25600,
+      "sha256": "73181fd9c2557c42aabe263d62c3e968fe2dae21ba4dd171828eb1cc88975045"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/versionUpdating/ReaderUpgrade.exe.config",
+      "size": 161,
+      "sha256": "d524761c17cf0dea94109f3fcdacd2ecb67550115ff9e0307f78c05055419efe"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/versionUpdating/ReaderUpgrade.pdb",
+      "size": 58880,
+      "sha256": "f5c67c7176ba7a8176a6dcd6728bdfe5411253d9007d4d66498c60637da82ce5"
+    },
+    {
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/versionUpdating/de/MahApps.Metro.resources.dll",
+      "size": 10752,
+      "sha256": "7f20905ac7a927b0405124273cd9f0d79a5b73ea413426929f8da34618152438"
+    },
+    {
+      "path": "读写器工具/高频读写器/网关工具/NetModuleConfig_V2.04.exe",
+      "size": 286720,
+      "sha256": "e2181f72e16bc053d3259cd75ef1a4a7d294585aaec0f3ea383ca92d9bb78e12"
+    }
+  ]
+}

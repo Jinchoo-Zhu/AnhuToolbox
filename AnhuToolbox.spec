@@ -7,12 +7,12 @@ import os
 def _verify_external_tools():
     """拒绝缺少第三方工具资源的安装包。"""
     root = os.path.dirname(os.path.abspath(SPEC))
-    tools_root = os.path.abspath(os.environ.get("ANHU_TOOLS_DIR", os.path.join(root, "tools")))
+    tools_root = os.path.join(root, "tools")
     marker = os.path.join(tools_root, "tools.gresource")
     if not os.path.isfile(marker):
         raise SystemExit(
             "无法打包：tools 第三方资源清单缺失。"
-            "请先恢复 AnhuToolbox-tools 仓库，详见 tools/README.md。"
+            "请检查主源码仓库中的 tools 目录和 tools/README.md 说明。"
         )
     with open(marker, "r", encoding="utf-8") as f:
         import json

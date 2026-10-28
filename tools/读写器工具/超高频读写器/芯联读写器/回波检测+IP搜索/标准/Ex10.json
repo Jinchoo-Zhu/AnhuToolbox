@@ -1,0 +1,72 @@
+[
+{
+	"Name":"SIM3500",
+	"HarderVer03":"31000080",
+	"HarderVer05":"33700000",
+	"MaxPower":3000,
+	"MinPower":500
+},
+{
+	"Name":"SIM3600",
+	"HarderVer03":"31000080",
+	"HarderVer05":"33400000",
+	"MaxPower":2700,
+	"MinPower":0
+},
+{
+	"Name":"SIM5600",
+	"HarderVer03":"31000080",
+	"HarderVer05":"32400000",
+	"MaxPower":2700,
+	"MinPower":0
+},
+{
+	"Name":"SIM7600",
+	"HarderVer03":"31000080",
+	"HarderVer05":"31400000",
+	"MaxPower":2700,
+	"MinPower":0
+},
+{
+	"Name":"SIM3800",
+	"HarderVer03":"31000080",
+	"HarderVer05":"33500000",
+	"MaxPower":2700,
+	"MinPower":0
+},
+{
+	"Name":"SIM5800",
+	"HarderVer03":"31000080",
+	"HarderVer05":"32500000",
+	"MaxPower":2700,
+	"MinPower":0
+},
+{
+	"Name":"SIM7800",
+	"HarderVer03":"31000080",
+	"HarderVer05":"31500000",
+	"MaxPower":2700,
+	"MinPower":0
+},
+{
+	"Name":"SIM3900",
+	"HarderVer03":"31000080",
+	"HarderVer05":"33600000",
+	"MaxPower":2700,
+	"MinPower":0
+},
+{
+	"Name":"SIM5900",
+	"HarderVer03":"31000080",
+	"HarderVer05":"32600000",
+	"MaxPower":2700,
+	"MinPower":0
+},
+{
+	"Name":"SIM7900",
+	"HarderVer03":"31000080",
+	"HarderVer05":"31600000",
+	"MaxPower":2700,
+	"MinPower":0
+}
+]

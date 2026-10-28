@@ -1,0 +1,12 @@
+{
+  "Gen2Target": 0,
+  "S2_AInstruct": false,
+  "list": [
+    {
+      "rfModel": "RF_MODE_7",
+      "qval": 0,
+      "time": 5000,
+      "count": 3
+    }
+  ]
+}

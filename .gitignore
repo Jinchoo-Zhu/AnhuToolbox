@@ -11,11 +11,6 @@ build/
 dist/
 installer/
 
-# 第三方程序与驱动放在独立 tools-resources 仓库中；本地 tools/ 完整保留
-tools/*
-!tools/tools.json
-!tools/README.md
-
 # PyCharm 个人配置
 .idea/workspace.xml
 .idea/shelf/
@@ -35,6 +30,3 @@ data/amount_migration_preview.png
 .DS_Store
 Thumbs.db
 desktop.ini
-
-# 工具资源独立仓库的本地标记与日志
-.tools-resource-manifest.json
