@@ -1,0 +1,123 @@
+{
+  "version": 1,
+  "categories": [
+    "综合工具",
+    "硬盘工具",
+    "读写器工具",
+    "海康工具"
+  ],
+  "tools": [
+    {
+      "name": "DirectX Repair",
+      "category": "综合工具",
+      "path": "综合工具/DirectX_Repair/DirectX Repair.exe",
+      "icon": "综合工具/DirectX_Repair/DirectX Repair.png",
+      "desc": "DirectX 运行库修复工具"
+    },
+    {
+      "name": "Geek",
+      "category": "综合工具",
+      "path": "综合工具/geek/geek.exe",
+      "icon": "综合工具/geek/geek.png",
+      "desc": "Geek 卸载工具"
+    },
+    {
+      "name": "TCPView",
+      "category": "综合工具",
+      "path": "综合工具/TCPView/tcpview64.exe",
+      "icon": "综合工具/TCPView/tcpview64.png",
+      "desc": "TCP/UDP 连接查看工具"
+    },
+    {
+      "name": "DiskGenius",
+      "category": "硬盘工具",
+      "path": "硬盘工具/DiskGenius/DiskGenius.exe",
+      "icon": "硬盘工具/DiskGenius/DiskGenius.ico",
+      "desc": "磁盘分区管理与数据恢复"
+    },
+    {
+      "name": "标准版Demo",
+      "category": "读写器工具",
+      "group": "超高频读写器",
+      "subgroup": "芯联读写器",
+      "path": "读写器工具/超高频读写器/芯联读写器/标准版Demo/ModuleReaderManager.exe",
+      "desc": "芯联读写器标准版演示程序"
+    },
+    {
+      "name": "双语Demo",
+      "category": "读写器工具",
+      "group": "超高频读写器",
+      "subgroup": "芯联读写器",
+      "path": "读写器工具/超高频读写器/芯联读写器/双语Demo/ReaderManager.exe",
+      "desc": "芯联读写器双语演示程序"
+    },
+    {
+      "name": "芯联设备IP搜索",
+      "category": "读写器工具",
+      "group": "超高频读写器",
+      "subgroup": "芯联读写器",
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/UDP搜索读写器IP+修改网络参数+导出csv.exe",
+      "desc": "搜索芯联读写器IP并修改网络参数"
+    },
+    {
+      "name": "回波检测",
+      "category": "读写器工具",
+      "group": "超高频读写器",
+      "subgroup": "芯联读写器",
+      "path": "读写器工具/超高频读写器/芯联读写器/回波检测+IP搜索/回波检测.exe",
+      "desc": "芯联读写器回波检测"
+    },
+    {
+      "name": "物必联设备IP搜索",
+      "category": "读写器工具",
+      "group": "超高频读写器",
+      "subgroup": "物必联读写器",
+      "path": "读写器工具/超高频读写器/物必联读写器/物必联ip搜索工具/物必联ip搜索工具.exe",
+      "desc": "物必联读写器IP搜索工具"
+    },
+    {
+      "name": "物必联测试Demo",
+      "category": "读写器工具",
+      "group": "超高频读写器",
+      "subgroup": "物必联读写器",
+      "path": "读写器工具/超高频读写器/物必联读写器/物必联测试Demo/UHFTOOL_v2.05/UHF.TOOL.exe",
+      "desc": "物必联读写器测试 Demo (UHFTOOL v2.05)"
+    },
+    {
+      "name": "电力测温工具",
+      "category": "读写器工具",
+      "group": "超高频读写器",
+      "subgroup": "物必联读写器",
+      "path": "读写器工具/超高频读写器/物必联读写器/电力测温测试软件/UHF.TOOL.exe",
+      "desc": "电力测温测试软件"
+    },
+    {
+      "name": "高频网关工具",
+      "category": "读写器工具",
+      "group": "高频读写器",
+      "path": "读写器工具/高频读写器/网关工具/NetModuleConfig_V2.04.exe",
+      "desc": "高频网关配置工具"
+    },
+    {
+      "name": "设备搜索工具",
+      "category": "海康工具",
+      "path": "海康工具/SADP/SADPTool.exe",
+      "icon": "海康工具/SADP/SADPTool.png",
+      "desc": "海康 SADP 设备搜索工具"
+    },
+    {
+      "name": "海康Demo",
+      "category": "海康工具",
+      "path": "海康工具/ClientDemo/ClientDemo.exe",
+      "icon": "海康工具/ClientDemo/ClientDemo.png",
+      "desc": "海康客户端演示程序"
+    },
+    {
+      "name": "SDK使用手册",
+      "category": "海康工具",
+      "path": "海康工具/使用手册/设备网络SDK使用手册.chm",
+      "icon": "海康工具/使用手册/SDK使用手册.png",
+      "desc": "海康设备网络 SDK 使用手册"
+    }
+  ]
+}
