@@ -7,22 +7,32 @@ JSON 美化、正则测试、文本对比、列表排序、编码和金额转换
 
 ## 从 GitHub 获取源码
 
-安装 [Git](https://git-scm.com/download/win)，然后在 PowerShell 中执行：
+本仓库目前为**私有仓库**。其他开发者必须先获得访问权限，并通过自己的
+GitHub 账号登录，才能下载源码；无法匿名克隆。
+
+1. 仓库所有者在 GitHub 仓库的 **Settings → Collaborators** 中邀请对方。
+2. 对方接受邀请，并安装 [Git](https://git-scm.com/download/win)。
+3. 对方的 GitHub 账号需要配置登录凭据或 SSH 密钥；不要共享账号或私钥。
+
+HTTPS 方式需要在首次克隆时输入自己的 GitHub 用户名和 Personal Access Token
+（不是 GitHub 登录密码）：
 
 ```powershell
 cd D:\TestCode
-git clone git@github.com:Jinchoo-zhu/AnhuToolbox.git
-cd .\AnhuToolbox
-```
-
-GitHub 的 SSH 需要在本机配置公钥。首次使用时可以按照
-[GitHub SSH 文档](https://docs.github.com/zh/authentication/connecting-to-github-with-ssh)
-添加密钥。新电脑如果没有配置 SSH，也可以使用 HTTPS 地址：
-
-```powershell
 git clone https://github.com/Jinchoo-zhu/AnhuToolbox.git
 cd .\AnhuToolbox
 ```
+
+也可以使用 SSH，但只能用于账号已被添加为协作者、并已在本机配置对应密钥的电脑：
+
+```powershell
+git clone git@github.com:Jinchoo-zhu/AnhuToolbox.git
+```
+
+如果对方只需要运行程序，不希望提供源码访问权限，应由仓库所有者提供编译好的
+EXE 安装包。新电脑首次使用 SSH 时可以按照
+[GitHub SSH 文档](https://docs.github.com/zh/authentication/connecting-to-github-with-ssh)
+添加自己的公钥，不要使用他人的私钥。
 
 `tools` 目录包含打包需要的第三方工具、SDK 和资料，克隆时必须完整下载，
 不要单独删除或改名。
