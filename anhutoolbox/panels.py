@@ -8,12 +8,13 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QCheckBox, QSpinBox, QPlainTextEdit, QFileDialog,
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
-    QMessageBox, QMenu, QComboBox, QInputDialog
+    QMenu, QComboBox
 )
 from PySide6.QtCore import Qt, Signal, Slot, QTimer
 from PySide6.QtGui import QFont, QTextCursor
 
 from .styles import prepare_menu
+from .dialogs import show_error, show_information, show_success, show_warning
 
 
 CHECKSUM_TYPES = ["None","ModbusCRC16","CCITT-CRC16","CRC32","OADD8","ADD8","XOR8","ADD16"]
@@ -370,7 +371,7 @@ def _advance_due(due_ms, iv_ms, now_ms):
 
 def _warn_interval_too_small(parent, minimum):
     """间隔小于下限时的统一提示文案(输入框与预设表格两处共用, 免得文案跑偏)"""
-    QMessageBox.warning(
+    show_warning(
         parent, "间隔过小",
         "发送间隔不能小于 {}ms。\n已自动改为 {}ms。".format(minimum, minimum))
 
@@ -675,7 +676,7 @@ class SendBar(QWidget):
             self.lbl_tx_count.setText("Tx: {}".format(self._tx_total))
         elif self.text.toPlainText().strip():
             # 有内容但构建失败：HEX 模式下长度必须为偶数，需明确提示而不是静默
-            QMessageBox.warning(self, "提示", "发送内容构建失败：\nHEX 模式下十六进制长度必须为偶数")
+            show_warning(self, "提示", "发送内容构建失败：\nHEX 模式下十六进制长度必须为偶数")
 
     def _do_send_file(self):
         p, _ = QFileDialog.getOpenFileName(self, "选择文件", "", "所有文件 (*.*);;文本文件 (*.txt)")
@@ -688,18 +689,18 @@ class SendBar(QWidget):
                 try:
                     t = data.decode("ascii")
                 except:
-                    QMessageBox.warning(self, "提示", "HEX模式下文件无法解析")
+                    show_warning(self, "提示", "HEX模式下文件无法解析")
                     return
                 hs = "".join(c for c in t if c in "0123456789abcdefABCDEF")
                 if len(hs) % 2:
-                    QMessageBox.warning(self, "提示", "HEX长度需为偶数")
+                    show_warning(self, "提示", "HEX长度需为偶数")
                     return
                 data = bytes.fromhex(hs)
             self.send_data.emit(data)
             self._tx_total += len(data)
             self.lbl_tx_count.setText("Tx: {}".format(self._tx_total))
         except Exception as e:
-            QMessageBox.critical(self, "错误", str(e))
+            show_error(self, "错误", str(e))
 
     def _build_data(self, silent=False):
         raw = self.text.toPlainText()
@@ -710,7 +711,7 @@ class SendBar(QWidget):
                 hs = "".join(c for c in raw if c in "0123456789abcdefABCDEF")
                 if len(hs) % 2:
                     if not silent:
-                        QMessageBox.warning(self, "提示", "HEX长度需为偶数")
+                        show_warning(self, "提示", "HEX长度需为偶数")
                     return None
                 d = bytes.fromhex(hs)
             else:
@@ -718,7 +719,7 @@ class SendBar(QWidget):
             return self._append_newline(d)
         except Exception as e:
             if not silent:
-                QMessageBox.critical(self, "错误", str(e))
+                show_error(self, "错误", str(e))
             return None
 
     def _on_repeat(self, checked):
@@ -1049,7 +1050,7 @@ class PresetPanel(QWidget):
             self._warn_build_fail()
 
     def _warn_build_fail(self):
-        QMessageBox.warning(self, "提示", "发送内容构建失败：\nHEX 模式下十六进制长度必须为偶数")
+        show_warning(self, "提示", "发送内容构建失败：\nHEX 模式下十六进制长度必须为偶数")
 
     def _tick(self):
         """定时器到期: 已勾选"循环"的指令按表格顺序串行循环发送.
@@ -1153,9 +1154,9 @@ class PresetPanel(QWidget):
                 self._presets.extend(imp)
                 self._refresh()
                 self._save()
-                QMessageBox.information(self, "导入成功", "已导入{} 条".format(len(imp)))
+                show_success(self, "导入成功", "已导入{} 条".format(len(imp)))
         except Exception as e:
-            QMessageBox.critical(self, "导入失败", str(e))
+            show_error(self, "导入失败", str(e))
 
     def _export(self):
         p, _ = QFileDialog.getSaveFileName(self, "导出", "presets.json", "JSON (*.json)")
@@ -1164,9 +1165,9 @@ class PresetPanel(QWidget):
         try:
             with open(p, "w", encoding="utf-8") as f:
                 json.dump(self._presets, f, ensure_ascii=False, indent=2)
-            QMessageBox.information(self, "导出成功", "已导出{} 条".format(len(self._presets)))
+            show_success(self, "导出成功", "已导出{} 条".format(len(self._presets)))
         except Exception as e:
-            QMessageBox.critical(self, "导出失败", str(e))
+            show_error(self, "导出失败", str(e))
 
 def _loop_interval(preset):
     """取循环指令的间隔(ms): 非法值/小于下限的值兜底为 LOOP_MIN_INTERVAL, 不会静默漏发。"""

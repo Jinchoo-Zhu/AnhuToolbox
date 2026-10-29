@@ -17,11 +17,12 @@ import os, json, time, shutil, subprocess
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPushButton,
-    QFrame, QScrollArea, QStackedWidget, QToolButton, QMessageBox,
+    QFrame, QScrollArea, QStackedWidget, QToolButton,
     QFileIconProvider,
 )
 from PySide6.QtCore import Qt, QSize, QFileInfo
 from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor, QFont
+from .dialogs import show_warning
 
 MANIFEST_NAME = "tools.json"
 # 用户自定义工具清单 (自定义库), 与官方 tools.json 同目录但互不干扰:
@@ -216,11 +217,11 @@ def _run_as_admin(exe_path, cwd):
 def launch_tool(exe_path):
     """打开工具, 以工具自身目录为工作目录 (兼容便携软件)。"""
     if not exe_path:
-        QMessageBox.warning(None, "工具启动失败", "该工具未配置可执行文件路径。")
+        show_warning(None, "工具启动失败", "该工具未配置可执行文件路径。")
         return False
     exe_path = os.path.abspath(exe_path)
     if not os.path.exists(exe_path):
-        QMessageBox.warning(None, "工具启动失败", "工具文件不存在：\n{}".format(exe_path))
+        show_warning(None, "工具启动失败", "工具文件不存在：\n{}".format(exe_path))
         return False
     cwd = os.path.dirname(exe_path)
     ext = os.path.splitext(exe_path)[1].lower()
@@ -231,7 +232,7 @@ def launch_tool(exe_path):
             os.startfile(exe_path)
             return True
         except Exception as e:
-            QMessageBox.warning(None, "工具启动失败", "无法打开文档：\n{}\n\n{}".format(exe_path, e))
+            show_warning(None, "工具启动失败", "无法打开文档：\n{}\n\n{}".format(exe_path, e))
             return False
     try:
         # 便携工具通常依赖自身目录下的 dll/配置, 必须设置 cwd
@@ -242,15 +243,15 @@ def launch_tool(exe_path):
         if getattr(e, "winerror", None) in (740, 5):
             if _run_as_admin(exe_path, cwd):
                 return True
-            QMessageBox.warning(
+            show_warning(
                 None, "工具启动失败",
                 "无法以管理员权限启动工具（已取消提权或提权失败）：\n{}".format(exe_path)
             )
             return False
-        QMessageBox.warning(None, "工具启动失败", "无法打开工具：\n{}\n\n{}".format(exe_path, e))
+        show_warning(None, "工具启动失败", "无法打开工具：\n{}\n\n{}".format(exe_path, e))
         return False
     except Exception as e:
-        QMessageBox.warning(None, "工具启动失败", "无法打开工具：\n{}\n\n{}".format(exe_path, e))
+        show_warning(None, "工具启动失败", "无法打开工具：\n{}\n\n{}".format(exe_path, e))
         return False
 
 

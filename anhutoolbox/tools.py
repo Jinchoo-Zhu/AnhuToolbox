@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSizePolicy,
     QScrollArea, QLayout,
     QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox,
-    QGroupBox, QGridLayout, QFileDialog, QMessageBox, QApplication,
+    QGroupBox, QGridLayout, QFileDialog, QApplication,
     QGraphicsOpacityEffect,
     QFrame, QStackedWidget, QButtonGroup
 )
@@ -20,6 +20,7 @@ from PySide6.QtGui import QFont, QPixmap, QImage, QColor, QTextCharFormat
 from . import hardware
 from . import toolbox
 from .styles import COMBO_STYLE
+from .dialogs import show_error, show_information, show_success
 
 
 # ============================================================
@@ -398,7 +399,7 @@ class QRTool(QWidget):
     def _batch_save(self):
         import qrcode
         if not self._lines:
-            QMessageBox.information(self, "提示", "请先生成预览")
+            show_information(self, "提示", "请先生成预览")
             return
         path_, _ = QFileDialog.getSaveFileName(
             self, "保存二维码 ZIP", "QR码.zip", "ZIP 文件 (*.zip)"
@@ -428,9 +429,9 @@ class QRTool(QWidget):
                 msg += f"\n\n{fail} 条生成失败:\n" + "\n".join(errs[:5])
                 if fail > 5:
                     msg += f"\n... 共 {fail} 条"
-            QMessageBox.information(self, "完成", msg)
+            show_success(self, "完成", msg)
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"保存失败: {e}")
+            show_error(self, "错误", f"保存失败: {e}")
 
 class JsonTool(QWidget):
     """JSON 格式化工具"""

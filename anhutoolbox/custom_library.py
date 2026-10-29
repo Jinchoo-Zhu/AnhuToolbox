@@ -16,13 +16,14 @@ import subprocess
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPushButton,
-    QScrollArea, QMenu, QMessageBox, QInputDialog, QFileDialog,
+    QScrollArea, QMenu, QFileDialog,
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 
 from . import toolbox
 from .styles import prepare_menu
+from .dialogs import ask_yes_no, get_text, show_error, show_information, show_warning
 
 # 允许添加的文件类型: 快捷方式 + 常见可执行脚本
 ADD_FILE_FILTER = ("快捷方式与程序 (*.exe *.lnk *.bat *.cmd *.com);;所有文件 (*)")
@@ -189,18 +190,18 @@ class CustomLibraryPage(QWidget):
         self._last_dir = os.path.dirname(path)
 
         if not os.path.isfile(path):
-            QMessageBox.warning(self, "添加失败", "找不到该文件：\n{}".format(path))
+            show_warning(self, "添加失败", "找不到该文件：\n{}".format(path))
             return
 
         tools = toolbox.load_user_manifest(self._tools_dir)
         if any(self._same_path(t, path) for t in tools):
-            QMessageBox.information(self, "提示", "「{}」已经添加过了。".format(
+            show_information(self, "提示", "「{}」已经添加过了。".format(
                 os.path.basename(path)))
             return
 
         default_name = os.path.splitext(os.path.basename(path))[0] or "未命名工具"
-        name, ok = QInputDialog.getText(
-            self, "添加本地工具", "显示名称：", text=default_name)
+        name, ok = get_text(
+            self, "添加本地工具", "请输入工具的显示名称", text=default_name)
         if not ok:
             return
         name = (name or "").strip() or default_name
@@ -212,7 +213,7 @@ class CustomLibraryPage(QWidget):
 
     def _rename(self, tool):
         old = str(tool.get("name") or "")
-        name, ok = QInputDialog.getText(self, "重命名工具", "新名称：", text=old)
+        name, ok = get_text(self, "重命名工具", "请输入新的工具名称", text=old)
         name = (name or "").strip()
         if not ok or not name or name == old:
             return
@@ -228,12 +229,12 @@ class CustomLibraryPage(QWidget):
     def _remove(self, tool):
         name = str(tool.get("name") or "该工具")
         path = str(tool.get("path") or "")
-        r = QMessageBox.question(
+        if not ask_yes_no(
             self, "移除工具",
             "确定把「{}」从自定义库移除吗？\n\n{}\n\n"
             "只删掉这条记录，不会删除工具文件本身。".format(name, path),
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-        if r != QMessageBox.Yes:
+            confirm_text="移除",
+        ):
             return
         tools = [t for t in toolbox.load_user_manifest(self._tools_dir)
                  if not self._same_path(t, path)]
@@ -244,7 +245,7 @@ class CustomLibraryPage(QWidget):
         """写清单, 失败时提示原因 (装到 Program Files 等只读目录时会发生)。"""
         if toolbox.save_user_manifest(self._tools_dir, tools):
             return True
-        QMessageBox.critical(
+        show_error(
             self, title,
             "无法写入自定义库清单：\n{}\n\n"
             "若软件安装在 Program Files 等受保护目录，请换到可写目录后重试。".format(
@@ -268,7 +269,7 @@ class CustomLibraryPage(QWidget):
         path = str(tool.get("path") or "")
         folder = os.path.dirname(path)
         if not folder or not os.path.isdir(folder):
-            QMessageBox.warning(self, "提示", "找不到该工具所在文件夹：\n{}".format(
+            show_warning(self, "提示", "找不到该工具所在文件夹：\n{}".format(
                 folder or path))
             return
         try:
@@ -278,4 +279,4 @@ class CustomLibraryPage(QWidget):
             else:
                 os.startfile(folder)
         except Exception as e:
-            QMessageBox.warning(self, "提示", "无法打开文件夹：\n{}".format(e))
+            show_warning(self, "提示", "无法打开文件夹：\n{}".format(e))

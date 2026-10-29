@@ -169,27 +169,25 @@ QMenu::separator {{
 # 对话框 (新建/重命名/复制项目弹窗, 各种提示框) 的背景与文字色,
 # 否则 Qt 默认的浅灰底和主界面纯白背景看着是两套东西。
 DIALOG_STYLE = f"""
-QDialog, QInputDialog, QMessageBox {{
+QDialog {{
     background-color: {BG_MAIN};
 }}
-QDialog QLabel, QInputDialog QLabel, QMessageBox QLabel {{
+QDialog QLabel {{
     color: {TEXT_PRIMARY};
     font-size: 13px;
 }}
-QDialog QPushButton, QInputDialog QPushButton, QMessageBox QPushButton {{
+QDialog QPushButton {{
     min-width: 72px;
 }}
 /* 对话框的默认按钮(确定 / 是)给个蓝色强调, 否则和旁边的取消按钮一样是灰的,
    看不出哪个是回车会触发的动作 */
-QDialog QPushButton:default, QInputDialog QPushButton:default,
-QMessageBox QPushButton:default {{
+QDialog QPushButton:default {{
     background-color: {BG_PRIMARY};
     border-color: {BG_PRIMARY};
     color: {TEXT_BRIGHT};
     font-weight: 600;
 }}
-QDialog QPushButton:default:hover, QInputDialog QPushButton:default:hover,
-QMessageBox QPushButton:default:hover {{
+QDialog QPushButton:default:hover {{
     background-color: {BG_PRIMARY_HOVER};
     border-color: {BG_PRIMARY_HOVER};
 }}

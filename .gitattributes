@@ -1,0 +1,16 @@
+# 源码在 Windows 和 GitHub 上统一使用 LF 换行，避免提交时反复告警。
+* text=auto eol=lf
+
+# 图标、图片、字体和可执行文件必须保留二进制内容，不转换换行符。
+*.ico binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.pdf binary
+*.zip binary
+*.exe binary
+*.dll binary
+*.pyd binary
+*.ttf binary
+*.otf binary

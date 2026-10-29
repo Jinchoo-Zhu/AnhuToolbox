@@ -39,6 +39,11 @@ a = Analysis(
     binaries=[],
     datas=[('anhutoolbox.ico', '.'),
            ('anhutoolbox/assets/down_arrow.png', 'anhutoolbox/assets'),
+           # 统一弹窗的状态图标，源码和打包版本都使用同一套 PNG
+           ('anhutoolbox/assets/dialog_status.png', 'anhutoolbox/assets'),
+           ('anhutoolbox/assets/dialog_error.png', 'anhutoolbox/assets'),
+           ('anhutoolbox/assets/dialog_success.png', 'anhutoolbox/assets'),
+           ('anhutoolbox/assets/dialog_question.png', 'anhutoolbox/assets'),
            # Qt 中文翻译: 让「新建项目」这类内置对话框的按钮显示 确定/取消
            ('anhutoolbox/assets/qtbase_zh_CN.qm', 'anhutoolbox/assets'),
            # 第三方工具: 安装包会使用这些外置资源，防止未打包工具附件

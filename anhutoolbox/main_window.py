@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QTabWidget, QStackedWidget,
     QSplitter, QStatusBar, QLabel, QFrame, QPushButton,
-    QMessageBox, QApplication, QMenu, QInputDialog, QFileDialog
+    QApplication, QMenu, QFileDialog
 )
 from PySide6.QtCore import Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QFont
@@ -22,6 +22,9 @@ from . import settings as cfg
 from . import toolbox
 from .custom_library import CustomLibraryPage
 from .projects import ProjectManager, DEFAULT_PROJECT_NAME
+from .dialogs import (
+    ask_yes_no, get_text, show_error, show_information, show_success, show_warning,
+)
 
 
 # 工具库分组: (组名, [(key, 显示名), ...])，key 对应下方工具页字典
@@ -616,11 +619,10 @@ class MainWindow(QMainWindow):
         if name == self._current_project:
             return True
         if confirm and self._active_worker:
-            r = QMessageBox.question(
-                self, "切换项目",
-                "切换项目会断开当前连接，是否继续？",
-                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-            if r != QMessageBox.Yes:
+            if not ask_yes_no(
+                self, "切换项目", "切换项目会断开当前连接，是否继续？",
+                confirm_text="切换",
+            ):
                 self.sidebar.set_current_project(self._current_project)
                 return False
         self._save_current_project()
@@ -688,8 +690,8 @@ class MainWindow(QMainWindow):
             self._project_delete()
 
     def _project_new(self):
-        name, ok = QInputDialog.getText(
-            self, "新建项目", "项目名称：",
+        name, ok = get_text(
+            self, "新建项目", "请输入新项目的名称",
             text="项目{}".format(len(self._pm.names()) + 1))
         name = (name or "").strip()
         if not ok or not name:
@@ -702,7 +704,7 @@ class MainWindow(QMainWindow):
         old = self._current_project
         if not old:
             return
-        name, ok = QInputDialog.getText(self, "重命名项目", "新名称：", text=old)
+        name, ok = get_text(self, "重命名项目", "请输入新的项目名称", text=old)
         name = (name or "").strip()
         if not ok or not name or name == old:
             return
@@ -714,7 +716,7 @@ class MainWindow(QMainWindow):
         old = self._current_project
         if not old:
             return
-        name, ok = QInputDialog.getText(self, "复制项目", "新项目名称：", text=old + " 副本")
+        name, ok = get_text(self, "复制项目", "请输入副本的项目名称", text=old + " 副本")
         name = (name or "").strip()
         if not ok or not name:
             return
@@ -726,11 +728,11 @@ class MainWindow(QMainWindow):
         old = self._current_project
         if not old:
             return
-        r = QMessageBox.question(
+        if not ask_yes_no(
             self, "删除项目",
             "确定删除项目「{}」吗？\n该项目下的预设命令和配置会一并删除，且无法恢复。".format(old),
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-        if r != QMessageBox.Yes:
+            confirm_text="删除", danger=True,
+        ):
             return
         if self.send_bar.chk_repeat.isChecked():
             self.send_bar.chk_repeat.setChecked(False)
@@ -749,10 +751,10 @@ class MainWindow(QMainWindow):
             return
         name = self._pm.import_from(path)
         if not name:
-            QMessageBox.critical(self, "导入失败", "项目文件格式不正确或无法读取。")
+            show_error(self, "导入失败", "项目文件格式不正确或无法读取。")
             return
         self._reload_project_list(name)
-        QMessageBox.information(self, "导入成功", "已导入项目「{}」".format(name))
+        show_success(self, "导入成功", "已导入项目「{}」".format(name))
 
     def _project_export(self):
         old = self._current_project
@@ -764,15 +766,15 @@ class MainWindow(QMainWindow):
         if not path:
             return
         if self._pm.export_to(old, path):
-            QMessageBox.information(self, "导出成功", "已导出到：\n{}".format(path))
+            show_success(self, "导出成功", "已导出到：\n{}".format(path))
         else:
-            QMessageBox.critical(self, "导出失败", "无法写入该文件。")
+            show_error(self, "导出失败", "无法写入该文件。")
 
     def _open_project_dir(self):
         try:
             os.startfile(self._pm.dir)
         except Exception as e:
-            QMessageBox.warning(self, "提示", "无法打开项目文件夹：\n{}".format(e))
+            show_warning(self, "提示", "无法打开项目文件夹：\n{}".format(e))
 
     @Slot(str)
     def _on_mode_changed(self, mode: str):
@@ -793,7 +795,7 @@ class MainWindow(QMainWindow):
     def _connect_serial(self):
         port = self.sidebar.cb_port.currentText().strip()
         if not port:
-            QMessageBox.warning(self,"提示","请选择串口号"); return
+            show_warning(self, "提示", "请选择串口号"); return
         try:
             parity_map = {"None":"N","Even":"E","Odd":"O","Mark":"M","Space":"S"}
             ser = serial.Serial(
@@ -821,7 +823,7 @@ class MainWindow(QMainWindow):
             self._lbl_local.setText("{} {}bps,{},{},{}".format(port,self.sidebar.cb_baud.currentText(),self.sidebar.cb_data.currentText(),self.sidebar.cb_parity.currentText(),self.sidebar.cb_stop.currentText()))
             self.status_bar.showMessage("串口已打开: {}".format(port),3000)
         except Exception as e:
-            QMessageBox.critical(self,"错误","无法打开串口:\n{}".format(e))
+            show_error(self, "错误", "无法打开串口:\n{}".format(e))
 
     def _connect_tcp_server(self):
         port = self.sidebar.sp_server_port.value()
@@ -843,7 +845,7 @@ class MainWindow(QMainWindow):
         # 本地端口: 留空 = 随机(0); 填数字 = 固定端口
         _lp = self.sidebar.le_local_port.text().strip()
         local_port = int(_lp) if _lp.isdigit() else 0
-        if not host: QMessageBox.warning(self,"提示","请输入远端地址"); return
+        if not host: show_warning(self, "提示", "请输入远端地址"); return
         # 若旧连接仍在重试/运行中, 先停止再重新连接 (QThread 不能对运行中的线程重复 start)
         if self._tcp_client.isRunning():
             self._tcp_client.stop()
@@ -895,7 +897,7 @@ class MainWindow(QMainWindow):
         """
         if not self._active_worker:
             if notify:
-                QMessageBox.warning(self, "提示", "请先建立连接")
+                show_warning(self, "提示", "请先建立连接")
             return False
         if isinstance(self._active_worker, TCPClientWorker) and not self._tcp_client.is_connected:
             return False
