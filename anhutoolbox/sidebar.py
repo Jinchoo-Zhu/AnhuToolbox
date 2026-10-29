@@ -528,7 +528,7 @@ class Sidebar(QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(8)
 
-        # 用网格布局让"监听端口"和"客户端超时(s)"两个输入框的左边对齐.
+        # 用网格布局让"监听端口"和"超时(s)"两个输入框的左边对齐.
         # 标签作为 col0, SpinBox 作为 col1, col1 stretch=1 占满.
         form = QGridLayout()
         form.setHorizontalSpacing(8)
@@ -536,7 +536,7 @@ class Sidebar(QWidget):
         form.setColumnStretch(1, 1)
 
         lab_port = QLabel("监听端口")
-        lab_tmo = QLabel("客户端超时(s)")
+        lab_tmo = QLabel("超时(s)")
         # 给两个标签设成等宽, 保证 spinbox 起点严格对齐.
         lw = max(lab_port.sizeHint().width(), lab_tmo.sizeHint().width())
         for lab in (lab_port, lab_tmo):

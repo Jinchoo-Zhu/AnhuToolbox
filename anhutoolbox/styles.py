@@ -34,6 +34,9 @@ def _find_assets_dir():
 # 注意: QSS 的 url() 不接受 file:/// 前缀, 必须用正斜杠的本地绝对路径
 _ASSETS_DIR = _find_assets_dir()
 _DOWN_ARROW = os.path.join(_ASSETS_DIR, "down_arrow.png").replace("\\", "/")
+_UP_ARROW = os.path.join(_ASSETS_DIR, "up_arrow.png").replace("\\", "/")
+_CHECK_MARK = os.path.join(_ASSETS_DIR, "checkbox_check.svg").replace("\\", "/")
+_CHECK_MARK_MUTED = os.path.join(_ASSETS_DIR, "checkbox_check_muted.svg").replace("\\", "/")
 
 BG_MAIN       = "#FFFFFF"
 BG_PANEL      = "#FAFAFA"
@@ -246,6 +249,43 @@ QSpinBox, QLineEdit {{
     padding: 4px 8px;
     min-height: 22px;
 }}
+/* 数字框右侧箭头固定为独立宽度，输入内容不会被遮住。 */
+QSpinBox {{
+    padding-right: 20px;
+}}
+QSpinBox::up-button, QSpinBox::down-button {{
+    subcontrol-origin: padding;
+    width: 18px;
+    /* 两段箭头无缝相接，总高度固定为控件内高。 */
+    height: 12px;
+    border: none;
+    border-left: 1px solid {BORDER};
+    background-color: {BG_CARD};
+}}
+QSpinBox::up-button {{
+    subcontrol-position: top right;
+    border-top-right-radius: 3px;
+}}
+QSpinBox::down-button {{
+    subcontrol-position: bottom right;
+    border-bottom-right-radius: 3px;
+}}
+QSpinBox::up-button:hover, QSpinBox::down-button:hover {{
+    background-color: {BG_HOVER};
+}}
+QSpinBox::up-button:pressed, QSpinBox::down-button:pressed {{
+    background-color: {BG_ACTIVE};
+}}
+QSpinBox::up-arrow {{
+    image: url({_UP_ARROW});
+    width: 10px;
+    height: 7px;
+}}
+QSpinBox::down-arrow {{
+    image: url({_DOWN_ARROW});
+    width: 10px;
+    height: 7px;
+}}
 QSpinBox:hover, QLineEdit:hover {{
     border-color: {BORDER_FOCUS};
 }}
@@ -370,11 +410,28 @@ QCheckBox::indicator {{
     background-color: {BG_INPUT};
 }}
 QCheckBox::indicator:checked {{
-    background-color: {ACCENT};
+    background-color: {BG_INPUT};
     border-color: {ACCENT};
+    image: url({_CHECK_MARK});
+}}
+QCheckBox::indicator:checked:hover {{
+    background-color: {BG_HOVER};
+}}
+QCheckBox::indicator:checked:disabled {{
+    background-color: {BG_CARD};
+    border-color: {BORDER};
+    image: url({_CHECK_MARK_MUTED});
 }}
 QCheckBox::indicator:hover {{
     border-color: {BORDER_FOCUS};
+}}
+QCheckBox::indicator:disabled {{
+    background-color: {BG_CARD};
+    border-color: {BORDER};
+}}
+/* 放在 hover 之后：禁用控件即使被鼠标悬停也保持灰色。 */
+QCheckBox:disabled {{
+    color: {TEXT_MUTED};
 }}
 
 QFrame#separator {{

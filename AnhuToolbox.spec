@@ -39,6 +39,10 @@ a = Analysis(
     binaries=[],
     datas=[('anhutoolbox.ico', '.'),
            ('anhutoolbox/assets/down_arrow.png', 'anhutoolbox/assets'),
+           ('anhutoolbox/assets/up_arrow.png', 'anhutoolbox/assets'),
+           # 勾选框的蓝色对勾，源码和打包版本共用
+           ('anhutoolbox/assets/checkbox_check.svg', 'anhutoolbox/assets'),
+           ('anhutoolbox/assets/checkbox_check_muted.svg', 'anhutoolbox/assets'),
            # 统一弹窗的状态图标，源码和打包版本都使用同一套 PNG
            ('anhutoolbox/assets/dialog_status.png', 'anhutoolbox/assets'),
            ('anhutoolbox/assets/dialog_error.png', 'anhutoolbox/assets'),
