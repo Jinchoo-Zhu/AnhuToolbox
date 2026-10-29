@@ -49,9 +49,10 @@ HEAD_TIP_WIDTH = 300
 class CustomLibraryPage(QWidget):
     """自定义库: 顶部工具栏 + 工具图标网格 (首位是「添加工具」卡片)。"""
 
-    def __init__(self, tools_dir):
+    def __init__(self, tools_dir, manifest_dir=None):
         super().__init__()
         self._tools_dir = tools_dir
+        self._manifest_dir = manifest_dir or tools_dir
         self._tools = []
         self._last_dir = ""       # 记住上次添加的位置, 下次打开对话框直接定位
         self._build()
@@ -91,8 +92,8 @@ class CustomLibraryPage(QWidget):
         self._btn_add.setCursor(Qt.CursorShape.PointingHandCursor)
         self._btn_add.setToolTip(
             "选择一个本地的快捷方式或 exe 加入自定义库\n"
-            "(清单写在 tools\\{}，不改动官方工具箱)".format(
-                toolbox.USER_MANIFEST_NAME))
+            "(清单写在 {}，不改动官方工具箱)".format(
+                toolbox.user_manifest_path(self._manifest_dir)))
         self._btn_add.setStyleSheet(ADD_BTN_STYLE)
         self._btn_add.clicked.connect(self.add_tool)
         head.addWidget(self._btn_add)
@@ -108,7 +109,7 @@ class CustomLibraryPage(QWidget):
     # ------------------------------------------------------------------
     def reload(self):
         """重新读取清单并重建网格 (增/删/改名后调用)。"""
-        self._tools = toolbox.load_user_manifest(self._tools_dir)
+        self._tools = toolbox.load_user_manifest(self._manifest_dir)
         self._lbl_count.setText("共 {} 个".format(len(self._tools)))
         # 提示常驻, 不随工具数量变化 (没有工具时更要看这段说明)
         self._lbl_tip.setText(HEAD_TIP)
@@ -193,7 +194,7 @@ class CustomLibraryPage(QWidget):
             show_warning(self, "添加失败", "找不到该文件：\n{}".format(path))
             return
 
-        tools = toolbox.load_user_manifest(self._tools_dir)
+        tools = toolbox.load_user_manifest(self._manifest_dir)
         if any(self._same_path(t, path) for t in tools):
             show_information(self, "提示", "「{}」已经添加过了。".format(
                 os.path.basename(path)))
@@ -218,7 +219,7 @@ class CustomLibraryPage(QWidget):
         if not ok or not name or name == old:
             return
         path = str(tool.get("path") or "")
-        tools = toolbox.load_user_manifest(self._tools_dir)
+        tools = toolbox.load_user_manifest(self._manifest_dir)
         for t in tools:
             if self._same_path(t, path):
                 t["name"] = name
@@ -236,20 +237,20 @@ class CustomLibraryPage(QWidget):
             confirm_text="移除",
         ):
             return
-        tools = [t for t in toolbox.load_user_manifest(self._tools_dir)
+        tools = [t for t in toolbox.load_user_manifest(self._manifest_dir)
                  if not self._same_path(t, path)]
         if self._save(tools, "移除失败"):
             self.reload()
 
     def _save(self, tools, title):
         """写清单, 失败时提示原因 (装到 Program Files 等只读目录时会发生)。"""
-        if toolbox.save_user_manifest(self._tools_dir, tools):
+        if toolbox.save_user_manifest(self._manifest_dir, tools):
             return True
         show_error(
             self, title,
             "无法写入自定义库清单：\n{}\n\n"
             "若软件安装在 Program Files 等受保护目录，请换到可写目录后重试。".format(
-                toolbox.user_manifest_path(self._tools_dir)))
+                toolbox.user_manifest_path(self._manifest_dir)))
         return False
 
     # ------------------------------------------------------------------

@@ -48,6 +48,7 @@ python -m venv .venv
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 python .\verify_tools.py
+python -m unittest discover -s tests -v
 python .\main.py
 ```
 
@@ -83,10 +84,14 @@ pyinstaller --noconfirm --clean .\AnhuToolbox.spec
 ```
 
 默认安装程序会生成在 `installer` 目录。安装后 `tools` 和 `data` 位于应用目录，
-工具附件应与安装包一起安装，不要只复制主 EXE。
+工具附件应与安装包一起安装，不要只复制主 EXE。如果应用目录不可写（例如安装在
+受保护的 `Program Files`），程序会使用
+`%LOCALAPPDATA%\AnhuToolbox\data`，并自动迁移已有的配置和项目。
 
 ## 数据与备份
 
 `data/settings.json`、`data/presets.json` 和 `data/projects` 是本机运行设置及用户数据，
 不随源码仓库提交。更换电脑时，如有需要，请另行备份这些文件。
+自定义库清单默认为 `tools/tools.user.json`；使用用户数据目录时则位于
+`%LOCALAPPDATA%\AnhuToolbox\data/tools.user.json`。安装程序升级不会覆盖该文件。
 

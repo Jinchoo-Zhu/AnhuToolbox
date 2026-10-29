@@ -1,15 +1,14 @@
 # -*- coding: utf-8 -*-
 """AnhuToolbox 主窗口 -- 带配置持久化 + 预设面板可折叠"""
 
-import os, json, socket
+import os, json, shutil, socket
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QTabWidget, QStackedWidget,
     QSplitter, QStatusBar, QLabel, QFrame, QPushButton,
-    QApplication, QMenu, QFileDialog
+    QMenu, QFileDialog
 )
 from PySide6.QtCore import Qt, QTimer, Signal, Slot
-from PySide6.QtGui import QFont
 import serial, serial.tools.list_ports
 
 from .sidebar import Sidebar
@@ -22,8 +21,9 @@ from . import settings as cfg
 from . import toolbox
 from .custom_library import CustomLibraryPage
 from .projects import ProjectManager, DEFAULT_PROJECT_NAME
+from .app_paths import choose_data_root
 from .dialogs import (
-    ask_yes_no, get_text, show_error, show_information, show_success, show_warning,
+    ask_yes_no, get_text, show_error, show_success, show_warning,
 )
 
 
@@ -55,6 +55,42 @@ LIBRARY_ORDER = ["timestamp", "base", "encode", "checksum", "amount",
                  "json", "regex", "diff", "sort", "qr", "network"]
 
 
+def _profile_int(value, default, minimum=None, maximum=None):
+    """把导入项目中的数值字段安全转换为整数，并进行范围约束。"""
+    try:
+        number = int(value)
+    except (TypeError, ValueError, OverflowError):
+        number = int(default)
+    if minimum is not None:
+        number = max(minimum, number)
+    if maximum is not None:
+        number = min(maximum, number)
+    return number
+
+
+def _profile_bool(value, default=False):
+    """兼容 JSON 布尔值以及常见字符串写法。"""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        text = value.strip().lower()
+        if text in ("1", "true", "yes", "on", "是"):
+            return True
+        if text in ("0", "false", "no", "off", "否", ""):
+            return False
+    return bool(default)
+
+
+def _profile_dict(value):
+    return value if isinstance(value, dict) else {}
+
+
+def _profile_list(value):
+    return value if isinstance(value, list) else []
+
+
 
 
 class MainWindow(QMainWindow):
@@ -63,21 +99,26 @@ class MainWindow(QMainWindow):
     def __init__(self, base_dir=None):
         super().__init__()
         self._base_dir = base_dir or os.path.dirname(os.path.dirname(__file__))
+        self._data_root = choose_data_root(self._base_dir)
+        self._data_dir = os.path.join(self._data_root, "data")
         # 数据文件放 EXE 目录 (可写), 而非临时解压目录
         self.setWindowTitle("Anhu 百宝箱")
         self.setMinimumSize(1100, 720)
 
-        cfg.init(os.path.join(self._base_dir, "data", "settings.json"))
+        cfg.init(os.path.join(self._data_dir, "settings.json"))
 
         self._serial_worker = SerialReadWorker()
         self._serial_worker.data_received.connect(self._on_rx_data)
         self._serial_worker.error_occurred.connect(self._on_error)
+        self._serial_worker.disconnected.connect(self._on_serial_disconnected)
 
         self._tcp_server = TCPServerWorker()
         self._tcp_server.data_received.connect(self._on_rx_data)
         self._tcp_server.error_occurred.connect(self._on_error)
         self._tcp_server.client_connected.connect(self._on_tcp_server_client_connected)
         self._tcp_server.client_disconnected.connect(self._on_tcp_server_client_disconnected)
+        self._tcp_server.started.connect(self._on_tcp_server_started)
+        self._tcp_server.start_failed.connect(self._on_tcp_server_start_failed)
         self._tcp_server.log_message.connect(self._log)
 
         self._tcp_client = TCPClientWorker()
@@ -85,6 +126,7 @@ class MainWindow(QMainWindow):
         self._tcp_client.error_occurred.connect(self._on_error)
         self._tcp_client.connected.connect(self._on_tcp_connected)
         self._tcp_client.disconnected.connect(self._on_tcp_disconnected)
+        self._tcp_client.connect_failed.connect(self._on_tcp_client_connect_failed)
         self._tcp_client.log_message.connect(self._log)
 
         self._active_worker = None
@@ -93,11 +135,13 @@ class MainWindow(QMainWindow):
         self._remote_addr = ""
 
         # 项目管理: 一个项目 = 一整套连接参数 + 发送/显示配置 + 预设命令
-        self._pm = ProjectManager(self._base_dir)
+        self._pm = ProjectManager(self._data_root)
         self._current_project = ""
+        self._project_load_failed = False
         self._applying = False          # 应用项目配置期间抑制自动保存
         self._last_snapshot = None
         self._has_dtr_rts = False       # 当前项目是否记录了 DTR/RTS 状态
+        self._extra_tabs_built = False
 
         self._build_ui()
         self._restore_global()
@@ -161,7 +205,10 @@ class MainWindow(QMainWindow):
         self._tab_widget.addTab(self._main_area, "串口调试")
         self._tab_widget.currentChanged.connect(self._on_tab_changed)
         # 其余工具页延迟到事件循环开始后再创建, 加快首屏显示
-        QTimer.singleShot(0, self._build_extra_tabs)
+        self._extra_tabs_timer = QTimer(self)
+        self._extra_tabs_timer.setSingleShot(True)
+        self._extra_tabs_timer.timeout.connect(self._build_extra_tabs)
+        self._extra_tabs_timer.start(0)
 
         # --- 预设面板 (可拖动, 初始隐藏) ---
         self.preset_panel = PresetPanel()
@@ -195,6 +242,9 @@ class MainWindow(QMainWindow):
 
     def _build_extra_tabs(self):
         """延迟创建工具箱/工具库/自定义库三个主 tab (避免首屏被阻塞)"""
+        if self._extra_tabs_built:
+            return
+        self._extra_tabs_built = True
         # --- 工具库 tab: 左侧分组列表在 sidebar, 右侧是工具页堆叠 ---
         self._library_pages = {
             "timestamp": TimestampTool(),
@@ -241,7 +291,19 @@ class MainWindow(QMainWindow):
         self._tab_widget.addTab(self._toolbox_stack, "工具箱")
 
         # --- 自定义库 tab: 用户自己添加的本地工具 (清单 tools\tools.user.json) ---
-        self._custom_library = CustomLibraryPage(tools_dir)
+        manifest_dir = tools_dir
+        if os.path.normcase(os.path.abspath(self._data_root)) != \
+                os.path.normcase(os.path.abspath(self._base_dir)):
+            manifest_dir = self._data_dir
+            old_manifest = os.path.join(tools_dir, "tools.user.json")
+            new_manifest = os.path.join(manifest_dir, "tools.user.json")
+            if os.path.isfile(old_manifest) and not os.path.exists(new_manifest):
+                try:
+                    os.makedirs(manifest_dir, exist_ok=True)
+                    shutil.copy2(old_manifest, new_manifest)
+                except Exception as e:
+                    print("[AnhuToolbox] 迁移自定义库清单失败:", e)
+        self._custom_library = CustomLibraryPage(tools_dir, manifest_dir)
         self._tab_widget.addTab(self._custom_library, "自定义库")
 
         # 填充左侧导航并连接信号
@@ -336,10 +398,12 @@ class MainWindow(QMainWindow):
         self.preset_panel.setVisible(show_preset)
         self._btn_toggle_preset.setChecked(show_preset)
         saved_sizes = cfg.get("preset_splitter", None)
-        if show_preset and saved_sizes and len(saved_sizes) == 2:
+        if (show_preset and isinstance(saved_sizes, list)
+                and len(saved_sizes) == 2
+                and all(isinstance(v, int) and v > 0 for v in saved_sizes)):
             self._preset_splitter.setSizes(saved_sizes)
         # First launch: show welcome message
-        if not os.path.exists(os.path.join(self._base_dir, "data", "settings.json")):
+        if not os.path.exists(os.path.join(self._data_dir, "settings.json")):
             self._show_welcome()
 
     def _apply_legacy_settings_to_ui(self):
@@ -387,7 +451,7 @@ class MainWindow(QMainWindow):
     def _read_legacy_presets(self):
         """读取旧版全局预设文件(仅用于初始化第一个项目)"""
         try:
-            with open(os.path.join(self._base_dir, "data", "presets.json"),
+            with open(os.path.join(self._data_dir, "presets.json"),
                       "r", encoding="utf-8") as f:
                 data = json.load(f)
             return data if isinstance(data, list) else []
@@ -423,7 +487,8 @@ class MainWindow(QMainWindow):
         self.sidebar.project_menu_requested.connect(self._show_project_menu)
         self.send_bar.chk_dtr.toggled.connect(self._on_dtr_toggled)
         self.send_bar.chk_rts.toggled.connect(self._on_rts_toggled)
-        self.log_panel.cleared.connect(self._update_stats)
+        self.log_panel.cleared.connect(self._on_log_cleared)
+        self.log_panel.file_error.connect(self._on_error)
         self._sync_timer = QTimer()
         self._sync_timer.timeout.connect(self._sync_preset_text)
         self._sync_timer.start(500)
@@ -437,7 +502,8 @@ class MainWindow(QMainWindow):
 
     def _autosave_project(self):
         """配置有变化就写回当前项目(快照比对, 无变化不写盘)"""
-        if self._applying or not self._current_project:
+        if (self._applying or not self._current_project
+                or self._project_load_failed):
             return
         snap = self._snapshot_ui()
         if snap == self._last_snapshot:
@@ -519,7 +585,9 @@ class MainWindow(QMainWindow):
 
     def _load_project(self, name):
         """把项目数据应用到界面"""
-        profile = self._pm.load(name) or {}
+        profile = self._pm.load(name)
+        self._project_load_failed = profile is None
+        profile = profile or {}
         self._applying = True
         try:
             self._apply_profile(profile)
@@ -532,11 +600,19 @@ class MainWindow(QMainWindow):
         cfg.save()
         self._check_port_exists()
         self._update_stats()
-        self.status_bar.showMessage("已切换到项目: {}".format(name), 3000)
+        if self._project_load_failed:
+            message = (
+                "项目「{}」读取失败，原文件已保护；本次修改不会自动保存。"
+                .format(name))
+            self.status_bar.showMessage(message, 15000)
+            self.log_panel.text.appendPlainText("[提示] " + message + "\n")
+        else:
+            self.status_bar.showMessage("已切换到项目: {}".format(name), 3000)
 
     def _save_current_project(self):
         """把当前界面状态写回当前项目"""
-        if self._applying or not self._current_project:
+        if (self._applying or not self._current_project
+                or self._project_load_failed):
             return
         snap = self._snapshot_ui()
         self._last_snapshot = snap
@@ -570,12 +646,14 @@ class MainWindow(QMainWindow):
 
     def _apply_profile(self, p):
         """把项目数据写进各个控件(调用方负责置 _applying 抑制自动保存)"""
+        p = _profile_dict(p)
         mode_map = {"serial": 0, "tcpserver": 1, "tcpclient": 2}
-        idx = mode_map.get(p.get("mode", "serial"), 0)
+        mode = str(p.get("mode", "serial") or "serial").strip().lower()
+        idx = mode_map.get(mode, 0)
         self.sidebar._mode_group.button(idx).setChecked(True)
         self.sidebar._on_mode_changed(idx)
 
-        s = p.get("serial") or {}
+        s = _profile_dict(p.get("serial"))
         self.sidebar.cb_port.setCurrentText(str(s.get("port", "COM1")))
         self.sidebar.cb_baud.setCurrentText(str(s.get("baud", "115200")))
         self.sidebar.cb_data.setCurrentText(str(s.get("data", "8")))
@@ -583,36 +661,51 @@ class MainWindow(QMainWindow):
         self.sidebar.cb_parity.setCurrentText(str(s.get("parity", "None")))
         self.sidebar.cb_flow.setCurrentText(str(s.get("flow", "None")))
 
-        t = p.get("tcpserver") or {}
-        self.sidebar.sp_server_port.setValue(int(t.get("port", 8888)))
-        self.sidebar.sp_client_timeout.setValue(int(t.get("client_timeout", 30)))
-        c = p.get("tcpclient") or {}
-        self.sidebar.le_client_host.setText(str(c.get("host", "127.0.0.1")))
-        self.sidebar.sp_client_port.setValue(int(c.get("port", 8888)))
+        t = _profile_dict(p.get("tcpserver"))
+        self.sidebar.sp_server_port.setValue(
+            _profile_int(t.get("port", 8888), 8888, 1, 65535))
+        self.sidebar.sp_client_timeout.setValue(
+            _profile_int(t.get("client_timeout", 30), 30, 0, 3600))
+        c = _profile_dict(p.get("tcpclient"))
+        host = str(c.get("host", "127.0.0.1") or "127.0.0.1").strip()
+        self.sidebar.le_client_host.setText(host)
+        self.sidebar.sp_client_port.setValue(
+            _profile_int(c.get("port", 8888), 8888, 1, 65535))
         lp = str(c.get("local_port", "") or "")
-        self.sidebar.le_local_port.setText(lp if lp.isdigit() and int(lp) > 0 else "")
+        local_port = _profile_int(lp, 0, 0, 65535) if lp.isdigit() else 0
+        self.sidebar.le_local_port.setText(
+            str(local_port) if local_port > 0 else "")
 
-        d = p.get("send") or {}
+        d = _profile_dict(p.get("send"))
         # 顺序: 先 CRLF 后 HEX (HEX 打开时会自动禁用并取消 CRLF)
-        self.send_bar.chk_crlf.setChecked(bool(d.get("crlf", True)))
-        self.send_bar.chk_hex.setChecked(bool(d.get("hex_send", False)))
-        self.send_bar.sp_interval.setValue(int(d.get("interval", 1000)))
-        i = self.send_bar.cb_checksum.findText(str(d.get("checksum", "ModbusCRC16")))
+        self.send_bar.chk_crlf.setChecked(_profile_bool(d.get("crlf", True), True))
+        self.send_bar.chk_hex.setChecked(
+            _profile_bool(d.get("hex_send", False), False))
+        self.send_bar.sp_interval.setValue(
+            _profile_int(d.get("interval", 1000), 1000, 5, 99999))
+        checksum = str(d.get("checksum", "ModbusCRC16") or "ModbusCRC16")
+        i = self.send_bar.cb_checksum.findText(checksum)
         if i >= 0:
             self.send_bar.cb_checksum.setCurrentIndex(i)
-        self.send_bar.sp_start.setValue(int(d.get("start_byte", 1)))
+        else:
+            self.send_bar.cb_checksum.setCurrentText("ModbusCRC16")
+        self.send_bar.sp_start.setValue(
+            _profile_int(d.get("start_byte", 1), 1, 1, 99999))
         self.send_bar.cb_end.setCurrentText(str(d.get("end_byte_text", "末尾")))
-        self.send_bar.chk_dtr.setChecked(bool(d.get("dtr", False)))
-        self.send_bar.chk_rts.setChecked(bool(d.get("rts", False)))
+        self.send_bar.chk_dtr.setChecked(_profile_bool(d.get("dtr", False), False))
+        self.send_bar.chk_rts.setChecked(_profile_bool(d.get("rts", False), False))
         self._has_dtr_rts = ("dtr" in d) or ("rts" in d)
         self.send_bar.text.setPlainText(str(d.get("draft", "")))
 
-        g = p.get("log") or {}
-        self.log_panel.chk_hex.setChecked(bool(g.get("hex_display", True)))
-        self.log_panel.chk_timestamp.setChecked(bool(g.get("timestamp", True)))
-        self.log_panel.sp_timeout.setValue(int(g.get("timeout", 0)))
+        g = _profile_dict(p.get("log"))
+        self.log_panel.chk_hex.setChecked(
+            _profile_bool(g.get("hex_display", True), True))
+        self.log_panel.chk_timestamp.setChecked(
+            _profile_bool(g.get("timestamp", True), True))
+        self.log_panel.sp_timeout.setValue(
+            _profile_int(g.get("timeout", 0), 0, 0, 9999))
 
-        self.preset_panel.load_from_project(p.get("presets") or [])
+        self.preset_panel.load_from_project(_profile_list(p.get("presets")))
 
     def _switch_project(self, name, confirm=True):
         """切换项目: 存旧项目 -> 停自动动作 -> 断开 -> 应用新项目"""
@@ -828,16 +921,19 @@ class MainWindow(QMainWindow):
     def _connect_tcp_server(self):
         port = self.sidebar.sp_server_port.value()
         timeout_s = self.sidebar.sp_client_timeout.value()
+        if self._tcp_server.isRunning():
+            self._tcp_server.stop()
         self._tcp_server.set_client_timeout(timeout_s)
         self._tcp_server.configure(port); self._tcp_server.start()
         self._active_worker = self._tcp_server
         self.sidebar.set_connected(True); self.sidebar.set_controls_enabled(False)
         lip = self._get_local_ip(); self._local_addr = "{}:{}".format(lip,port)
         self._lbl_conn_type.setText("TCPServer")
-        self._lbl_dot.setStyleSheet("color:#107C10;font-size:12px")
-        self._lbl_status_text.setText("已启动 · 待连接")
+        # bind/listen 的结果来自后台线程；成功前不能提前显示“已启动”。
+        self._lbl_dot.setStyleSheet("color:#AAA;font-size:12px")
+        self._lbl_status_text.setText("启动中...")
         self._lbl_local.setText("本地IP={}".format(self._local_addr))
-        self.status_bar.showMessage("TCP服务器监听 {}:{}".format(lip,port),3000)
+        self.status_bar.showMessage("正在启动 TCP服务器 {}:{}...".format(lip,port),3000)
 
     def _connect_tcp_client(self):
         host = self.sidebar.le_client_host.text().strip()
@@ -858,6 +954,81 @@ class MainWindow(QMainWindow):
         self._lbl_status_text.setText("连接中...")
         self._lbl_remote.setText(self._remote_addr)
         self.status_bar.showMessage("TCP客户端连接中 {}:{}...".format(host,port),3000)
+
+    @Slot(int)
+    def _on_tcp_server_started(self, port=0):
+        if self._active_worker is not self._tcp_server:
+            return
+        self._lbl_dot.setStyleSheet("color:#107C10;font-size:12px")
+        self._lbl_status_text.setText("已启动 · 待连接")
+        self.status_bar.showMessage("TCP服务器监听端口 {}".format(port), 3000)
+
+    @Slot(str)
+    def _on_tcp_server_start_failed(self, message=""):
+        if self._active_worker is not self._tcp_server:
+            return
+        self._active_worker = None
+        self.sidebar.set_connected(False)
+        self.sidebar.set_controls_enabled(True)
+        self.send_bar.chk_dtr.setEnabled(False)
+        self.send_bar.chk_rts.setEnabled(False)
+        self._lbl_dot.setStyleSheet("color:#D83B01;font-size:12px")
+        self._lbl_status_text.setText("启动失败")
+        self._lbl_local.setText("")
+        self._lbl_arrow.setText("")
+        self._lbl_remote.setText("")
+        self._lbl_stats.setText("")
+        self._local_addr = ""
+        self._remote_addr = ""
+        self.status_bar.showMessage("TCP服务器启动失败: {}".format(message), 8000)
+
+    @Slot(str)
+    def _on_tcp_client_connect_failed(self, message=""):
+        if self._active_worker is not self._tcp_client:
+            return
+        self._active_worker = None
+        self.sidebar.set_connected(False)
+        self.sidebar.set_controls_enabled(True)
+        self.send_bar.chk_dtr.setEnabled(False)
+        self.send_bar.chk_rts.setEnabled(False)
+        self._lbl_dot.setStyleSheet("color:#D83B01;font-size:12px")
+        self._lbl_status_text.setText("连接失败")
+        self._lbl_local.setText("")
+        self._lbl_arrow.setText("")
+        self._lbl_remote.setText("")
+        self._lbl_stats.setText("")
+        self._local_addr = ""
+        self._remote_addr = ""
+        self.status_bar.showMessage("TCP客户端连接失败: {}".format(message), 8000)
+
+    @Slot(str)
+    def _on_serial_disconnected(self, message=""):
+        if self._active_worker is not self._serial_worker:
+            return
+        self.send_bar.chk_repeat.setChecked(False)
+        self.send_bar.stop_repeat()
+        self.preset_panel.stop_loops()
+        ser = self._serial_worker._serial
+        if ser is not None:
+            try:
+                ser.close()
+            except Exception:
+                pass
+        self._active_worker = None
+        self.sidebar.set_connected(False)
+        self.sidebar.set_controls_enabled(True)
+        self.send_bar.chk_dtr.setEnabled(False)
+        self.send_bar.chk_rts.setEnabled(False)
+        self._lbl_dot.setStyleSheet("color:#D83B01;font-size:12px")
+        self._lbl_status_text.setText("串口已断开")
+        self._lbl_local.setText("")
+        self._lbl_arrow.setText("")
+        self._lbl_remote.setText("")
+        self._lbl_stats.setText("")
+        self._local_addr = ""
+        self._remote_addr = ""
+        self.status_bar.showMessage(
+            "串口连接已断开: {}".format(message), 8000)
 
     def _get_local_ip(self):
         try:
@@ -901,19 +1072,46 @@ class MainWindow(QMainWindow):
             return False
         if isinstance(self._active_worker, TCPClientWorker) and not self._tcp_client.is_connected:
             return False
+        if (isinstance(self._active_worker, TCPServerWorker)
+                and self._tcp_server.client_count == 0):
+            if notify:
+                show_warning(self, "提示", "当前没有已连接的 TCP 客户端")
+            return False
         return True
 
     @Slot(bytes)
     def _on_send_data(self, data: bytes):
         if not self._can_send(): return
-        self._send_raw(data); self.log_panel.append_data("tx", data); self._update_stats()
+        if self._send_raw(data):
+            self._record_tx(data)
 
     def _send_raw(self, data: bytes):
-        if isinstance(self._active_worker, SerialReadWorker):
-            ser = self._active_worker._serial
-            if ser and ser.is_open: ser.write(data)
-        elif isinstance(self._active_worker, TCPServerWorker): self._active_worker.send(data)
-        elif isinstance(self._active_worker, TCPClientWorker): self._active_worker.send(data)
+        try:
+            if isinstance(self._active_worker, SerialReadWorker):
+                ser = self._active_worker._serial
+                if ser and ser.is_open:
+                    return ser.write(data) == len(data)
+            elif isinstance(self._active_worker, TCPServerWorker):
+                return self._active_worker.send(data) > 0
+            elif isinstance(self._active_worker, TCPClientWorker):
+                return self._active_worker.send(data)
+        except Exception as e:
+            self._on_error("发送失败: {}".format(e))
+        return False
+
+    def _record_tx(self, data: bytes):
+        """只在数据真正进入至少一个发送通道后更新发送日志和统计。"""
+        self.log_panel.append_data("tx", data)
+        self.send_bar._tx_total += len(data)
+        self.send_bar.lbl_tx_count.setText("Tx: {}".format(
+            self.send_bar._tx_total))
+        self._update_stats()
+
+    @Slot()
+    def _on_log_cleared(self):
+        self.send_bar._tx_total = 0
+        self.send_bar.lbl_tx_count.setText("Tx: 0")
+        self._update_stats()
 
     def _update_stats(self):
         self._lbl_stats.setText("Rx:{} | Tx:{}".format(self.log_panel._rx_total, self.log_panel._tx_total))
@@ -924,17 +1122,15 @@ class MainWindow(QMainWindow):
         if not self._can_send(notify=False): return
         # Apply current checksum rules from send bar
         data = self.send_bar._build_data_for_preset(data)
-        self._send_raw(data); self.log_panel.append_data("tx", data); self._update_stats()
+        if data and self._send_raw(data):
+            self._record_tx(data)
 
     @Slot()
     def _on_repeat_tick(self):
         if not self._can_send(notify=False): return
         data = self.send_bar._build_data(silent=True)
-        if data:
-            self._send_raw(data); self.log_panel.append_data("tx", data)
-            self.send_bar._tx_total += len(data)
-            self.send_bar.lbl_tx_count.setText("Tx: {}".format(self.send_bar._tx_total))
-            self._update_stats()
+        if data and self._send_raw(data):
+            self._record_tx(data)
 
     def _on_dtr_toggled(self, checked):
         if isinstance(self._active_worker, SerialReadWorker):
@@ -945,6 +1141,8 @@ class MainWindow(QMainWindow):
             if self._active_worker._serial: self._active_worker._serial.rts = checked
 
     def _on_tcp_connected(self, host="", port=0):
+        if self._active_worker is not self._tcp_client:
+            return
         self._lbl_dot.setStyleSheet("color:#107C10;font-size:12px")
         self._lbl_status_text.setText("已连接")
         lip, lport = "127.0.0.1", 0
@@ -961,20 +1159,35 @@ class MainWindow(QMainWindow):
         self.status_bar.showMessage("已连接 {}:{}".format(host,port),3000)
 
     def _on_tcp_server_client_connected(self, host="", port=0):
+        if self._active_worker is not self._tcp_server:
+            return
         self._lbl_arrow.setText("←")
         self._lbl_remote.setText("客户端={}:{}".format(host,port))
         self._lbl_status_text.setText("已启动 · 已连接")
         self.status_bar.showMessage("客户端连接: {}:{}".format(host,port),3000)
 
     def _on_tcp_server_client_disconnected(self, host="", port=0):
-        # 客户端断开: 清除客户端显示; 若还有客户端连接则保持"已连接", 全部断开才恢复"待连接"
-        # 保留本地IP和统计, 因为服务还在运行
-        self._lbl_arrow.setText("")
-        self._lbl_remote.setText("")
-        self._lbl_status_text.setText("已启动 · 待连接" if self._tcp_server.client_count == 0 else "已启动 · 已连接")
-        self.status_bar.showMessage("客户端断开: {}:{}".format(host,port),3000)
+        if self._active_worker is not self._tcp_server:
+            return
+        disconnected_host, disconnected_port = host, port
+        # 多客户端时优先展示仍在线的一个；全部断开才恢复“待连接”。
+        addresses = self._tcp_server.client_addresses
+        if addresses:
+            host, port = addresses[-1]
+            self._lbl_arrow.setText("←")
+            self._lbl_remote.setText("客户端={}:{}".format(host, port))
+            self._lbl_status_text.setText("已启动 · 已连接")
+        else:
+            self._lbl_arrow.setText("")
+            self._lbl_remote.setText("")
+            self._lbl_status_text.setText("已启动 · 待连接")
+        self.status_bar.showMessage(
+            "客户端断开: {}:{}".format(
+                disconnected_host, disconnected_port), 3000)
 
     def _on_tcp_disconnected(self):
+        if self._active_worker is not self._tcp_client:
+            return
         # TCP 客户端网络断开: 客户端 Socket 已断, 但本地 UI 应停在"已断开"状态
         # 而不是"未连接" (用户可能想重新连接; 重连前不应清空所有标签)
         self._lbl_dot.setStyleSheet("color:#D83B01;font-size:12px")
@@ -1012,9 +1225,22 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         self._sync_timer.stop(); self._port_timer.stop()
+        self._extra_tabs_timer.stop()
         self.send_bar.stop_repeat()
         self.preset_panel.stop_timer()
-        if self._active_worker: self._active_worker.stop()
+        if self._active_worker:
+            self._on_disconnect(self.sidebar.current_mode)
+        if hasattr(self, "_library_pages"):
+            network = self._library_pages.get("network")
+            if network is not None:
+                network.stop_tasks()
+            timestamp = self._library_pages.get("timestamp")
+            if timestamp is not None:
+                timestamp.stop_timer()
+        if hasattr(self, "_toolbox_pages"):
+            hardware = self._toolbox_pages.get("硬件信息")
+            if hardware is not None:
+                hardware.cleanup()
         self.log_panel.cleanup()
         self._save_current_project()
         self._save_global()

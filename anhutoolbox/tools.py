@@ -5,7 +5,7 @@ import io, os, json, re, zipfile, time
 from datetime import datetime
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSizePolicy,
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QScrollArea, QLayout,
     QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox,
     QGroupBox, QGridLayout, QFileDialog, QApplication,
@@ -20,7 +20,7 @@ from PySide6.QtGui import QFont, QPixmap, QImage, QColor, QTextCharFormat
 from . import hardware
 from . import toolbox
 from .styles import COMBO_STYLE
-from .dialogs import show_error, show_information, show_success
+from .dialogs import show_error, show_information, show_success, show_warning
 
 
 # ============================================================
@@ -96,8 +96,13 @@ class TimestampTool(QWidget):
             return
         try:
             ts = int(s)
-            if ts > 1e15:
-                ts = ts // 1000
+            # 常见时间戳：10 位秒、13 位毫秒、16 位微秒。
+            # 按数量级判断，避免把当前 13 位毫秒时间戳误当作秒。
+            magnitude = abs(ts)
+            if magnitude >= 100_000_000_000_000:
+                ts //= 1_000_000
+            elif magnitude >= 100_000_000_000:
+                ts //= 1000
             dt = datetime.fromtimestamp(ts)
             self._ts_result.setText(dt.strftime("%Y-%m-%d %H:%M:%S"))
         except Exception:
@@ -117,8 +122,7 @@ class TimestampTool(QWidget):
                 self._dt_ms.setText(str(ts * 1000))
                 return
             except ValueError:
-                yuan_text = yuan_text[yuan_index + 2:]
-                break
+                continue
         self._dt_ts.setText("格式错误"); self._dt_ms.setText("格式错误")
 
     def stop_timer(self):
@@ -334,7 +338,13 @@ class QRTool(QWidget):
 
         if pixmap:
             ql = QLabel()
-            ql.setPixmap(pixmap)
+            # 二维码内容较长时模块数会明显增加，预览统一缩放到基准格，
+            # 避免单张图片撑宽整行。批量保存的 PNG 仍保持原始分辨率。
+            ql.setPixmap(pixmap.scaled(
+                self._cell_img_size, self._cell_img_size,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            ))
             ql.setAlignment(Qt.AlignCenter)
             ql.setStyleSheet("border:none;background:transparent")
             cl.addWidget(ql, 0, Qt.AlignCenter)
@@ -373,7 +383,9 @@ class QRTool(QWidget):
             old_w = self._grid.itemAtPosition(r, c)
             if old_w:
                 w = old_w.widget()
+                self._grid.removeItem(old_w)
                 if w:
+                    w.setParent(None)
                     w.deleteLater()
             self._grid.addWidget(cell, r, c)
 
@@ -398,6 +410,8 @@ class QRTool(QWidget):
 
     def _batch_save(self):
         import qrcode
+        text = self._qr_input.toPlainText().strip()
+        self._lines = [l.strip() for l in text.split("\n") if l.strip()]
         if not self._lines:
             show_information(self, "提示", "请先生成预览")
             return
@@ -409,6 +423,25 @@ class QRTool(QWidget):
         count = 0
         fail = 0
         errs = []
+        used_names = set()
+
+        def output_name(value, index):
+            name = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "_", value)
+            name = name.strip().rstrip(". ")
+            if not name:
+                name = "QR_{:03d}".format(index + 1)
+            if re.fullmatch(
+                    r"(?i)(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])", name):
+                name = "_" + name
+            name = name[:80].rstrip(". ") or "QR_{:03d}".format(index + 1)
+            candidate = name + ".png"
+            suffix = 2
+            while candidate.casefold() in used_names:
+                candidate = "{} ({}).png".format(name, suffix)
+                suffix += 1
+            used_names.add(candidate.casefold())
+            return candidate
+
         try:
             with zipfile.ZipFile(path_, "w", zipfile.ZIP_DEFLATED) as zf:
                 for i, line in enumerate(self._lines):
@@ -418,7 +451,7 @@ class QRTool(QWidget):
                         img = qr.make_image(fill_color="black", back_color="white")
                         buf = io.BytesIO()
                         img.save(buf, "PNG")
-                        fname = f"QR_{i+1:03d}.png"
+                        fname = output_name(line, i)
                         zf.writestr(fname, buf.getvalue())
                         count += 1
                     except Exception as e:
@@ -566,13 +599,13 @@ class BaseTool(QWidget):
                 le.setText("格式错误")
             return
         if 2 in self._results:
-            self._results[2].setText(bin(val)[2:])
+            self._results[2].setText(format(val, "b"))
         if 8 in self._results:
-            self._results[8].setText(oct(val)[2:])
+            self._results[8].setText(format(val, "o"))
         if 10 in self._results:
             self._results[10].setText(str(val))
         if 16 in self._results:
-            self._results[16].setText(hex(val)[2:].upper())
+            self._results[16].setText(format(val, "X"))
 
 
 # ============================================================
@@ -687,7 +720,7 @@ class RegexTool(QWidget):
             # 构建美观的 HTML 结果
             parts = []
             parts.append(
-                f"<div style='font-family:Consolas;font-size:14px'>"
+                "<div style='font-family:Consolas;font-size:14px'>"
                 f"<p style='color:#0078D4;font-weight:600;margin:0 0 8px 0'>"
                 f"共找到 {len(matches)} 个匹配</p>"
             )
@@ -695,14 +728,14 @@ class RegexTool(QWidget):
             for i, m in enumerate(matches):
                 # 匹配卡片
                 parts.append(
-                    f"<div style='background:#FFF;border:1px solid #E0E0E0;"
-                    f"border-radius:4px;padding:6px 10px;margin-bottom:6px'>"
+                    "<div style='background:#FFF;border:1px solid #E0E0E0;"
+                    "border-radius:4px;padding:6px 10px;margin-bottom:6px'>"
                 )
                 # 标题行
                 parts.append(
                     f"<p style='margin:0 0 4px 0;font-size:13px;color:#666'>"
                     f"匹配 {i+1} &nbsp;|&nbsp; 位置 [{m.start()}, {m.end()}] &nbsp;|&nbsp; 长度 {m.end()-m.start()}"
-                    f"</p>"
+                    "</p>"
                 )
                 # 匹配内容高亮
                 parts.append(
@@ -714,7 +747,7 @@ class RegexTool(QWidget):
                 # 分组
                 if m.groups() or m.groupdict():
                     parts.append(
-                        f"<p style='margin:4px 0 0 0;font-size:11px;color:#555'>分组:</p>"
+                        "<p style='margin:4px 0 0 0;font-size:11px;color:#555'>分组:</p>"
                     )
                     if m.groups():
                         for gi, g in enumerate(m.groups(), 1):
@@ -839,8 +872,7 @@ class DiffTool(QWidget):
 
         for tag, i1, i2, j1, j2 in opcodes:
             if tag == "equal":
-                yuan_text = yuan_text[yuan_index + 2:]
-                break
+                continue
             if tag in ("delete", "replace"):
                 for li in range(i1, i2):
                     cursor = self._left_text.textCursor()
@@ -1359,6 +1391,7 @@ class AmountTool(QWidget):
             "padding:8px 18px 8px 30px;font-family:'Microsoft YaHei';font-size:13px;}"
         )
         self._copy_toast.setVisible(False)
+        self._copy_toast_tick = None
 
         title = QLabel("金额转换")
         title.setFont(QFont("Microsoft YaHei", 14, QFont.Weight.Bold))
@@ -1490,12 +1523,13 @@ class AmountTool(QWidget):
         self._copy_toast_token += 1
         token = self._copy_toast_token
         self._copy_toast.setText(message)
-        self._copy_toast_tick = QWidget(self._copy_toast)
-        self._copy_toast_tick.setObjectName("copy_toast_tick")
-        self._copy_toast_tick.setFixedSize(8, 8)
-        self._copy_toast_tick.setStyleSheet(
-            "QWidget#copy_toast_tick{background:#107C10;border-radius:4px;}"
-        )
+        if self._copy_toast_tick is None:
+            self._copy_toast_tick = QWidget(self._copy_toast)
+            self._copy_toast_tick.setObjectName("copy_toast_tick")
+            self._copy_toast_tick.setFixedSize(8, 8)
+            self._copy_toast_tick.setStyleSheet(
+                "QWidget#copy_toast_tick{background:#107C10;border-radius:4px;}"
+            )
         self._copy_toast_tick.show()
         self._copy_toast.adjustSize()
         self._copy_toast_tick.move(12, (self._copy_toast.height() - 8) // 2)
@@ -1870,7 +1904,10 @@ class HardwareInfoPage(QWidget):
         scroll.setStyleSheet("QScrollArea{background:transparent;border:none;}")
         root.addWidget(scroll, stretch=1)
 
-        QTimer.singleShot(0, self._load)
+        self._load_timer = QTimer(self)
+        self._load_timer.setSingleShot(True)
+        self._load_timer.timeout.connect(self._load)
+        self._load_timer.start(0)
 
     def _make_card(self, icon, title, value):
         card = QFrame()
@@ -2022,6 +2059,14 @@ class HardwareInfoPage(QWidget):
             parts.append("( {} )".format(detail))
         return " ".join(parts) if parts else None
 
+    def cleanup(self):
+        """停止硬件采集轮询和运行时间定时器。"""
+        self._load_timer.stop()
+        if self._poll is not None:
+            self._poll.stop()
+        if hasattr(self, "_timer"):
+            self._timer.stop()
+
 
 # ============================================================
 #  Ping + 端口扫描工具
@@ -2038,11 +2083,16 @@ class NetworkTool(QWidget):
     def __init__(self):
         super().__init__()
         import queue as _queue
+        import threading
         self._queue = _queue.Queue()
         self._alive_ips = []
         self._open_ports = []
         self._pending = 0
         self._scan_kind = ""
+        self._scan_running = False
+        self._scan_run = 0
+        self._scan_cancel = threading.Event()
+        self._executor = None
         self._ping_proc = None
         self._build()
         self._timer = QTimer(self)
@@ -2164,7 +2214,8 @@ class NetworkTool(QWidget):
                 except Exception:
                     pass
         self._btn_ping.setText("Ping")
-        self._ping_output.appendPlainText(">>> 已停止")
+        if proc is not None:
+            self._ping_output.appendPlainText(">>> 已停止")
 
     # ---------- 端口扫描 ----------
     def _build_port_page(self):
@@ -2291,7 +2342,10 @@ class NetworkTool(QWidget):
         return [80]
 
     def _start_port_scan(self):
-        import socket
+        import socket, threading
+        if self._scan_running:
+            show_warning(self, "扫描进行中", "请等待当前扫描结束。")
+            return
         host = self._port_host.text().strip()
         if not host:
             return
@@ -2299,31 +2353,41 @@ class NetworkTool(QWidget):
         if not ports:
             return
         self._scan_kind = "port"
+        self._scan_running = True
+        self._scan_run += 1
+        run_id = self._scan_run
+        self._scan_cancel = threading.Event()
+        cancel_event = self._scan_cancel
         self._btn_scan.setEnabled(False)
+        self._btn_lan.setEnabled(False)
         self._open_ports = []
         self._pending = len(ports)
         self._port_output.setPlainText(
             "正在扫描 {} 的 {} 个端口 ...".format(host, len(ports)))
 
         def scan(p):
+            if cancel_event.is_set():
+                return
             try:
                 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 s.settimeout(0.5)
-                if s.connect_ex((host, p)) == 0:
-                    self._queue.put(("port_open", p))
+                if not cancel_event.is_set() and s.connect_ex((host, p)) == 0:
+                    self._queue.put(("port_open", p, run_id))
                 s.close()
             except Exception:
                 pass
             finally:
-                self._queue.put(("task_done", None))
+                if not cancel_event.is_set():
+                    self._queue.put(("task_done", run_id))
 
         from concurrent.futures import ThreadPoolExecutor
         # 大范围扫描时提高并发以加速
         workers = 200 if len(ports) <= 1024 else 500
         ex = ThreadPoolExecutor(max_workers=workers)
+        self._executor = ex
         for p in ports:
             ex.submit(scan, p)
-        ex.shutdown(wait=False)
+        ex.shutdown(wait=False, cancel_futures=False)
 
     # ---------- 网段扫描 ----------
     def _build_lan_page(self):
@@ -2357,7 +2421,10 @@ class NetworkTool(QWidget):
         return w
 
     def _start_lan_scan(self):
-        import ipaddress
+        import ipaddress, threading
+        if self._scan_running:
+            show_warning(self, "扫描进行中", "请等待当前扫描结束。")
+            return
         cidr = self._lan_input.text().strip()
         if not cidr:
             return
@@ -2374,24 +2441,34 @@ class NetworkTool(QWidget):
                 "网段过大（{} 个主机），请缩小前缀".format(len(hosts)))
             return
         self._scan_kind = "lan"
+        self._scan_running = True
+        self._scan_run += 1
+        run_id = self._scan_run
+        self._scan_cancel = threading.Event()
+        cancel_event = self._scan_cancel
         self._btn_lan.setEnabled(False)
+        self._btn_scan.setEnabled(False)
         self._alive_ips = []
         self._pending = len(hosts)
         self._lan_output.setPlainText(
             "正在扫描 {}，共 {} 个主机 ...".format(cidr, len(hosts)))
 
         def check(ip):
+            if cancel_event.is_set():
+                return
             try:
-                if self._ping_once(str(ip)):
-                    self._queue.put(("lan_alive", str(ip)))
+                if not cancel_event.is_set() and self._ping_once(str(ip)):
+                    self._queue.put(("lan_alive", str(ip), run_id))
             finally:
-                self._queue.put(("task_done", None))
+                if not cancel_event.is_set():
+                    self._queue.put(("task_done", run_id))
 
         from concurrent.futures import ThreadPoolExecutor
         ex = ThreadPoolExecutor(max_workers=100)
+        self._executor = ex
         for h in hosts:
             ex.submit(check, h)
-        ex.shutdown(wait=False)
+        ex.shutdown(wait=False, cancel_futures=False)
 
     def _ping_once(self, ip):
         import subprocess
@@ -2428,16 +2505,22 @@ class NetworkTool(QWidget):
                     self._ping_output.appendPlainText("Ping 出错: {}".format(msg[2]))
                 elif kind == "port_open":
                     p = msg[1]
+                    if len(msg) < 3 or msg[2] != self._scan_run:
+                        continue
                     if p not in self._open_ports:
                         self._open_ports.append(p)
                         self._open_ports.sort()
                     self._port_output.appendPlainText("  开放端口: {}".format(p))
                 elif kind == "lan_alive":
                     ip = msg[1]
+                    if len(msg) < 3 or msg[2] != self._scan_run:
+                        continue
                     if ip not in self._alive_ips:
                         self._alive_ips.append(ip)
                     self._lan_output.appendPlainText("  存活: {}".format(ip))
                 elif kind == "task_done":
+                    if len(msg) < 2 or msg[1] != self._scan_run:
+                        continue
                     self._pending -= 1
                     if self._pending <= 0:
                         self._on_all_done()
@@ -2445,8 +2528,8 @@ class NetworkTool(QWidget):
             pass
 
     def _on_all_done(self):
+        self._scan_running = False
         if self._scan_kind == "port":
-            self._btn_scan.setEnabled(True)
             if self._open_ports:
                 self._port_output.appendPlainText(
                     "\n扫描完成，共开放 {} 个端口: {}".format(
@@ -2454,4 +2537,17 @@ class NetworkTool(QWidget):
             else:
                 self._port_output.appendPlainText("\n扫描完成，未发现开放端口")
         elif self._scan_kind == "lan":
-            self._btn_lan.setEnabled(True)
+            pass
+        self._btn_scan.setEnabled(True)
+        self._btn_lan.setEnabled(True)
+
+    def stop_tasks(self):
+        """停止持续 Ping，并取消尚未完成的端口/网段扫描。"""
+        self._stop_ping()
+        self._scan_cancel.set()
+        self._scan_run += 1
+        self._scan_running = False
+        if self._executor is not None:
+            self._executor.shutdown(wait=False, cancel_futures=True)
+            self._executor = None
+        self._timer.stop()

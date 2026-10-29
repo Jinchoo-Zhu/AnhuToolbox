@@ -6,11 +6,11 @@
 ;   3) 产物在 installer\ 目录下
 ;
 ; 说明:
-;   - 默认安装到 D:\Anhu百宝箱, 无需管理员权限,
-;     这样 data\ 和 tools\ 两个外置可写目录能正常读写。
+;   - 默认安装到 D:\Anhu百宝箱, 无需管理员权限；若安装目录不可写，
+;     程序会自动把 data 和自定义库清单放到 %LOCALAPPDATA%\AnhuToolbox。
 ;   - 若用户在向导里改到受保护目录(如 Program Files), Inno Setup 会自动请求提权。
 ;   - data\ 里的配置只在首次安装时写入, 升级时不会覆盖用户已有配置;
-;     tools\ 里的工具文件(除 tools.json)只在首次安装时写入, tools.json 每次都会更新。
+;     官方 tools 文件每次安装/升级都会更新, 用户自定义库清单 tools.user.json 始终保留。
 
 #define MyAppName "Anhu百宝箱"
 #define MyAppVersion "1.0.0"
@@ -49,8 +49,9 @@ Source: "dist\Anhu百宝箱\lib\*"; DestDir: "{app}\lib"; Flags: ignoreversion r
 ; tools.json 是工具清单, 每次安装/升级都要用新版本覆盖,
 ; 否则升级时旧清单不更新, 新增的工具(如 Geek/TCPView)不会出现在工具箱里
 Source: "tools\tools.json"; DestDir: "{app}\tools"; Flags: ignoreversion
-; 其余工具文件(体积大)保持 onlyifdoesntexist, 升级时不重复覆盖
-Source: "tools\*"; DestDir: "{app}\tools"; Excludes: "tools.json"; Flags: onlyifdoesntexist recursesubdirs createallsubdirs
+; 官方便携工具及资源在升级时同步更新，避免 tools.json 已指向新文件但磁盘上
+; 仍是旧版本。用户自己维护的 tools.user.json 单独排除。
+Source: "tools\*"; DestDir: "{app}\tools"; Excludes: "tools.json,tools.user.json"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"
@@ -65,9 +66,12 @@ begin
   if CurUninstallStep = usUninstall then
   begin
     if MsgBox('是否同时删除用户数据（配置和预设命令）？' + #13#10 +
-              '数据保存在 data 目录中。' + #13#10#13#10 +
+              '数据保存在应用 data 目录或 %LOCALAPPDATA%\AnhuToolbox 中。' + #13#10#13#10 +
               '点击「是」删除数据，点击「否」保留数据，方便以后重装继续使用。',
               mbConfirmation, MB_YESNO) = IDYES then
+    begin
       DelTree(ExpandConstant('{app}\data'), True, True, True);
+      DelTree(ExpandConstant('{localappdata}\AnhuToolbox'), True, True, True);
+    end;
   end;
 end;

@@ -27,6 +27,42 @@ DEFAULTS = {
 
 _settings = None
 
+
+def _coerce_bool(value, default):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        text = value.strip().lower()
+        if text in ("1", "true", "yes", "on", "是"):
+            return True
+        if text in ("0", "false", "no", "off", "否", ""):
+            return False
+    return default
+
+
+def _coerce_value(value, default):
+    """按默认值类型清洗用户配置，防止损坏 JSON 导致启动崩溃。"""
+    if isinstance(default, bool):
+        return _coerce_bool(value, default)
+    if isinstance(default, int) and not isinstance(default, bool):
+        try:
+            return int(value)
+        except (TypeError, ValueError, OverflowError):
+            return default
+    if isinstance(default, str):
+        return default if value is None else str(value)
+    if isinstance(default, dict):
+        return copy.deepcopy(default)
+    if default is None:
+        if isinstance(value, (list, tuple)):
+            return list(value)
+        return None
+    if isinstance(default, list):
+        return list(value) if isinstance(value, (list, tuple)) else list(default)
+    return value
+
 def init(filepath):
     global SETTINGS_FILE, _settings
     SETTINGS_FILE = filepath
@@ -41,11 +77,15 @@ def init(filepath):
             print("[AnhuToolbox] 读取配置失败，已使用默认值:", e)
 
 def _deep_update(d, u):
+    if not isinstance(u, dict):
+        return
     for k, v in u.items():
-        if isinstance(v, dict) and k in d and isinstance(d[k], dict):
+        if k not in d:
+            continue
+        if isinstance(v, dict) and isinstance(d[k], dict):
             _deep_update(d[k], v)
         else:
-            d[k] = v
+            d[k] = _coerce_value(v, d[k])
 
 def _prune(d, ref):
     """按默认值结构裁剪 -- 写盘时顺手清掉历史遗留的无用字段"""
@@ -58,15 +98,21 @@ def _prune(d, ref):
     return out
 
 def save():
-    global SETTINGS_FILE, _settings
     if SETTINGS_FILE and _settings:
+        tmp = SETTINGS_FILE + ".tmp"
         try:
             os.makedirs(os.path.dirname(SETTINGS_FILE), exist_ok=True)
-            with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+            with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(_prune(_settings, DEFAULTS), f, ensure_ascii=False, indent=2)
+            os.replace(tmp, SETTINGS_FILE)
         except Exception as e:
             # 保存失败静默会让用户以为设置已保存，记录原因便于排查
             print("[AnhuToolbox] 保存配置失败:", e)
+            try:
+                if os.path.exists(tmp):
+                    os.remove(tmp)
+            except Exception:
+                pass
 
 def get(path, default=None):
     keys = path.split(".")
@@ -82,5 +128,9 @@ def set(path, value):
     keys = path.split(".")
     d = _settings or {}
     for k in keys[:-1]:
-        d = d.setdefault(k, {})
+        child = d.get(k)
+        if not isinstance(child, dict):
+            child = {}
+            d[k] = child
+        d = child
     d[keys[-1]] = value

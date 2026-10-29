@@ -7,7 +7,7 @@ from PySide6.QtCore import Qt, QRectF, QTimer
 from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap, QRegion
 from PySide6.QtWidgets import (
     QApplication, QDialog, QFrame, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QVBoxLayout, QWidget,
+    QPushButton, QTextBrowser, QVBoxLayout, QWidget,
 )
 
 DIALOG_WIDTH = 420
@@ -259,14 +259,21 @@ class AnhuDialog(QDialog):
             self.input.setFixedHeight(max(40, self.input.sizeHint().height()))
             self.input.returnPressed.connect(self.accept)
         else:
-            self.message_label = QLabel()
+            self.message_label = QTextBrowser()
             self.message_label.setObjectName("dialogMessage")
-            self.message_label.setTextFormat(Qt.TextFormat.PlainText)
             self.message_label.setTextInteractionFlags(
                 Qt.TextInteractionFlag.TextSelectableByMouse
                 | Qt.TextInteractionFlag.TextSelectableByKeyboard
             )
-            self.message_label.setWordWrap(True)
+            self.message_label.setReadOnly(True)
+            self.message_label.setFrameShape(QFrame.Shape.NoFrame)
+            self.message_label.setHorizontalScrollBarPolicy(
+                Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            self.message_label.setVerticalScrollBarPolicy(
+                Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+            self.message_label.setStyleSheet(
+                "QTextBrowser#dialogMessage{background:transparent;border:none;"
+                "padding:0;color:#5C6573;}")
             # 像素字号不会随 Windows 的字号比例取整成 14px；
             # 中英文换行宽度与各电脑上的实际字号保持一致。
             message_font = self.message_label.font()
@@ -274,9 +281,8 @@ class AnhuDialog(QDialog):
             message_font.setPixelSize(16)
             self.message_label.setFont(message_font)
             # 固定换行宽度，较长的路径或异常文本不会撑宽整个弹窗。
-            self.message_label.setFixedSize(DIALOG_WIDTH - 145, 36)
-            self.message_label.setText(message)
-            self.message_label.setMinimumHeight(0)
+            self.message_label.setFixedWidth(DIALOG_WIDTH - 145)
+            self.message_label.setPlainText(message)
         self.message_label.setParent(content_view)
         if self.input is not None:
             self.input.setParent(content_view)
@@ -339,10 +345,19 @@ class AnhuDialog(QDialog):
         self.setMaximumSize(16777215, 16777215)
         self.message_label.ensurePolished()
         available = max(120, self.message_label.width() - 4)
-        text_height = self.message_label.heightForWidth(available)
-        self.message_label.setFixedHeight(max(20 if self.input is not None else 24, text_height))
-        self.message_label.adjustSize()
-        text_height = self.message_label.height()
+        if self.input is not None:
+            text_height = self.message_label.heightForWidth(available)
+            self.message_label.setFixedHeight(max(20, text_height))
+            self.message_label.adjustSize()
+            text_height = self.message_label.height()
+        else:
+            scrollbar = self.message_label.verticalScrollBar().sizeHint().width()
+            self.message_label.document().setTextWidth(
+                max(80, available - scrollbar))
+            text_height = int(self.message_label.document().size().height()) + 6
+            self._notice_natural_height = text_height
+            self.message_label.setMinimumHeight(24)
+            self.message_label.setMaximumHeight(300)
         if self.input is not None:
             body_height = INPUT_CONTENT_RESERVED
         else:
@@ -573,7 +588,9 @@ class AnhuDialog(QDialog):
         icon_left = 18
         label_left = icon_left + STATUS_ICON_SIZE + 12
         label_height = self.message_label.fontMetrics().height()
-        line_count = max(1, round(self.message_label.height() / label_height))
+        natural_height = getattr(
+            self, "_notice_natural_height", label_height)
+        line_count = max(1, round(natural_height / label_height))
         # QLabel 的文字基线略低于控件坐标，按最终字号校正中线。
         if line_count == 1:
             line_center = INPUT_CONTENT_GAP + STATUS_ICON_SIZE / 2 - 2
@@ -589,12 +606,21 @@ class AnhuDialog(QDialog):
             line_center = label_top + label_height * 1.5 - 2
         # 无输入框弹窗与输入框弹窗使用相同的 28px 外缘留白：
         # 分隔线 → 图标顶部，以及图标底部 → 按钮顶部。
-        icon_top = INPUT_CONTENT_GAP
+        if line_count > 2:
+            label_top = 16
+            icon_top = 16
+        else:
+            icon_top = INPUT_CONTENT_GAP
         icon_bottom = icon_top + STATUS_ICON_SIZE
         # 分离的两版布局仍共用卡片底栏；多行正文会向下延展内容区域，
         # 避免正文或状态图片被 132px 的正文帧截断。
+        visible_text_height = (
+            content_height - label_top - 16
+            if line_count > 2
+            else min(natural_height, content_height - 16)
+        )
         required_height = max(icon_bottom + INPUT_CONTENT_GAP,
-                              icon_top - 4 + self.message_label.height() + 10)
+                              icon_top - 4 + visible_text_height + 10)
         if required_height > content_height:
             self._notice_frame_height = required_height
             content_height = required_height
@@ -607,7 +633,9 @@ class AnhuDialog(QDialog):
             self._footer_layout_top = (
                 HEADER_HEIGHT + EDGE + content_height + 11
             )
-        label_bottom = label_top + self.message_label.height()
+        visible_text_height = max(24, min(
+            visible_text_height, content_height - label_top - 8))
+        label_bottom = label_top + visible_text_height
         if label_bottom > content_height - 10:
             label_top = max(16, label_top - (label_bottom - content_height + 10))
         self._badge.setGeometry(0, 0, STATUS_ICON_SIZE, STATUS_ICON_SIZE)
@@ -616,7 +644,7 @@ class AnhuDialog(QDialog):
         )
         self.message_label.setGeometry(
             label_left, label_top, content_width - label_left - 22,
-            self.message_label.height()
+            visible_text_height
         )
         self._badge.show()
         self._badge.raise_()

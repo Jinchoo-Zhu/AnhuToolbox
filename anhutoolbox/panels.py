@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """AnhuToolbox 面板组件 -- 校验函数库 + 统一日志面板"""
 
-import os, json, time
+import json, re, time
 from datetime import datetime
 from typing import Optional
 from PySide6.QtWidgets import (
@@ -14,10 +14,36 @@ from PySide6.QtCore import Qt, Signal, Slot, QTimer
 from PySide6.QtGui import QFont, QTextCursor
 
 from .styles import prepare_menu
-from .dialogs import show_error, show_information, show_success, show_warning
+from .dialogs import show_error, show_success, show_warning
 
 
 CHECKSUM_TYPES = ["None","ModbusCRC16","CCITT-CRC16","CRC32","OADD8","ADD8","XOR8","ADD16"]
+
+
+_HEX_SEPARATORS = re.compile(r"[\s,;:_-]+")
+_HEX_PREFIX = re.compile(r"(?i)0x")
+
+
+def parse_hex_bytes(text: str) -> bytes:
+    """严格解析 HEX 文本，只忽略空白和常见分隔符。
+
+    旧实现会删除所有非十六进制字符，``GG12`` 因此会被静默发送成 ``12``。
+    这里保留空白、逗号、分号、冒号、下划线和连字符作为分隔符，并兼容
+    ``0x12`` 形式；其余字符一律报错。
+    """
+    raw = str(text or "").strip()
+    if not raw:
+        return b""
+    cleaned = _HEX_SEPARATORS.sub("", _HEX_PREFIX.sub("", raw))
+    invalid = sorted({ch for ch in cleaned if ch not in "0123456789abcdefABCDEF"})
+    if invalid:
+        raise ValueError(
+            "HEX 模式下包含非法字符：{}".format(" ".join(invalid))
+        )
+    if len(cleaned) % 2:
+        raise ValueError("HEX 模式下十六进制字符数必须为偶数")
+    return bytes.fromhex(cleaned)
+
 
 def _modbus_crc16(data: bytes) -> int:
     crc = 0xFFFF
@@ -103,11 +129,15 @@ def checksum_to_bytes(ctype: str, value: int) -> bytes:
 
 class LogPanel(QWidget):
     cleared = Signal()      # 清空日志后通知外部刷新统计
+    file_error = Signal(str)
+    MAX_PAUSED_BYTES = 16 * 1024 * 1024
 
     def __init__(self):
         super().__init__()
         self._paused = False
         self._pending_data = []
+        self._pending_bytes = 0
+        self._pause_dropped_bytes = 0
         self._rx_total = 0
         self._tx_total = 0
         self._save_file = None
@@ -205,12 +235,16 @@ class LogPanel(QWidget):
         sb.setValue(sb.maximum())
         # 实时写入文件(格式化文本, 与显示一致)
         if self._save_file:
-            self._save_file.write(text)
-            self._save_file.flush()
+            try:
+                self._save_file.write(text)
+                self._save_file.flush()
+            except Exception as e:
+                self._close_save_file()
+                self.file_error.emit("日志文件写入失败: {}".format(e))
 
     def _on_pause(self, checked):
         self._paused = checked
-        if not checked and self._pending_data:
+        if not checked and (self._pending_data or self._pause_dropped_bytes):
             pending = self._pending_data
             self._pending_data = []
             for d, dat in pending:
@@ -220,6 +254,13 @@ class LogPanel(QWidget):
                 else:
                     self._tx_total += len(dat)
                 self._append_raw(d, dat)
+            if self._pause_dropped_bytes:
+                self._pending_lines.append(
+                    "[提示] 暂停缓存超过 {} MB，已丢弃 {} 字节。\n".format(
+                        self.MAX_PAUSED_BYTES // (1024 * 1024),
+                        self._pause_dropped_bytes))
+            self._pending_bytes = 0
+            self._pause_dropped_bytes = 0
             self._display_timer.stop()
             self._flush_display()
 
@@ -233,21 +274,43 @@ class LogPanel(QWidget):
             )
             if path:
                 self._save_path = path
-                with open(path, "w", encoding="utf-8") as f:
-                    f.write(self.text.toPlainText())
-                self._save_file = open(path, "a", encoding="utf-8")
+                try:
+                    with open(path, "w", encoding="utf-8") as f:
+                        f.write(self.text.toPlainText())
+                    self._save_file = open(path, "a", encoding="utf-8")
+                except Exception as e:
+                    self._close_save_file()
+                    show_error(self, "保存失败", str(e))
             else:
                 self.chk_save_file.setChecked(False)
         else:
-            if self._save_file:
+            self._close_save_file()
+
+    def _close_save_file(self):
+        if self._save_file:
+            try:
                 self._save_file.close()
-                self._save_file = None
+            except Exception:
+                pass
+            self._save_file = None
+        if self.chk_save_file.isChecked():
+            self.chk_save_file.blockSignals(True)
+            self.chk_save_file.setChecked(False)
+            self.chk_save_file.blockSignals(False)
 
     @Slot(str, bytes)
     def append_data(self, direction: str, data: bytes):
         """统一入口: 计数 + 写文件 + 路由(分包缓冲 或 直接显示)"""
         if self._paused:
+            if self._pending_bytes + len(data) > self.MAX_PAUSED_BYTES:
+                self._pause_dropped_bytes += len(data)
+                if direction == "rx":
+                    self._rx_total += len(data)
+                else:
+                    self._tx_total += len(data)
+                return
             self._pending_data.append((direction, data))
+            self._pending_bytes += len(data)
             return
         # 计数
         if direction == "rx":
@@ -317,6 +380,9 @@ class LogPanel(QWidget):
         self._packet_timer.stop()
         self._packet_buf = b""
         self._packet_start_dt = None
+        self._pending_data.clear()
+        self._pending_bytes = 0
+        self._pause_dropped_bytes = 0
         self.text.clear()
         self._rx_total = 0
         self._tx_total = 0
@@ -324,11 +390,7 @@ class LogPanel(QWidget):
 
     def stop_save_file(self):
         """强制关闭“保存到文件”(切换项目时调用)"""
-        if self.chk_save_file.isChecked():
-            self.chk_save_file.setChecked(False)   # 触发 toggled -> 关闭文件句柄
-        elif self._save_file:
-            self._save_file.close()
-            self._save_file = None
+        self._close_save_file()
 
     def reset_runtime_state(self):
         """切换项目时复位运行时状态: 取消暂停 + 强制停止保存文件"""
@@ -337,9 +399,7 @@ class LogPanel(QWidget):
         self.stop_save_file()
 
     def cleanup(self):
-        if self._save_file:
-            self._save_file.close()
-            self._save_file = None
+        self._close_save_file()
 
 
 # 定时发送/循环发送的间隔下限(ms) -- 界面与数据两侧共用同一个值,
@@ -383,6 +443,38 @@ def _parse_interval(text):
         return int(t)
     except ValueError:
         return None
+
+
+def _preset_bool(value, default=False):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        text = value.strip().lower()
+        if text in ("1", "true", "yes", "on"):
+            return True
+        if text in ("0", "false", "no", "off", ""):
+            return False
+    return default
+
+
+def _normalize_preset(preset, index=0):
+    """把外部导入的预设规范成内部稳定结构。"""
+    if not isinstance(preset, dict):
+        raise ValueError("第 {} 条预设不是对象".format(index + 1))
+    data = preset.get("data", "")
+    name = preset.get("name", "")
+    interval_value = _parse_interval(str(preset.get("interval", 1000)))
+    if interval_value is None:
+        interval_value = 1000
+    return {
+        "name": str(name if name is not None else "命令{}".format(index + 1)),
+        "data": "" if data is None else str(data),
+        "hex_mode": _preset_bool(preset.get("hex_mode", False), False),
+        "interval": max(LOOP_MIN_INTERVAL, interval_value),
+        "enabled": _preset_bool(preset.get("enabled", False), False),
+    }
 
 
 class IntervalSpinBox(QSpinBox):
@@ -430,6 +522,7 @@ class SendBar(QWidget):
     def __init__(self):
         super().__init__()
         self._tx_total = 0
+        self._build_error = ""
         # 「定时发送」用单次定时器 + "计划时刻"重新排期:
         #   QTimer.start(iv) 是"本轮结束后再等 iv", 实际间隔 = iv + 本轮耗时,
         #   跑久了会一直往后漂; 这里由 _advance_due() 推进计划时刻, 每轮只补
@@ -479,7 +572,9 @@ class SendBar(QWidget):
         r2.addWidget(self.sp_start)
         r2.addWidget(QLabel("字节至第"))
         self.cb_end = QComboBox()
-        self.cb_end.setFixedWidth(96); self.cb_end.setEditable(True)
+        end_width = self.cb_end.fontMetrics().horizontalAdvance("-1(帧尾前)")
+        self.cb_end.setFixedWidth(max(120, end_width + 44))
+        self.cb_end.setEditable(True)
         self.cb_end.addItem("末尾",-1)
         self.cb_end.addItem("-1(帧尾前)",-1)
         self.cb_end.addItem("-2",-2); self.cb_end.addItem("-3",-3); self.cb_end.addItem("-4",-4); self.cb_end.addItem("-5",-5)
@@ -571,12 +666,12 @@ class SendBar(QWidget):
             return None
         try:
             if self.chk_hex.isChecked():
-                hs = "".join(c for c in raw if c in "0123456789abcdefABCDEF")
-                if len(hs) % 2:
-                    return None
-                return bytes.fromhex(hs)
+                self._build_error = ""
+                return parse_hex_bytes(raw)
+            self._build_error = ""
             return raw.encode("utf-8")
-        except:
+        except (UnicodeError, ValueError) as exc:
+            self._build_error = str(exc)
             return None
 
     def _append_newline(self, data: Optional[bytes]) -> Optional[bytes]:
@@ -604,11 +699,15 @@ class SendBar(QWidget):
         if ct != "None":
             s = self.sp_start.value() - 1
             e = self._parse_end_byte(len(d))
-            if e is not None:
-                v = compute_checksum(ct, d, s, e)
-                if v is not None:
-                    crc_b = checksum_to_bytes(ct, v)
-                    d = d[:e] + crc_b + d[e:]
+            if e is None or e < s or e < 0:
+                self._build_error = "校验结束位置无效，请检查字节区间"
+                return None
+            v = compute_checksum(ct, d, s, e)
+            if v is None:
+                self._build_error = "校验范围内没有可计算的数据"
+                return None
+            crc_b = checksum_to_bytes(ct, v)
+            d = d[:e] + crc_b + d[e:]
         return self._append_newline(d)
 
     def _build_data_for_preset(self, raw_data: bytes):
@@ -617,11 +716,13 @@ class SendBar(QWidget):
         if ct != "None":
             s = self.sp_start.value() - 1
             e = self._parse_end_byte(len(raw_data))
-            if e is not None:
-                v = compute_checksum(ct, raw_data, s, e)
-                if v is not None:
-                    crc_b = checksum_to_bytes(ct, v)
-                    raw_data = raw_data[:e] + crc_b + raw_data[e:]
+            if e is None or e < s or e < 0:
+                return None
+            v = compute_checksum(ct, raw_data, s, e)
+            if v is None:
+                return None
+            crc_b = checksum_to_bytes(ct, v)
+            raw_data = raw_data[:e] + crc_b + raw_data[e:]
         return raw_data
 
     def _calc_checksum(self):
@@ -667,18 +768,17 @@ class SendBar(QWidget):
         d = self._build_raw()
         if d:
             self.send_data.emit(d)
-            self._tx_total += len(d)
-            self.lbl_tx_count.setText("Tx: {}".format(self._tx_total))
 
     def _do_send(self):
         d = self._build_data_with_checksum()
         if d:
             self.send_data.emit(d)
-            self._tx_total += len(d)
-            self.lbl_tx_count.setText("Tx: {}".format(self._tx_total))
         elif self.text.toPlainText().strip():
-            # 有内容但构建失败：HEX 模式下长度必须为偶数，需明确提示而不是静默
-            show_warning(self, "提示", "发送内容构建失败：\nHEX 模式下十六进制长度必须为偶数")
+            # 有内容但构建失败时显示具体原因，避免静默丢字符或误报长度问题。
+            show_warning(
+                self, "提示",
+                "发送内容构建失败：\n{}".format(
+                    self._build_error or "无法解析发送内容"))
 
     def _do_send_file(self):
         p, _ = QFileDialog.getOpenFileName(self, "选择文件", "", "所有文件 (*.*);;文本文件 (*.txt)")
@@ -690,39 +790,26 @@ class SendBar(QWidget):
             if self.chk_hex.isChecked():
                 try:
                     t = data.decode("ascii")
-                except:
+                except UnicodeError:
                     show_warning(self, "提示", "HEX模式下文件无法解析")
                     return
-                hs = "".join(c for c in t if c in "0123456789abcdefABCDEF")
-                if len(hs) % 2:
-                    show_warning(self, "提示", "HEX长度需为偶数")
+                try:
+                    data = parse_hex_bytes(t)
+                except ValueError as exc:
+                    show_warning(self, "提示", str(exc))
                     return
-                data = bytes.fromhex(hs)
             self.send_data.emit(data)
-            self._tx_total += len(data)
-            self.lbl_tx_count.setText("Tx: {}".format(self._tx_total))
         except Exception as e:
             show_error(self, "错误", str(e))
 
     def _build_data(self, silent=False):
-        raw = self.text.toPlainText()
-        if not raw:
-            return None
-        try:
-            if self.chk_hex.isChecked():
-                hs = "".join(c for c in raw if c in "0123456789abcdefABCDEF")
-                if len(hs) % 2:
-                    if not silent:
-                        show_warning(self, "提示", "HEX长度需为偶数")
-                    return None
-                d = bytes.fromhex(hs)
-            else:
-                d = raw.encode("utf-8")
-            return self._append_newline(d)
-        except Exception as e:
-            if not silent:
-                show_error(self, "错误", str(e))
-            return None
+        """构建定时发送数据；必须与手工发送使用相同的校验规则。"""
+        data = self._build_data_with_checksum()
+        if data is None and not silent and self.text.toPlainText().strip():
+            show_warning(
+                self, "提示",
+                self._build_error or "发送内容构建失败")
+        return data
 
     def _on_repeat(self, checked):
         self.sp_interval.setEnabled(checked)
@@ -757,8 +844,6 @@ class SendBar(QWidget):
 
     def send_preset(self, data: bytes):
         self.send_data.emit(data)
-        self._tx_total += len(data)
-        self.lbl_tx_count.setText("Tx: {}".format(self._tx_total))
 
     def stop_repeat(self):
         self._repeat_timer.stop()
@@ -875,13 +960,13 @@ class PresetPanel(QWidget):
     def load_from_project(self, presets):
         """由项目注入预设(切换项目时调用) -- 循环勾选一律复位"""
         self._suspend_save = True
-        self._presets = []
-        for p in (presets or []):
+        normalized = []
+        for index, p in enumerate(presets or []):
             if isinstance(p, dict):
-                p = dict(p)
-                p.pop("_last", None)
-                p["enabled"] = False
-                self._presets.append(p)
+                item = _normalize_preset(p, index)
+                item["enabled"] = False
+                normalized.append(item)
+        self._presets = normalized
         self._loop_pos = 0
         self._loop_last = None
         self._loop_due = None
@@ -922,6 +1007,10 @@ class PresetPanel(QWidget):
 
     def _refresh(self):
         """重建表格 -- 阻断信号防止 cellChanged 误触发"""
+        self._presets = [
+            _normalize_preset(p, i)
+            for i, p in enumerate(self._presets) if isinstance(p, dict)
+        ]
         self.table.blockSignals(True)
         self.table.setRowCount(0)
         for i, p in enumerate(self._presets):
@@ -1052,7 +1141,10 @@ class PresetPanel(QWidget):
             self._warn_build_fail()
 
     def _warn_build_fail(self):
-        show_warning(self, "提示", "发送内容构建失败：\nHEX 模式下十六进制长度必须为偶数")
+        show_warning(
+            self, "提示",
+            "发送内容构建失败：\nHEX 模式下只能包含十六进制字符和常规分隔符，"
+            "且字符数必须为偶数。")
 
     def _tick(self):
         """定时器到期: 已勾选"循环"的指令按表格顺序串行循环发送.
@@ -1152,11 +1244,16 @@ class PresetPanel(QWidget):
         try:
             with open(p, "r", encoding="utf-8") as f:
                 imp = json.load(f)
-            if isinstance(imp, list):
-                self._presets.extend(imp)
-                self._refresh()
-                self._save()
-                show_success(self, "导入成功", "已导入{} 条".format(len(imp)))
+            if not isinstance(imp, list):
+                raise ValueError("预设文件顶层必须是 JSON 数组")
+            imported = [_normalize_preset(item, i) for i, item in enumerate(imp)]
+            for item in imported:
+                item["enabled"] = False
+            self._presets.extend(imported)
+            self._refresh()
+            self._save()
+            self._arm_loop()
+            show_success(self, "导入成功", "已导入{} 条".format(len(imported)))
         except Exception as e:
             show_error(self, "导入失败", str(e))
 
@@ -1166,7 +1263,7 @@ class PresetPanel(QWidget):
             return
         try:
             with open(p, "w", encoding="utf-8") as f:
-                json.dump(self._presets, f, ensure_ascii=False, indent=2)
+                json.dump(self.dump_presets(), f, ensure_ascii=False, indent=2)
             show_success(self, "导出成功", "已导出{} 条".format(len(self._presets)))
         except Exception as e:
             show_error(self, "导出失败", str(e))
@@ -1186,10 +1283,7 @@ def _build_preset(preset):
         return None
     try:
         if preset.get("hex_mode",False):
-            hs = "".join(c for c in raw if c in "0123456789abcdefABCDEF")
-            if len(hs) % 2:
-                return None
-            return bytes.fromhex(hs)
+            return parse_hex_bytes(raw)
         return raw.encode("utf-8")
-    except:
+    except (UnicodeError, ValueError):
         return None

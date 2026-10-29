@@ -31,51 +31,90 @@ _KEY_WIN = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion"
 # 通过 -EncodedCommand (UTF-16LE) 传入, 避免中文/引号转义问题。
 _PS_SCRIPT = r"""
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$ErrorActionPreference = 'SilentlyContinue'
+$ErrorActionPreference = 'Stop'
 $out = [ordered]@{}
+$out.ps_errors = @()
 
 # --- 系统名称 (Caption 为本地化文本, 如「Microsoft Windows 11 专业版」) ---
-$out.os_caption = (Get-CimInstance Win32_OperatingSystem -Property Caption).Caption
+try {
+    $out.os_caption = (Get-CimInstance Win32_OperatingSystem -Property Caption -ErrorAction Stop).Caption
+} catch {
+    $out.os_caption = ''
+    $out.ps_errors += "OperatingSystem: $($_.Exception.Message)"
+}
 
 # --- 内存 ---
-$mems = @(Get-CimInstance Win32_PhysicalMemory)
-if ($mems.Count -gt 0) {
-    $total = ($mems | Measure-Object -Property Capacity -Sum).Sum
-    $out.ram = "{0}GB" -f [math]::Round($total / 1GB)
-    $out.ram_detail = (($mems | ForEach-Object { "{0}GB" -f [math]::Round($_.Capacity / 1GB) }) -join " + ")
-    $out.ram_speed = $mems[0].Speed
-    $out.ram_maker = $mems[0].Manufacturer
-} else {
+try {
+    $mems = @(Get-CimInstance Win32_PhysicalMemory -ErrorAction Stop)
+    if ($mems.Count -gt 0) {
+        $total = ($mems | Measure-Object -Property Capacity -Sum).Sum
+        $out.ram = "{0}GB" -f [math]::Round($total / 1GB)
+        $out.ram_detail = (($mems | ForEach-Object { "{0}GB" -f [math]::Round($_.Capacity / 1GB) }) -join " + ")
+        $out.ram_speed = $mems[0].Speed
+        $out.ram_maker = $mems[0].Manufacturer
+    } else {
+        $out.ram = ''
+        $out.ram_detail = ''
+        $out.ram_speed = ''
+        $out.ram_maker = ''
+    }
+} catch {
     $out.ram = ''
     $out.ram_detail = ''
     $out.ram_speed = ''
     $out.ram_maker = ''
+    $out.ps_errors += "PhysicalMemory: $($_.Exception.Message)"
 }
 
 # --- 显卡 (过滤虚拟显示适配器) ---
-$out.gpus = @(Get-CimInstance Win32_VideoController |
-    Where-Object { $_.Name -notmatch '(?i)virtual|oray|mumu|idddriver|indirect display|mirage|parsec' } |
-    ForEach-Object { $_.Name.Trim() })
+try {
+    $out.gpus = @(Get-CimInstance Win32_VideoController -ErrorAction Stop |
+        Where-Object { $_.Name -notmatch '(?i)virtual|oray|mumu|idddriver|indirect display|mirage|parsec' } |
+        ForEach-Object { $_.Name.Trim() })
+} catch {
+    $out.gpus = @()
+    $out.ps_errors += "VideoController: $($_.Exception.Message)"
+}
 
 # --- 磁盘 ---
-$out.disks = @(Get-CimInstance Win32_DiskDrive | ForEach-Object {
-    "{0} ( {1}GB )" -f $_.Model.Trim(), [math]::Round($_.Size / 1GB)
-})
+try {
+    $out.disks = @(Get-CimInstance Win32_DiskDrive -ErrorAction Stop | ForEach-Object {
+        "{0} ( {1}GB )" -f $_.Model.Trim(), [math]::Round($_.Size / 1GB)
+    })
+} catch {
+    $out.disks = @()
+    $out.ps_errors += "DiskDrive: $($_.Exception.Message)"
+}
 
 # --- 声卡 ---
-$out.sounds = @(Get-CimInstance Win32_SoundDevice | ForEach-Object { $_.Name.Trim() })
+try {
+    $out.sounds = @(Get-CimInstance Win32_SoundDevice -ErrorAction Stop |
+        ForEach-Object { $_.Name.Trim() })
+} catch {
+    $out.sounds = @()
+    $out.ps_errors += "SoundDevice: $($_.Exception.Message)"
+}
 
 # --- 网卡 (过滤虚拟/蓝牙/环回等虚拟适配器) ---
-$out.nics = @(Get-CimInstance Win32_NetworkAdapter |
-    Where-Object { $_.PhysicalAdapter -and $_.MACAddress -and $_.Name -notmatch '(?i)vmware|virtual|bluetooth|loopback|tunnel|tap-windows|wintun' } |
-    ForEach-Object { $_.Name.Trim() })
+try {
+    $out.nics = @(Get-CimInstance Win32_NetworkAdapter -ErrorAction Stop |
+        Where-Object { $_.PhysicalAdapter -and $_.MACAddress -and $_.Name -notmatch '(?i)vmware|virtual|bluetooth|loopback|tunnel|tap-windows|wintun' } |
+        ForEach-Object { $_.Name.Trim() })
+} catch {
+    $out.nics = @()
+    $out.ps_errors += "NetworkAdapter: $($_.Exception.Message)"
+}
 
 # --- 显示器 (从 EDID 读取型号) ---
 $mon_list = @()
-$mons = @(Get-CimInstance -Namespace root/wmi -ClassName WmiMonitorID -ErrorAction SilentlyContinue)
-foreach ($m in $mons) {
-    $n = (($m.UserFriendlyName | Where-Object { $_ -ne 0 } | ForEach-Object { [char]$_ }) -join "").Trim()
-    if ($n) { $mon_list += $n }
+try {
+    $mons = @(Get-CimInstance -Namespace root/wmi -ClassName WmiMonitorID -ErrorAction Stop)
+    foreach ($m in $mons) {
+        $n = (($m.UserFriendlyName | Where-Object { $_ -ne 0 } | ForEach-Object { [char]$_ }) -join "").Trim()
+        if ($n) { $mon_list += $n }
+    }
+} catch {
+    $out.ps_errors += "WmiMonitorID: $($_.Exception.Message)"
 }
 $out.monitors = @($mon_list)
 
@@ -231,6 +270,13 @@ def collect_hardware_info(timeout=40):
         info.update(_collect_wmi(timeout=timeout) or {})
     except Exception as e:
         info["wmi_error"] = str(e)
+    ps_errors = info.pop("ps_errors", None) or []
+    if ps_errors:
+        detail = "; ".join(str(item) for item in ps_errors if str(item).strip())
+        if detail:
+            existing = str(info.get("wmi_error") or "").strip()
+            info["wmi_error"] = (
+                existing + "; " + detail if existing else detail)
 
     if not info.get("model") and not info.get("cpu") and "wmi_error" in info:
         raise RuntimeError(info["wmi_error"])

@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """AnhuToolbox 通信后端 -- 超低延迟版本"""
 
-import socket, select, time, ctypes
+import os, socket, select, time, ctypes
 from PySide6.QtCore import QThread, Signal
 import serial
 
@@ -13,10 +13,9 @@ try:
 except Exception:
     pass
 
-# 帧间隙: 读取缓冲读空后, 等待这么久没有新字节即认为一帧结束
-# 独立发送的帧之间天然存在间隙, 据此拆帧 (不依赖任何协议知识)
-# 串口和 TCP 共用。1ms 大于 115200 波特率下帧内字节间隔(87us), 不会拆散一帧;
-# 小于大多数主机独立发包的间隔, 能拆开"响应+心跳"的合并。
+# TCP 帧间隙: 读取缓冲读空后, 等待这么久没有新字节即认为一帧结束。
+# 串口会根据实际波特率和帧格式动态计算至少两个字符时间，避免在低波特率
+# (例如 9600) 下把帧内相邻字节误判为两帧。
 FRAME_GAP_S = 0.001
 # 一帧最大字节数: 超过即强制切分输出, 防止设备持续发数据(高频心跳)时无限合并
 FRAME_MAX_BYTES = 512
@@ -28,11 +27,13 @@ class SerialReadWorker(QThread):
     """串口读取 -- 事件驱动 + 帧间隙分帧, 低延迟且能拆开驱动合并的多帧"""
     data_received = Signal(bytes)
     error_occurred = Signal(str)
+    disconnected = Signal(str)
 
     def __init__(self):
         super().__init__()
         self._serial: serial.Serial | None = None
         self._running = False
+        self._stopping = False
 
     def set_serial(self, ser: serial.Serial | None):
         # 保留外部设置的 timeout (作为无数据时的最大等待, 保证线程可退出)
@@ -40,13 +41,39 @@ class SerialReadWorker(QThread):
         self._serial = ser
 
     @staticmethod
-    def _wait_serial_gap(ser) -> bool:
+    def _framing_times(ser):
+        """按当前串口帧格式计算帧间隙和最长保持时间。"""
+        try:
+            baud = max(1, int(ser.baudrate))
+        except (TypeError, ValueError, AttributeError):
+            baud = 115200
+        try:
+            data_bits = int(ser.bytesize)
+        except (TypeError, ValueError, AttributeError):
+            data_bits = 8
+        try:
+            stop_bits = float(ser.stopbits)
+        except (TypeError, ValueError, AttributeError):
+            stop_bits = 1.0
+        parity = getattr(ser, "parity", "N")
+        parity_bits = 0 if parity in ("N", b"N", serial.PARITY_NONE) else 1
+        bits_per_char = 1 + data_bits + parity_bits + stop_bits
+        char_time = bits_per_char / baud
+        gap = max(FRAME_GAP_S, char_time * 2.0)
+        # 时间兜底也必须覆盖一整帧；否则 300/1200/9600 等低波特率下，
+        # 固定 50ms 会在一帧尚未传完时被强制切断。
+        hold = max(FRAME_MAX_HOLD_S, char_time * FRAME_MAX_BYTES)
+        return gap, hold
+
+    @staticmethod
+    def _wait_serial_gap(ser, gap_s=None) -> bool:
         """高精度等待帧间隙: 忙等 FRAME_GAP_S 内无新字节则返回 True(帧结束)。
 
         Windows 的 time.sleep 精度仅 ~15.6ms, 无法满足 1ms 级等待,
         必须用忙等 (monotonic + in_waiting 轮询) 才能精确捕捉帧间空隙。
         """
-        deadline = time.monotonic() + FRAME_GAP_S
+        deadline = time.monotonic() + (
+            FRAME_GAP_S if gap_s is None else gap_s)
         while time.monotonic() < deadline:
             if ser.in_waiting > 0:
                 return False
@@ -64,6 +91,7 @@ class SerialReadWorker(QThread):
         first = ser.read(1)
         if not first:
             return b""
+        gap_s, hold_s = self._framing_times(ser)
         chunks = [first]
         total = 1
         t0 = time.monotonic()
@@ -77,10 +105,10 @@ class SerialReadWorker(QThread):
                 chunks.append(data)
                 total += len(data)
             # 强制切分保护: 持续数据流时按字节数/时间切开
-            if total >= FRAME_MAX_BYTES or time.monotonic() - t0 >= FRAME_MAX_HOLD_S:
+            if total >= FRAME_MAX_BYTES or time.monotonic() - t0 >= hold_s:
                 break
             # 忙等帧间隙确认 (精确, 不受 sleep 精度影响)
-            if self._wait_serial_gap(ser):
+            if self._wait_serial_gap(ser, gap_s):
                 break
         return b"".join(chunks)
 
@@ -94,14 +122,26 @@ class SerialReadWorker(QThread):
                     if data:
                         self.data_received.emit(data)
                 except serial.SerialException as e:
+                    self._running = False
                     self.error_occurred.emit(str(e))
+                    if not self._stopping:
+                        self.disconnected.emit(str(e))
                     break
+            elif ser is not None:
+                self._running = False
+                if not self._stopping:
+                    message = "串口已关闭"
+                    self.error_occurred.emit(message)
+                    self.disconnected.emit(message)
+                break
             else:
                 self.msleep(5)
 
     def stop(self):
+        self._stopping = True
         self._running = False
         self.wait(1000)
+        self._stopping = False
 
 
 class TCPServerWorker(QThread):
@@ -111,6 +151,8 @@ class TCPServerWorker(QThread):
     data_received = Signal(bytes)
     error_occurred = Signal(str)
     log_message = Signal(str)
+    started = Signal(int)
+    start_failed = Signal(str)
 
     def __init__(self):
         super().__init__()
@@ -118,6 +160,7 @@ class TCPServerWorker(QThread):
         self._running = False
         self._server: socket.socket | None = None
         self._clients: list[socket.socket] = []
+        self._client_addrs: dict[int, tuple[str, int]] = {}
         self._buf_size = 4096
         # 客户端超时 (秒): 超过这么久未收到任何数据则判定为死连接 (拔网线等场景)
         # 0 = 禁用超时检测
@@ -139,27 +182,45 @@ class TCPServerWorker(QThread):
     def client_count(self) -> int:
         return len(self._clients)
 
+    @property
+    def client_addresses(self):
+        return list(self._client_addrs.values())
+
     def send(self, data: bytes):
         dead = []
+        sent = 0
         for c in self._clients:
             try:
                 c.sendall(data)
+                sent += 1
             except Exception:
                 dead.append(c)
         for c in dead:
             self._remove_client(c)
+        return sent
 
     def run(self):
         self._running = True
         self._server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self._server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        if os.name == "nt" and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            # Windows 的 SO_REUSEADDR 允许两个进程同时绑定同一端口，
+            # 会让“端口已占用”检测失效。监听端使用独占地址，确保失败可感知。
+            self._server.setsockopt(
+                socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        else:
+            self._server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self._server.settimeout(0.5)
         try:
             self._server.bind(("0.0.0.0", self._port))
             self._server.listen(5)
             self.log_message.emit("TCP server listening on port {}".format(self._port))
+            self.started.emit(self._port)
         except Exception as e:
-            self.error_occurred.emit("Server start failed: {}".format(e))
+            message = "Server start failed: {}".format(e)
+            self._running = False
+            self.error_occurred.emit(message)
+            self.start_failed.emit(message)
+            self._cleanup()
             return
 
         while self._running:
@@ -172,6 +233,7 @@ class TCPServerWorker(QThread):
                 except Exception:
                     pass
                 self._clients.append(client)
+                self._client_addrs[id(client)] = (addr[0], addr[1])
                 self._last_rx[id(client)] = time.monotonic()
                 self.client_connected.emit(addr[0], addr[1])
                 self.log_message.emit("Client connected: {}:{}".format(addr[0], addr[1]))
@@ -260,14 +322,13 @@ class TCPServerWorker(QThread):
         if client in self._clients:
             self._clients.remove(client)
             self._last_rx.pop(id(client), None)
+            addr = self._client_addrs.pop(id(client), None)
             # 主动关闭服务器时清理客户端不应发信号 (会覆盖 UI 的"未连接"状态).
             if not self._stopping:
-                try:
-                    addr = client.getpeername()
-                    self.client_disconnected.emit(addr[0], addr[1])
-                    self.log_message.emit("Client disconnected: {}:{}".format(addr[0], addr[1]))
-                except Exception:
-                    pass
+                addr = addr or self._safe_peername(client) or ("", 0)
+                self.client_disconnected.emit(addr[0], addr[1])
+                self.log_message.emit(
+                    "Client disconnected: {}:{}".format(addr[0], addr[1]))
             try:
                 client.close()
             except Exception:
@@ -298,6 +359,7 @@ class TCPClientWorker(QThread):
     """TCP 客户端 -- select 1ms 超时; 首次连接失败自动重试, 服务器后启动也能连上"""
     connected = Signal(str, int)
     disconnected = Signal()
+    connect_failed = Signal(str)
     data_received = Signal(bytes)
     error_occurred = Signal(str)
     log_message = Signal(str)
@@ -332,17 +394,27 @@ class TCPClientWorker(QThread):
         return self._connected
 
     def send(self, data: bytes):
-        if self._connected and self._sock:
-            try:
-                self._sock.sendall(data)
-            except Exception as e:
-                self.error_occurred.emit("Send failed: {}".format(e))
-        else:
+        if not (self._connected and self._sock):
             # 连接尚未建立完成: 不发送, 不影响重连流程. 限频提示避免重复发送时刷屏.
             now = time.monotonic()
             if now - self._last_notify_s >= 1.0:
                 self._last_notify_s = now
                 self.log_message.emit("尚未连接, 发送已忽略")
+            return False
+        try:
+            self._sock.sendall(data)
+            return True
+        except Exception as e:
+            # 发送失败意味着连接不可继续使用；关闭 socket 并通知 UI，
+            # 避免界面继续显示“已连接”以及重复发送时反复报同一个错。
+            self._connected = False
+            self.error_occurred.emit("Send failed: {}".format(e))
+            try:
+                self._sock.close()
+            except Exception:
+                pass
+            self.disconnected.emit()
+            return False
 
     def _sleep_interruptible(self, seconds: float):
         """分段睡眠: 可被 stop() 立即打断"""
@@ -363,12 +435,18 @@ class TCPClientWorker(QThread):
                 try:
                     sock.bind(("0.0.0.0", self._local_port))
                 except OSError as e:
-                    self.error_occurred.emit("Bind local port {} failed: {}".format(self._local_port, e))
+                    message = "Bind local port {} failed: {}".format(
+                        self._local_port, e)
+                    self._running = False
+                    self.error_occurred.emit(message)
                     try:
                         sock.close()
                     except Exception:
                         pass
                     self._cleanup()
+                    # 连接尚未成功时不会走正常的远端断开分支；这里显式通知 UI
+                    # 回滚“连接中”状态，否则按钮和状态栏会永久卡住。
+                    self.connect_failed.emit(message)
                     return
             try:
                 self.log_message.emit("Connecting to {}:{}...".format(self._host, self._port))
@@ -464,6 +542,8 @@ class TCPClientWorker(QThread):
 
     def stop(self):
         self._running = False
-        self.wait(1000)
+        # connect 的 socket 超时是 1 秒，额外留出收尾时间，避免在
+        # connect 尚未返回时主线程就开始关闭 socket。
+        self.wait(1500)
         self._cleanup()
 

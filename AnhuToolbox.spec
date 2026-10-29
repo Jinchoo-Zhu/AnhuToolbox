@@ -31,6 +31,8 @@ def _verify_external_tools():
 
 
 TOOLS_ROOT = os.path.join(_verify_external_tools(), "tools")
+VERSION_FILE = os.path.join(
+    os.path.dirname(os.path.abspath(SPEC)), "version_info.txt")
 
 
 a = Analysis(
@@ -81,6 +83,7 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon=['anhutoolbox.ico'],
+    version=VERSION_FILE,
     contents_directory='lib',  # 依赖(173 个 Qt DLL / Python / qrcode 等)放到 exe 旁的 lib/ 目录
 )
 

@@ -67,9 +67,11 @@ class ProjectManager:
     def path_of(self, name: str):
         """按项目名找文件路径, 找不到返回 None"""
         exact = os.path.join(self.dir, sanitize_name(name) + PROJECT_EXT)
-        if os.path.exists(exact):
+        if os.path.exists(exact) and self._display_name(os.path.basename(exact)) == name:
             return exact
-        for f in self._files():          # 文件名被去重过时按内部 name 反查
+        # 文件名被去重/转义过时按内部 name 反查。不能只看“清理后文件名
+        # 是否存在”，否则 a/b 与 a?b 都会落到 a_b.json 并互相覆盖。
+        for f in self._files():
             if self._display_name(f) == name:
                 return os.path.join(self.dir, f)
         return None
@@ -86,6 +88,7 @@ class ProjectManager:
                 data = json.load(f)
             if not isinstance(data, dict):
                 return None
+            data.setdefault("format", FORMAT_VERSION)
             data.setdefault("name", name)
             return data
         except Exception as e:
@@ -111,7 +114,8 @@ class ProjectManager:
         data["name"] = name
         path = self.path_of(name)
         if not path:
-            path = os.path.join(self.dir, self._unique(sanitize_name(name)) + PROJECT_EXT)
+            path = os.path.join(
+                self.dir, self._unique(sanitize_name(name)) + PROJECT_EXT)
         return self._write(path, data)
 
     def _unique(self, stem: str) -> str:
@@ -151,8 +155,15 @@ class ProjectManager:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
             data["name"] = new
-            new_path = os.path.join(self.dir, sanitize_name(new) + PROJECT_EXT)
-            if os.path.abspath(new_path) != os.path.abspath(path):
+            new_stem = sanitize_name(new)
+            new_path = os.path.join(self.dir, new_stem + PROJECT_EXT)
+            if (os.path.normcase(os.path.abspath(new_path)) !=
+                    os.path.normcase(os.path.abspath(path)) and
+                    os.path.exists(new_path)):
+                new_stem = self._unique(new_stem)
+                new_path = os.path.join(self.dir, new_stem + PROJECT_EXT)
+            if (os.path.normcase(os.path.abspath(new_path)) !=
+                    os.path.normcase(os.path.abspath(path))):
                 os.replace(path, new_path)   # 先改文件名
             with open(new_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
