@@ -1,97 +1,28 @@
 # AnhuToolbox
 
-AnhuToolbox 是面向串口、TCP 通信和日常数据处理的 Windows 桌面工具集。
+AnhuToolbox 是一款运行于 Windows 的桌面通信调试与数据处理工具集，面向设备联调、接口调试和日常开发辅助。
 
-主要功能包括串口及 TCP 收发、HEX/ASCII 转换、校验计算、预设命令、批量二维码、
-JSON 美化、正则测试、文本对比、列表排序、编码和金额转换，以及可扩展的外部工具集。
+## 项目简介
 
-## 从 GitHub 获取源码
+AnhuToolbox 将串口、TCP 服务端、TCP 客户端、MQTT、WebSocket 和 HTTP 集成在同一个工作台中，并通过“项目”统一管理工作环境。
 
-本仓库目前为**私有仓库**。其他开发者必须先获得访问权限，并通过自己的
-GitHub 账号登录，才能下载源码；无法匿名克隆。
+每个项目拥有独立的通信参数、编辑内容和最后使用模式。切换到不同项目时，程序会恢复该项目自己的串口、TCP、MQTT、WebSocket 和 HTTP 配置，适用于同时维护多套设备或多套接口环境的场景。
 
-1. 仓库所有者在 GitHub 仓库的 **Settings → Collaborators** 中邀请对方。
-2. 对方接受邀请，并安装 [Git](https://git-scm.com/download/win)。
-3. 对方的 GitHub 账号需要配置登录凭据或 SSH 密钥；不要共享账号或私钥。
+## 主要功能
 
-HTTPS 方式需要在首次克隆时输入自己的 GitHub 用户名和 Personal Access Token
-（不是 GitHub 登录密码）：
+- **通信调试**：支持串口、TCP 服务端、TCP 客户端、MQTT、WebSocket 和 HTTP。
+- **项目管理**：不同项目之间的六种通信模式和编辑内容相互独立。
+- **数据处理**：提供进制与编码转换、校验计算、JSON 格式化、正则测试、文本对比和列表处理等工具。
+- **开发辅助**：包含时间戳转换、批量二维码、金额转换、网络检测等常用功能。
+- **工具扩展**：支持集成常用第三方工具和本地自定义工具。
 
-```powershell
-cd D:\TestCode
-git clone https://github.com/Jinchoo-zhu/AnhuToolbox.git
-cd .\AnhuToolbox
-```
+## 运行平台
 
-也可以使用 SSH，但只能用于账号已被添加为协作者、并已在本机配置对应密钥的电脑：
+Windows 桌面环境，基于 Python 与 PySide6 构建。
 
-```powershell
-git clone git@github.com:Jinchoo-zhu/AnhuToolbox.git
-```
+## 适用场景
 
-如果对方只需要运行程序，不希望提供源码访问权限，应由仓库所有者提供编译好的
-EXE 安装包。新电脑首次使用 SSH 时可以按照
-[GitHub SSH 文档](https://docs.github.com/zh/authentication/connecting-to-github-with-ssh)
-添加自己的公钥，不要使用他人的私钥。
-
-`tools` 目录包含打包需要的第三方工具、SDK 和资料，克隆时必须完整下载，
-不要单独删除或改名。
-
-## 安装和运行
-
-需要 Windows 和 [Python 3.10 或更高版本](https://www.python.org/downloads/windows/)。
-下列步骤使用项目自己的虚拟环境，不影响电脑上的其他 Python 项目：
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-python .\verify_tools.py
-python -m unittest discover -s tests -v
-python .\main.py
-```
-
-直接运行 `python .\main.py` 时，应用会读取本目录下的 `tools` 文件夹。
-工具附件如需恢复，重新从 GitHub 下载对应文件，或重新完整克隆项目。
-
-如果 PowerShell 禁止激活虚拟环境，可以只执行下面命令，或者按
-[虚拟环境激活说明](https://docs.python.org/zh-cn/3/library/venv.html#how-venvs-work)
-调整本机的执行策略：
-
-```powershell
-.\.venv\Scripts\python.exe -m pip install -r .\requirements.txt
-```
-
-## 生成 EXE 和安装包
-
-先激活虚拟环境、确认工具完整，再执行 PyInstaller：
-
-```powershell
-.\.venv\Scripts\Activate.ps1
-python .\verify_tools.py
-pyinstaller --noconfirm --clean .\AnhuToolbox.spec
-```
-
-在 [AnhuToolbox.spec](AnhuToolbox.spec) 中，工具清单和附件都会在生成程序前自动校验；
-缺少或损坏时会中止打包，防止出现功能不完整的 EXE。
-
-如果要生成 Windows 安装程序，需要安装
-[Inno Setup 6](https://jrsoftware.org/isdl.php)，在项目目录执行：
-
-```powershell
-& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" .\installer.iss
-```
-
-默认安装程序会生成在 `installer` 目录。安装后 `tools` 和 `data` 位于应用目录，
-工具附件应与安装包一起安装，不要只复制主 EXE。如果应用目录不可写（例如安装在
-受保护的 `Program Files`），程序会使用
-`%LOCALAPPDATA%\AnhuToolbox\data`，并自动迁移已有的配置和项目。
-
-## 数据与备份
-
-`data/settings.json`、`data/presets.json` 和 `data/projects` 是本机运行设置及用户数据，
-不随源码仓库提交。更换电脑时，如有需要，请另行备份这些文件。
-自定义库清单默认为 `tools/tools.user.json`；使用用户数据目录时则位于
-`%LOCALAPPDATA%\AnhuToolbox\data/tools.user.json`。安装程序升级不会覆盖该文件。
-
+- 串口设备和网络设备调试
+- MQTT、WebSocket、HTTP 接口联调
+- 多设备、多环境配置管理
+- 日常数据转换与开发辅助处理

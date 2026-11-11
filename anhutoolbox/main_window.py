@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """AnhuToolbox 主窗口 -- 带配置持久化 + 预设面板可折叠"""
 
-import os, json, shutil, socket
+import os, json, shutil, socket, time
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QTabWidget, QStackedWidget,
@@ -14,6 +14,9 @@ import serial, serial.tools.list_ports
 from .sidebar import Sidebar
 from .panels import LogPanel, SendBar, PresetPanel
 from .workers import SerialReadWorker, TCPServerWorker, TCPClientWorker
+from .protocol_workers import MQTTWorker, WebSocketWorker
+from .protocol_pages import HTTPPage, MQTTPage, WebSocketPage
+from .stream_views import StreamPage
 from .tools import TimestampTool, QRTool, JsonTool, BaseTool, RegexTool, DiffTool, SortTool, EncodeTool, ChecksumTool, AmountTool, HardwareInfoPage, NetworkTool
 from .styles import (GLOBAL_STYLE, STATUS_BAR_STYLE, BG_SIDEBAR, BORDER,
                      TEXT_PRIMARY, TEXT_SECONDARY, prepare_menu)
@@ -53,6 +56,15 @@ LIBRARY_GROUPS = [
 # 工具库默认展示顺序 (与分组一致)
 LIBRARY_ORDER = ["timestamp", "base", "encode", "checksum", "amount",
                  "json", "regex", "diff", "sort", "qr", "network"]
+
+COMM_MODE_INDEX = {
+    "serial": 0,
+    "tcpserver": 1,
+    "tcpclient": 2,
+    "mqtt": 3,
+    "websocket": 4,
+    "http": 5,
+}
 
 
 def _profile_int(value, default, minimum=None, maximum=None):
@@ -129,10 +141,33 @@ class MainWindow(QMainWindow):
         self._tcp_client.connect_failed.connect(self._on_tcp_client_connect_failed)
         self._tcp_client.log_message.connect(self._log)
 
+        self._mqtt_worker = MQTTWorker()
+        self._mqtt_worker.connected.connect(self._on_mqtt_connected)
+        self._mqtt_worker.disconnected.connect(self._on_mqtt_disconnected)
+        self._mqtt_worker.message_received.connect(self._on_mqtt_message)
+        self._mqtt_worker.error_occurred.connect(self._on_error)
+        self._mqtt_worker.log_message.connect(self._log)
+
+        self._websocket_worker = WebSocketWorker()
+        self._websocket_worker.connected.connect(self._on_websocket_connected)
+        self._websocket_worker.disconnected.connect(
+            self._on_websocket_disconnected)
+        self._websocket_worker.message_received.connect(
+            self._on_websocket_message)
+        self._websocket_worker.error_occurred.connect(self._on_error)
+        self._websocket_worker.log_message.connect(self._log)
+
         self._active_worker = None
         self._connection_mode = cfg.get("mode", "serial")
         self._local_addr = ""
         self._remote_addr = ""
+        self._mqtt_rx_count = 0
+        self._mqtt_tx_count = 0
+        self._ws_rx_count = 0
+        self._ws_tx_count = 0
+        self._mqtt_auto_reconnect = True
+        self._websocket_auto_reconnect = True
+        self._active_stream_key = "serial"
 
         # 项目管理: 一个项目 = 一整套连接参数 + 发送/显示配置 + 预设命令
         self._pm = ProjectManager(self._data_root)
@@ -153,6 +188,22 @@ class MainWindow(QMainWindow):
         self._port_timer.timeout.connect(self._refresh_ports)
         self._port_timer.start(1500)
 
+    def _stream_page(self, mode=None):
+        key = mode or self._active_stream_key
+        return self._stream_pages.get(key, self._stream_pages["serial"])
+
+    @property
+    def log_panel(self):
+        return self._stream_page().log_panel
+
+    @property
+    def send_bar(self):
+        return self._stream_page().send_bar
+
+    @property
+    def _btn_toggle_preset(self):
+        return self._stream_page().btn_toggle_preset
+
     def _build_ui(self):
         self.setStyleSheet(GLOBAL_STYLE)
         central = QWidget()
@@ -169,31 +220,26 @@ class MainWindow(QMainWindow):
         sep = QFrame(); sep.setObjectName("separator"); sep.setFixedWidth(1)
         body.addWidget(sep)
 
-        # --- 串口调试页 (原主区域: 日志 + 发送) ---
-        self._main_area = QWidget()
-        main_lo = QVBoxLayout(self._main_area)
-        main_lo.setContentsMargins(0,0,0,0); main_lo.setSpacing(0)
+        # 串口、TCP 服务端、TCP 客户端各自拥有独立日志和发送栏。
+        self._stream_pages = {
+            "serial": StreamPage(),
+            "tcpserver": StreamPage(),
+            "tcpclient": StreamPage(),
+        }
+        self._main_area = self._stream_pages["serial"]
 
-        self.log_panel = LogPanel()
-        # 在日志工具栏加一个预设面板切换按钮
-        self._btn_toggle_preset = QPushButton("≡ 预设")
-        self._btn_toggle_preset.setCheckable(True)
-        self._btn_toggle_preset.setFixedHeight(24)
-        self._btn_toggle_preset.setStyleSheet(
-            "QPushButton{padding:2px 10px;font-size:12px;border-radius:4px;min-height:20px;max-height:24px}"
-            "QPushButton:checked{background:#E8F0FE;color:#0078D4;border-color:#0078D4;font-weight:600}"
-        )
-        self._btn_toggle_preset.toggled.connect(self._on_toggle_preset)
-        self.log_panel._add_widget(self._btn_toggle_preset)
+        self._mqtt_page = MQTTPage()
+        self._websocket_page = WebSocketPage()
+        self._http_page = HTTPPage()
+        self._comm_stack = QStackedWidget()
+        self._comm_stack.addWidget(self._main_area)
+        self._comm_stack.addWidget(self._stream_pages["tcpserver"])
+        self._comm_stack.addWidget(self._stream_pages["tcpclient"])
+        self._comm_stack.addWidget(self._mqtt_page)
+        self._comm_stack.addWidget(self._websocket_page)
+        self._comm_stack.addWidget(self._http_page)
 
-        main_lo.addWidget(self.log_panel, stretch=1)
-
-        self.send_bar = SendBar()
-        self.send_bar.send_data.connect(self._on_send_data)
-        self.send_bar.repeat_tick.connect(self._on_repeat_tick)
-        main_lo.addWidget(self.send_bar)
-
-        # --- Tab 控件: 串口调试 + 工具集 ---
+        # --- Tab 控件: 通信调试 + 工具集 ---
         self._tab_widget = QTabWidget()
         self._tab_widget.setStyleSheet(
             "QTabWidget::pane{border:1px solid #D0D0D0;border-top:none}"
@@ -202,7 +248,7 @@ class MainWindow(QMainWindow):
             "QTabBar::tab:selected{background:#FFF;color:#0078D4;font-weight:600;border-bottom:2px solid #0078D4}"
             "QTabBar::tab:hover{background:#E8F0FE;color:#0078D4}"
         )
-        self._tab_widget.addTab(self._main_area, "串口调试")
+        self._tab_widget.addTab(self._comm_stack, "通信调试")
         self._tab_widget.currentChanged.connect(self._on_tab_changed)
         # 其余工具页延迟到事件循环开始后再创建, 加快首屏显示
         self._extra_tabs_timer = QTimer(self)
@@ -262,8 +308,8 @@ class MainWindow(QMainWindow):
         self._library_stack = QStackedWidget()
         for key in LIBRARY_ORDER:
             self._library_stack.addWidget(self._library_pages[key])
-        # tab 顺序: 串口调试(0) / 工具库(1) / 工具箱(2) / 自定义库(3)
-        # 串口调试在 _build_ui 里已占据 0, 这里追加即得 1
+        # tab 顺序: 通信调试(0) / 工具库(1) / 工具箱(2) / 自定义库(3)
+        # 通信调试在 _build_ui 里已占据 0, 这里追加即得 1
         self._tab_widget.addTab(self._library_stack, "工具库")
 
         # --- 工具箱 tab: 左侧分类列表在 sidebar, 右侧是内容堆叠 ---
@@ -312,8 +358,8 @@ class MainWindow(QMainWindow):
         self.sidebar.library_item_clicked.connect(self._on_library_item)
         self.sidebar.toolbox_item_clicked.connect(self._on_toolbox_item)
 
-        # 默认停在「串口调试」(第一个 tab), 显示上次关闭时使用的项目
-        self._tab_widget.setCurrentWidget(self._main_area)
+        # 默认停在「通信调试」(第一个 tab), 显示上次关闭时使用的项目
+        self._tab_widget.setCurrentWidget(self._comm_stack)
         # 当前页本来就是 0 号, setCurrentWidget 不会触发 currentChanged,
         # 这里显式同步一次, 免得左侧边栏/底部信息栏停在未初始化状态
         self._on_tab_changed(self._tab_widget.currentIndex())
@@ -360,13 +406,17 @@ class MainWindow(QMainWindow):
         elif page is getattr(self, "_custom_library", None):
             # 自定义库不占左侧导航 (没有分类), 工具栏按钮在右侧页面顶部
             mode = "custom"
+        elif page is getattr(self, "_comm_stack", None):
+            mode = "serial"
         else:
             mode = "serial"
         self.sidebar.set_nav_mode(mode)
-        is_serial = (mode == "serial")
-        self._info_bar.setVisible(is_serial)
-        if is_serial:
-            show = self._btn_toggle_preset.isChecked()
+        is_comm = (mode == "serial")
+        self._info_bar.setVisible(is_comm)
+        if is_comm:
+            stream_mode = self.sidebar.current_mode in (
+                "serial", "tcpserver", "tcpclient")
+            show = self._btn_toggle_preset.isChecked() and stream_mode
             self.preset_panel.setVisible(show)
         else:
             self.preset_panel.setVisible(False)
@@ -384,7 +434,13 @@ class MainWindow(QMainWindow):
             self._toolbox_stack.setCurrentWidget(page)
 
     def _on_toggle_preset(self, checked):
-        self.preset_panel.setVisible(checked)
+        for page in self._stream_pages.values():
+            page.btn_toggle_preset.blockSignals(True)
+            page.btn_toggle_preset.setChecked(checked)
+            page.btn_toggle_preset.blockSignals(False)
+        stream_mode = self.sidebar.current_mode in (
+            "serial", "tcpserver", "tcpclient")
+        self.preset_panel.setVisible(checked and stream_mode)
         if checked:
             # 展开时给预设面板合理的初始宽度
             tw = self._preset_splitter.width()
@@ -396,7 +452,8 @@ class MainWindow(QMainWindow):
         """恢复与项目无关的全局偏好(项目内容由 _load_project 负责)"""
         show_preset = cfg.get("preset_visible", False)
         self.preset_panel.setVisible(show_preset)
-        self._btn_toggle_preset.setChecked(show_preset)
+        for page in self._stream_pages.values():
+            page.btn_toggle_preset.setChecked(show_preset)
         saved_sizes = cfg.get("preset_splitter", None)
         if (show_preset and isinstance(saved_sizes, list)
                 and len(saved_sizes) == 2
@@ -408,8 +465,7 @@ class MainWindow(QMainWindow):
 
     def _apply_legacy_settings_to_ui(self):
         """还没有项目时的初始值: 沿用旧版 settings.json 里的连接/发送/显示参数"""
-        mode_map = {"serial": 0, "tcpserver": 1, "tcpclient": 2}
-        idx = mode_map.get(cfg.get("mode", "serial"), 0)
+        idx = COMM_MODE_INDEX.get(cfg.get("mode", "serial"), 0)
         self.sidebar._mode_group.button(idx).setChecked(True)
         self.sidebar._on_mode_changed(idx)
 
@@ -430,20 +486,21 @@ class MainWindow(QMainWindow):
         _lp = cfg.get("tcpclient.local_port", "")
         self.sidebar.le_local_port.setText(str(_lp) if str(_lp).isdigit() and int(_lp) > 0 else "")
 
-        # Send settings
-        # 先恢复“加回车换行”状态, 再恢复 HEX 开关; HEX 为开时其后会自动禁用并取消该勾选
-        self.send_bar.chk_crlf.setChecked(cfg.get("send.crlf", True))
-        self.send_bar.chk_hex.setChecked(cfg.get("send.hex_send", False))
-        self.send_bar.sp_interval.setValue(cfg.get("send.interval", 1000))
-        idx_cs = self.send_bar.cb_checksum.findText(cfg.get("send.checksum", "ModbusCRC16"))
-        if idx_cs >= 0: self.send_bar.cb_checksum.setCurrentIndex(idx_cs)
-        self.send_bar.sp_start.setValue(cfg.get("send.start_byte", 1))
-        self.send_bar.cb_end.setCurrentText(cfg.get("send.end_byte_text", "末尾"))
-
-        # Log settings
-        self.log_panel.chk_hex.setChecked(cfg.get("log.hex_display", True))
-        self.log_panel.chk_timestamp.setChecked(cfg.get("log.timestamp", True))
-        self.log_panel.sp_timeout.setValue(cfg.get("log.timeout", 0))
+        legacy_send = {
+            "crlf": cfg.get("send.crlf", True),
+            "hex_send": cfg.get("send.hex_send", False),
+            "interval": cfg.get("send.interval", 1000),
+            "checksum": cfg.get("send.checksum", "ModbusCRC16"),
+            "start_byte": cfg.get("send.start_byte", 1),
+            "end_byte_text": cfg.get("send.end_byte_text", "末尾"),
+        }
+        legacy_log = {
+            "hex_display": cfg.get("log.hex_display", True),
+            "timestamp": cfg.get("log.timestamp", True),
+            "timeout": cfg.get("log.timeout", 0),
+        }
+        for page in self._stream_pages.values():
+            self._apply_stream_config(page, legacy_send, legacy_log)
 
         # 旧版 data/presets.json 只在第一次建默认项目时读一次, 之后交给项目文件
         self.preset_panel.load_from_project(self._read_legacy_presets())
@@ -485,10 +542,27 @@ class MainWindow(QMainWindow):
         self.sidebar.port_refresh_clicked.connect(self._refresh_ports)
         self.sidebar.project_changed.connect(self._on_project_selected)
         self.sidebar.project_menu_requested.connect(self._show_project_menu)
-        self.send_bar.chk_dtr.toggled.connect(self._on_dtr_toggled)
-        self.send_bar.chk_rts.toggled.connect(self._on_rts_toggled)
-        self.log_panel.cleared.connect(self._on_log_cleared)
-        self.log_panel.file_error.connect(self._on_error)
+        self._mqtt_page.subscription_changed.connect(
+            self._on_mqtt_subscriptions_changed)
+        self._mqtt_page.publish_requested.connect(self._on_mqtt_publish)
+        self._websocket_page.send_requested.connect(
+            self._on_websocket_send)
+        self._websocket_page.ping_requested.connect(
+            self._on_websocket_ping)
+        self._websocket_page.connect_requested.connect(
+            lambda: self._on_connect("websocket"))
+        self._websocket_page.disconnect_requested.connect(
+            lambda: self._on_disconnect("websocket"))
+        self._http_page.request_status.connect(self._log)
+        self._http_page.save_requested.connect(self._save_current_project)
+        for page in self._stream_pages.values():
+            page.send_bar.send_data.connect(self._on_send_data)
+            page.send_bar.repeat_tick.connect(self._on_repeat_tick)
+            page.send_bar.chk_dtr.toggled.connect(self._on_dtr_toggled)
+            page.send_bar.chk_rts.toggled.connect(self._on_rts_toggled)
+            page.log_panel.cleared.connect(self._on_log_cleared)
+            page.log_panel.file_error.connect(self._on_error)
+            page.preset_toggled.connect(self._on_toggle_preset)
         self._sync_timer = QTimer()
         self._sync_timer.timeout.connect(self._sync_preset_text)
         self._sync_timer.start(500)
@@ -542,8 +616,32 @@ class MainWindow(QMainWindow):
         snap.pop("name", None)
         return snap
 
+    @staticmethod
+    def _snapshot_stream(page):
+        send = page.send_bar
+        log = page.log_panel
+        return {
+            "send": {
+                "hex_send": send.chk_hex.isChecked(),
+                "crlf": send.chk_crlf.isChecked(),
+                "interval": send.sp_interval.value(),
+                "checksum": send.cb_checksum.currentText(),
+                "start_byte": send.sp_start.value(),
+                "end_byte_text": send.cb_end.currentText(),
+                "dtr": send.chk_dtr.isChecked(),
+                "rts": send.chk_rts.isChecked(),
+                "draft": send.text.toPlainText(),
+            },
+            "log": {
+                "hex_display": log.chk_hex.isChecked(),
+                "timestamp": log.chk_timestamp.isChecked(),
+                "timeout": log.sp_timeout.value(),
+            },
+        }
+
     def _snapshot_ui(self):
         """把当前界面状态打包成项目数据"""
+        active_stream = self._snapshot_stream(self._stream_page())
         return {
             "format": 1,
             "mode": self.sidebar.current_mode,
@@ -564,22 +662,34 @@ class MainWindow(QMainWindow):
                 "port": self.sidebar.sp_client_port.value(),
                 "local_port": self.sidebar.le_local_port.text().strip(),
             },
-            "send": {
-                "hex_send": self.send_bar.chk_hex.isChecked(),
-                "crlf": self.send_bar.chk_crlf.isChecked(),
-                "interval": self.send_bar.sp_interval.value(),
-                "checksum": self.send_bar.cb_checksum.currentText(),
-                "start_byte": self.send_bar.sp_start.value(),
-                "end_byte_text": self.send_bar.cb_end.currentText(),
-                "dtr": self.send_bar.chk_dtr.isChecked(),
-                "rts": self.send_bar.chk_rts.isChecked(),
-                "draft": self.send_bar.text.toPlainText(),
+            "mqtt": {
+                "host": self.sidebar.le_mqtt_host.text(),
+                "port": self.sidebar.sp_mqtt_port.value(),
+                "client_id": self.sidebar.le_mqtt_client_id.text(),
+                "username": self.sidebar.le_mqtt_user.text(),
+                "keepalive": self.sidebar.sp_mqtt_keepalive.value(),
+                "protocol": self.sidebar.cb_mqtt_protocol.currentText(),
+                "clean_session": self.sidebar.chk_mqtt_clean.isChecked(),
+                "auto_reconnect": self.sidebar.chk_mqtt_reconnect.isChecked(),
+                "tls": self.sidebar.chk_mqtt_tls.isChecked(),
+                **self._mqtt_page.snapshot(),
             },
-            "log": {
-                "hex_display": self.log_panel.chk_hex.isChecked(),
-                "timestamp": self.log_panel.chk_timestamp.isChecked(),
-                "timeout": self.log_panel.sp_timeout.value(),
+            "websocket": {
+                "origin": self.sidebar.le_ws_origin.text(),
+                "subprotocol": self.sidebar.le_ws_protocol.text(),
+                "ping_interval": self.sidebar.sp_ws_ping.value(),
+                "auto_reconnect": self.sidebar.chk_ws_reconnect.isChecked(),
+                "verify_tls": self.sidebar.chk_ws_verify.isChecked(),
+                **self._websocket_page.snapshot(),
             },
+            "http": self._http_page.snapshot(),
+            "streams": {
+                key: self._snapshot_stream(page)
+                for key, page in self._stream_pages.items()
+            },
+            # 保留旧字段，兼容已有项目和旧版程序。
+            "send": active_stream["send"],
+            "log": active_stream["log"],
             "presets": self.preset_panel.dump_presets(),
         }
 
@@ -644,12 +754,41 @@ class MainWindow(QMainWindow):
         else:
             self.sidebar.set_project_warning("")
 
+    @staticmethod
+    def _apply_stream_config(page, send_data, log_data):
+        send = page.send_bar
+        log = page.log_panel
+        d = _profile_dict(send_data)
+        send.chk_crlf.setChecked(_profile_bool(d.get("crlf", True), True))
+        send.chk_hex.setChecked(_profile_bool(d.get("hex_send", False), False))
+        send.sp_interval.setValue(
+            _profile_int(d.get("interval", 1000), 1000, 5, 99999))
+        checksum = str(d.get("checksum", "ModbusCRC16") or "ModbusCRC16")
+        index = send.cb_checksum.findText(checksum)
+        if index >= 0:
+            send.cb_checksum.setCurrentIndex(index)
+        else:
+            send.cb_checksum.setCurrentText("ModbusCRC16")
+        send.sp_start.setValue(
+            _profile_int(d.get("start_byte", 1), 1, 1, 99999))
+        send.cb_end.setCurrentText(str(d.get("end_byte_text", "末尾")))
+        send.chk_dtr.setChecked(_profile_bool(d.get("dtr", False), False))
+        send.chk_rts.setChecked(_profile_bool(d.get("rts", False), False))
+        send.text.setPlainText(str(d.get("draft", "")))
+
+        g = _profile_dict(log_data)
+        log.chk_hex.setChecked(
+            _profile_bool(g.get("hex_display", True), True))
+        log.chk_timestamp.setChecked(
+            _profile_bool(g.get("timestamp", True), True))
+        log.sp_timeout.setValue(
+            _profile_int(g.get("timeout", 0), 0, 0, 9999))
+
     def _apply_profile(self, p):
         """把项目数据写进各个控件(调用方负责置 _applying 抑制自动保存)"""
         p = _profile_dict(p)
-        mode_map = {"serial": 0, "tcpserver": 1, "tcpclient": 2}
         mode = str(p.get("mode", "serial") or "serial").strip().lower()
-        idx = mode_map.get(mode, 0)
+        idx = COMM_MODE_INDEX.get(mode, 0)
         self.sidebar._mode_group.button(idx).setChecked(True)
         self.sidebar._on_mode_changed(idx)
 
@@ -676,34 +815,58 @@ class MainWindow(QMainWindow):
         self.sidebar.le_local_port.setText(
             str(local_port) if local_port > 0 else "")
 
-        d = _profile_dict(p.get("send"))
-        # 顺序: 先 CRLF 后 HEX (HEX 打开时会自动禁用并取消 CRLF)
-        self.send_bar.chk_crlf.setChecked(_profile_bool(d.get("crlf", True), True))
-        self.send_bar.chk_hex.setChecked(
-            _profile_bool(d.get("hex_send", False), False))
-        self.send_bar.sp_interval.setValue(
-            _profile_int(d.get("interval", 1000), 1000, 5, 99999))
-        checksum = str(d.get("checksum", "ModbusCRC16") or "ModbusCRC16")
-        i = self.send_bar.cb_checksum.findText(checksum)
-        if i >= 0:
-            self.send_bar.cb_checksum.setCurrentIndex(i)
-        else:
-            self.send_bar.cb_checksum.setCurrentText("ModbusCRC16")
-        self.send_bar.sp_start.setValue(
-            _profile_int(d.get("start_byte", 1), 1, 1, 99999))
-        self.send_bar.cb_end.setCurrentText(str(d.get("end_byte_text", "末尾")))
-        self.send_bar.chk_dtr.setChecked(_profile_bool(d.get("dtr", False), False))
-        self.send_bar.chk_rts.setChecked(_profile_bool(d.get("rts", False), False))
-        self._has_dtr_rts = ("dtr" in d) or ("rts" in d)
-        self.send_bar.text.setPlainText(str(d.get("draft", "")))
+        mq = _profile_dict(p.get("mqtt"))
+        self.sidebar.le_mqtt_host.setText(
+            str(mq.get("host") or "broker.emqx.io"))
+        self.sidebar.sp_mqtt_port.setValue(
+            _profile_int(mq.get("port", 1883), 1883, 1, 65535))
+        self.sidebar.le_mqtt_client_id.setText(
+            str(mq.get("client_id") or ""))
+        self.sidebar.le_mqtt_user.setText(str(mq.get("username") or ""))
+        self.sidebar.le_mqtt_password.clear()
+        self.sidebar.sp_mqtt_keepalive.setValue(
+            _profile_int(mq.get("keepalive", 60), 60, 5, 3600))
+        self.sidebar.cb_mqtt_protocol.setCurrentText(
+            str(mq.get("protocol") or "MQTT 3.1.1"))
+        self.sidebar.chk_mqtt_clean.setChecked(
+            _profile_bool(mq.get("clean_session", True), True))
+        self.sidebar.chk_mqtt_reconnect.setChecked(
+            _profile_bool(mq.get("auto_reconnect", True), True))
+        self.sidebar.chk_mqtt_tls.setChecked(
+            _profile_bool(mq.get("tls", False), False))
+        self._mqtt_page.apply(mq)
 
-        g = _profile_dict(p.get("log"))
-        self.log_panel.chk_hex.setChecked(
-            _profile_bool(g.get("hex_display", True), True))
-        self.log_panel.chk_timestamp.setChecked(
-            _profile_bool(g.get("timestamp", True), True))
-        self.log_panel.sp_timeout.setValue(
-            _profile_int(g.get("timeout", 0), 0, 0, 9999))
+        ws = _profile_dict(p.get("websocket"))
+        self.sidebar.le_ws_origin.setText(str(ws.get("origin") or ""))
+        self.sidebar.le_ws_protocol.setText(
+            str(ws.get("subprotocol") or ""))
+        self.sidebar.sp_ws_ping.setValue(
+            _profile_int(ws.get("ping_interval", 30), 30, 0, 3600))
+        self.sidebar.chk_ws_reconnect.setChecked(
+            _profile_bool(ws.get("auto_reconnect", True), True))
+        self.sidebar.chk_ws_verify.setChecked(
+            _profile_bool(ws.get("verify_tls", True), True))
+        self._websocket_page.apply(ws)
+
+        self._http_page.apply(_profile_dict(p.get("http")))
+
+        legacy_send = _profile_dict(p.get("send"))
+        legacy_log = _profile_dict(p.get("log"))
+        streams = _profile_dict(p.get("streams"))
+        for key, page in self._stream_pages.items():
+            stream = _profile_dict(streams.get(key))
+            send_data = stream.get("send")
+            log_data = stream.get("log")
+            if not isinstance(send_data, dict):
+                send_data = legacy_send
+            if not isinstance(log_data, dict):
+                log_data = legacy_log
+            self._apply_stream_config(page, send_data, log_data)
+        serial_send = _profile_dict(
+            _profile_dict(streams.get("serial")).get("send")
+            or legacy_send)
+        self._has_dtr_rts = (
+            "dtr" in serial_send or "rts" in serial_send)
 
         self.preset_panel.load_from_project(_profile_list(p.get("presets")))
 
@@ -720,11 +883,12 @@ class MainWindow(QMainWindow):
                 return False
         self._save_current_project()
         # 停掉所有"会自己动"的东西, 免得老节奏打到新连接上
-        if self.send_bar.chk_repeat.isChecked():
-            self.send_bar.chk_repeat.setChecked(False)
-        self.send_bar.stop_repeat()
+        for page in self._stream_pages.values():
+            if page.send_bar.chk_repeat.isChecked():
+                page.send_bar.chk_repeat.setChecked(False)
+            page.send_bar.stop_repeat()
+            page.log_panel.reset_runtime_state()
         self.preset_panel.stop_loops()
-        self.log_panel.reset_runtime_state()
         if self._active_worker:
             self._on_disconnect(self.sidebar.current_mode)
         self._load_project(name)
@@ -827,11 +991,12 @@ class MainWindow(QMainWindow):
             confirm_text="删除", danger=True,
         ):
             return
-        if self.send_bar.chk_repeat.isChecked():
-            self.send_bar.chk_repeat.setChecked(False)
-        self.send_bar.stop_repeat()
+        for page in self._stream_pages.values():
+            if page.send_bar.chk_repeat.isChecked():
+                page.send_bar.chk_repeat.setChecked(False)
+            page.send_bar.stop_repeat()
+            page.log_panel.reset_runtime_state()
         self.preset_panel.stop_loops()
-        self.log_panel.reset_runtime_state()
         if self._active_worker:
             self._on_disconnect(self.sidebar.current_mode)
         self._pm.delete(old)
@@ -873,17 +1038,48 @@ class MainWindow(QMainWindow):
     def _on_mode_changed(self, mode: str):
         self._connection_mode = mode
         if self._active_worker: self._on_disconnect(mode)
-        labels = {"serial":"串口","tcpserver":"TCPServer","tcpclient":"TCPClient"}
+        old_page = self._stream_page()
+        if old_page is not None:
+            if old_page.send_bar.chk_repeat.isChecked():
+                old_page.send_bar.chk_repeat.setChecked(False)
+            old_page.send_bar.stop_repeat()
+        self.preset_panel.stop_loops()
+        if mode in self._stream_pages:
+            self._active_stream_key = mode
+        pages = {
+            "serial": self._stream_pages["serial"],
+            "tcpserver": self._stream_pages["tcpserver"],
+            "tcpclient": self._stream_pages["tcpclient"],
+            "mqtt": self._mqtt_page,
+            "websocket": self._websocket_page,
+            "http": self._http_page,
+        }
+        page = pages.get(mode, self._stream_pages["serial"])
+        self._comm_stack.setCurrentWidget(page)
+        stream_mode = mode in ("serial", "tcpserver", "tcpclient")
+        self.preset_panel.setVisible(
+            stream_mode and self._stream_page(mode).btn_toggle_preset.isChecked())
+        labels = {
+            "serial": "串口", "tcpserver": "TCPServer",
+            "tcpclient": "TCPClient", "mqtt": "MQTT",
+            "websocket": "WebSocket", "http": "HTTP",
+        }
         self._lbl_conn_type.setText(labels.get(mode,mode))
         self._lbl_local.setText(""); self._lbl_arrow.setText("")
         self._lbl_remote.setText(""); self._lbl_stats.setText("")
+        self._lbl_dot.setStyleSheet("color:#AAA;font-size:12px")
+        self._lbl_status_text.setText(
+            "就绪" if mode == "http" else "未连接")
         cfg.set("mode", mode); cfg.save()
+        self._project_autosave_soon()
 
     @Slot(str)
     def _on_connect(self, mode: str):
         if mode == "serial": self._connect_serial()
         elif mode == "tcpserver": self._connect_tcp_server()
         elif mode == "tcpclient": self._connect_tcp_client()
+        elif mode == "mqtt": self._connect_mqtt()
+        elif mode == "websocket": self._connect_websocket()
 
     def _connect_serial(self):
         port = self.sidebar.cb_port.currentText().strip()
@@ -954,6 +1150,230 @@ class MainWindow(QMainWindow):
         self._lbl_status_text.setText("连接中...")
         self._lbl_remote.setText(self._remote_addr)
         self.status_bar.showMessage("TCP客户端连接中 {}:{}...".format(host,port),3000)
+
+    def _connect_mqtt(self):
+        host = self.sidebar.le_mqtt_host.text().strip()
+        if not host:
+            show_warning(self, "提示", "请输入 MQTT Broker 地址")
+            return
+        if self._mqtt_worker.isRunning():
+            self._mqtt_worker.stop()
+        config = {
+            "host": host,
+            "port": self.sidebar.sp_mqtt_port.value(),
+            "client_id": self.sidebar.le_mqtt_client_id.text().strip(),
+            "username": self.sidebar.le_mqtt_user.text(),
+            "password": self.sidebar.le_mqtt_password.text(),
+            "keepalive": self.sidebar.sp_mqtt_keepalive.value(),
+            "protocol": self.sidebar.cb_mqtt_protocol.currentText(),
+            "clean_session": self.sidebar.chk_mqtt_clean.isChecked(),
+            "auto_reconnect": self.sidebar.chk_mqtt_reconnect.isChecked(),
+            "tls": self.sidebar.chk_mqtt_tls.isChecked(),
+        }
+        self._mqtt_worker.configure(config)
+        self._mqtt_auto_reconnect = bool(config["auto_reconnect"])
+        self._mqtt_worker.set_subscriptions(
+            self._mqtt_page.subscriptions())
+        self._mqtt_worker.start()
+        self._active_worker = self._mqtt_worker
+        self.sidebar.set_connected(True)
+        self.sidebar.set_controls_enabled(False)
+        self._mqtt_page.set_connected(False)
+        self._mqtt_rx_count = 0
+        self._mqtt_tx_count = 0
+        self._lbl_dot.setStyleSheet("color:#AAA;font-size:12px")
+        self._lbl_status_text.setText("连接中...")
+        self._lbl_local.setText("Broker={}:{}".format(
+            host, self.sidebar.sp_mqtt_port.value()))
+        self._lbl_remote.setText("")
+        self._lbl_stats.setText("Rx:0 | Tx:0")
+        self.status_bar.showMessage("正在连接 MQTT Broker...", 3000)
+
+    def _connect_websocket(self):
+        url = self._websocket_page.url()
+        if not url:
+            show_warning(self, "提示", "请输入 WebSocket URL")
+            return
+        if self._websocket_worker.isRunning():
+            self._websocket_worker.stop()
+        headers = {
+            key.strip(): value
+            for key, value in self._websocket_page.headers()
+            if key.strip()
+        }
+        origin = self.sidebar.le_ws_origin.text().strip()
+        protocols = [
+            item.strip() for item in
+            self.sidebar.le_ws_protocol.text().split(",")
+            if item.strip()
+        ]
+        config = {
+            "url": url,
+            "headers": headers,
+            "origin": origin,
+            "subprotocols": protocols or None,
+            "ping_interval": self.sidebar.sp_ws_ping.value(),
+            "auto_reconnect": self.sidebar.chk_ws_reconnect.isChecked(),
+            "verify_tls": self.sidebar.chk_ws_verify.isChecked(),
+        }
+        self._websocket_worker.configure(config)
+        self._websocket_auto_reconnect = bool(config["auto_reconnect"])
+        self._websocket_worker.start()
+        self._active_worker = self._websocket_worker
+        self.sidebar.set_connected(True)
+        self.sidebar.set_controls_enabled(False)
+        self._websocket_page.set_connected(False)
+        self._ws_rx_count = 0
+        self._ws_tx_count = 0
+        self._lbl_dot.setStyleSheet("color:#AAA;font-size:12px")
+        self._lbl_status_text.setText("连接中...")
+        self._lbl_local.setText("")
+        self._lbl_remote.setText(url)
+        self._lbl_stats.setText("Rx:0 | Tx:0")
+        self.status_bar.showMessage("正在连接 WebSocket...", 3000)
+
+    @Slot()
+    def _on_mqtt_connected(self):
+        if self._active_worker is not self._mqtt_worker:
+            return
+        self._mqtt_page.set_connected(True)
+        self._lbl_dot.setStyleSheet("color:#107C10;font-size:12px")
+        self._lbl_status_text.setText("已连接")
+        self.status_bar.showMessage("MQTT 已连接", 3000)
+
+    @Slot(str)
+    def _on_mqtt_disconnected(self, message=""):
+        if self._active_worker is not self._mqtt_worker:
+            return
+        if self._mqtt_auto_reconnect and self._mqtt_worker.isRunning():
+            self._mqtt_page.set_connected(False)
+            self._lbl_dot.setStyleSheet("color:#D83B01;font-size:12px")
+            self._lbl_status_text.setText("重连中...")
+            self.status_bar.showMessage(message or "MQTT 正在重连...", 5000)
+            return
+        self._active_worker = None
+        self._mqtt_page.set_connected(False)
+        self.sidebar.set_connected(False)
+        self.sidebar.set_controls_enabled(True)
+        self._lbl_dot.setStyleSheet("color:#D83B01;font-size:12px")
+        self._lbl_status_text.setText("已断开")
+        self.status_bar.showMessage(message or "MQTT 已断开", 8000)
+
+    @Slot(dict)
+    def _on_mqtt_message(self, message):
+        if self._active_worker is not self._mqtt_worker:
+            return
+        message = dict(message)
+        message["direction"] = "RX"
+        self._mqtt_rx_count += len(bytes(message.get("payload") or b""))
+        self._mqtt_page.append_message(message)
+        self._lbl_stats.setText("Rx:{} | Tx:{}".format(
+            self._mqtt_rx_count, self._mqtt_tx_count))
+
+    @Slot(object)
+    def _on_mqtt_subscriptions_changed(self, subscriptions):
+        self._project_autosave_soon()
+        if self._active_worker is self._mqtt_worker:
+            self._mqtt_worker.sync_subscriptions(subscriptions)
+
+    @Slot(dict)
+    def _on_mqtt_publish(self, request):
+        if self._active_worker is not self._mqtt_worker:
+            show_warning(self, "提示", "请先连接 MQTT Broker")
+            return
+        if not self._mqtt_worker.publish(
+                request["topic"], request["payload"],
+                request.get("qos", 0), request.get("retain", False)):
+            return
+        payload = bytes(request["payload"])
+        try:
+            text = payload.decode("utf-8")
+        except UnicodeDecodeError:
+            text = None
+        message = {
+            "timestamp": time.time(),
+            "direction": "TX",
+            "topic": request["topic"],
+            "payload": payload,
+            "text": text,
+            "qos": int(request.get("qos", 0)),
+            "retain": bool(request.get("retain", False)),
+        }
+        self._mqtt_tx_count += len(payload)
+        self._mqtt_page.append_message(message)
+        self._lbl_stats.setText("Rx:{} | Tx:{}".format(
+            self._mqtt_rx_count, self._mqtt_tx_count))
+        self._project_autosave_soon()
+
+    @Slot()
+    def _on_websocket_connected(self):
+        if self._active_worker is not self._websocket_worker:
+            return
+        self._websocket_page.set_connected(True)
+        self._lbl_dot.setStyleSheet("color:#107C10;font-size:12px")
+        self._lbl_status_text.setText("已连接")
+        self.status_bar.showMessage("WebSocket 已连接", 3000)
+
+    @Slot(str)
+    def _on_websocket_disconnected(self, message=""):
+        if self._active_worker is not self._websocket_worker:
+            return
+        if (self._websocket_auto_reconnect
+                and self._websocket_worker.isRunning()):
+            self._websocket_page.set_connected(False)
+            self._lbl_dot.setStyleSheet("color:#D83B01;font-size:12px")
+            self._lbl_status_text.setText("重连中...")
+            self.status_bar.showMessage(
+                message or "WebSocket 正在重连...", 5000)
+            return
+        self._active_worker = None
+        self._websocket_page.set_connected(False)
+        self.sidebar.set_connected(False)
+        self.sidebar.set_controls_enabled(True)
+        self._lbl_dot.setStyleSheet("color:#D83B01;font-size:12px")
+        self._lbl_status_text.setText("已断开")
+        self.status_bar.showMessage(message or "WebSocket 已断开", 8000)
+
+    @Slot(dict)
+    def _on_websocket_message(self, message):
+        if self._active_worker is not self._websocket_worker:
+            return
+        message = dict(message)
+        message["direction"] = "RX"
+        self._ws_rx_count += len(bytes(message.get("payload") or b""))
+        self._websocket_page.append_message(message)
+        self._lbl_stats.setText("Rx:{} | Tx:{}".format(
+            self._ws_rx_count, self._ws_tx_count))
+
+    @Slot(dict)
+    def _on_websocket_send(self, request):
+        if self._active_worker is not self._websocket_worker:
+            show_warning(self, "提示", "请先连接 WebSocket")
+            return
+        if not self._websocket_worker.send(
+                request["payload"], request.get("binary", False)):
+            return
+        message = {
+            "timestamp": time.time(),
+            "direction": "TX",
+            "binary": bool(request.get("binary")),
+            "payload": bytes(request["payload"]),
+            "text": request.get("text"),
+        }
+        self._ws_tx_count += len(message["payload"])
+        self._websocket_page.append_message(message)
+        self._lbl_stats.setText("Rx:{} | Tx:{}".format(
+            self._ws_rx_count, self._ws_tx_count))
+        self._project_autosave_soon()
+
+    @Slot()
+    def _on_websocket_ping(self):
+        if self._active_worker is self._websocket_worker:
+            self._websocket_worker.ping()
+
+    def _project_autosave_soon(self):
+        if not self._applying and self._current_project:
+            self._save_current_project()
 
     @Slot(int)
     def _on_tcp_server_started(self, port=0):
@@ -1040,6 +1460,10 @@ class MainWindow(QMainWindow):
     def _on_disconnect(self, mode: str):
         self.send_bar.stop_repeat()
         if self._active_worker:
+            if self._active_worker is self._mqtt_worker:
+                self._mqtt_page.set_connected(False)
+            elif self._active_worker is self._websocket_worker:
+                self._websocket_page.set_connected(False)
             self._active_worker.stop()
             if isinstance(self._active_worker, SerialReadWorker):
                 if self._active_worker._serial:
@@ -1226,7 +1650,9 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         self._sync_timer.stop(); self._port_timer.stop()
         self._extra_tabs_timer.stop()
-        self.send_bar.stop_repeat()
+        for page in self._stream_pages.values():
+            page.send_bar.stop_repeat()
+            page.log_panel.cleanup()
         self.preset_panel.stop_timer()
         if self._active_worker:
             self._on_disconnect(self.sidebar.current_mode)
@@ -1241,7 +1667,7 @@ class MainWindow(QMainWindow):
             hardware = self._toolbox_pages.get("硬件信息")
             if hardware is not None:
                 hardware.cleanup()
-        self.log_panel.cleanup()
+        self._http_page.cleanup()
         self._save_current_project()
         self._save_global()
         event.accept()

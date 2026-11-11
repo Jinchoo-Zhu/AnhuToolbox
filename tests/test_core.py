@@ -11,7 +11,8 @@ from types import SimpleNamespace
 from unittest import mock
 
 import serial
-from PySide6.QtWidgets import QTextBrowser, QWidget
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QWidget
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -19,7 +20,8 @@ from PySide6.QtWidgets import QApplication
 
 from anhutoolbox.main_window import MainWindow, _profile_bool, _profile_int
 from anhutoolbox.app_paths import choose_data_root
-from anhutoolbox.dialogs import AnhuDialog
+from anhutoolbox import dialogs
+from anhutoolbox.dialogs import AnhuInputDialog
 from anhutoolbox.panels import LogPanel, PresetPanel, SendBar, parse_hex_bytes
 from anhutoolbox.projects import ProjectManager
 from anhutoolbox.tools import (
@@ -28,6 +30,14 @@ from anhutoolbox.tools import (
 from anhutoolbox.workers import (
     SerialReadWorker, TCPClientWorker, TCPServerWorker,
 )
+
+# GUI 回归测试不启动真实 PowerShell/CIM 硬件探测，避免测试结束时
+# 仍有后台子进程与 Qt 事件循环交错。
+_HARDWARE_TEST_PATCH = mock.patch(
+    "anhutoolbox.hardware.collect_hardware_info",
+    return_value={},
+)
+_HARDWARE_TEST_PATCH.start()
 
 
 APP = QApplication.instance() or QApplication([])
@@ -78,18 +88,30 @@ class ToolTests(unittest.TestCase):
         self.assertEqual(tool._results[8].text(), "-1")
         self.assertEqual(tool._results[16].text(), "-1")
 
-    def test_long_dialog_uses_scrollable_browser(self):
-        dialog = AnhuDialog(
-            None, "测试", "\n".join("line {}".format(i) for i in range(100)))
+    def test_native_style_message_icons(self):
+        with mock.patch(
+                "anhutoolbox.dialogs._native_message",
+                return_value=dialogs.IDYES) as message_box:
+            self.assertTrue(dialogs.ask_yes_no(None, "确认", "继续吗？"))
+        message_box.assert_called_once_with(
+            None, "确认", "继续吗？", dialogs.MB_ICONQUESTION, dialogs.MB_YESNO)
+
+        with mock.patch(
+                "anhutoolbox.dialogs._native_message",
+                return_value=dialogs.IDOK) as message_box:
+            dialogs.show_error(None, "错误", "发生错误")
+        message_box.assert_called_once_with(
+            None, "错误", "发生错误", dialogs.MB_ICONERROR, dialogs.MB_OK)
+
+    def test_input_dialog_matches_simulator_simple_layout(self):
+        dialog = AnhuInputDialog(
+            None, "新建项目", "项目名称", "默认项目")
         try:
-            self.assertIsInstance(dialog.message_label, QTextBrowser)
-            dialog.show()
-            APP.processEvents()
-            self.assertGreater(
-                dialog.message_label.verticalScrollBar().maximum(), 0)
-            self.assertLessEqual(
-                dialog.message_label.geometry().bottom(),
-                dialog._content_frame.height())
+            self.assertEqual(dialog.windowTitle(), "新建项目")
+            self.assertEqual(dialog.input.text(), "默认项目")
+            self.assertFalse(
+                dialog.windowFlags() & Qt.WindowType.FramelessWindowHint)
+            self.assertGreaterEqual(dialog.minimumWidth(), 470)
         finally:
             dialog.close()
 
@@ -288,6 +310,75 @@ class CommunicationTests(unittest.TestCase):
                 self.assertEqual(window._lbl_status_text.text(), "串口已断开")
             finally:
                 window._active_worker = None
+                close_window(window)
+
+
+class StreamWorkspaceTests(unittest.TestCase):
+    def test_serial_tcp_server_and_client_keep_independent_content(self):
+        with tempfile.TemporaryDirectory() as temp:
+            window = MainWindow(temp)
+            try:
+                window.resize(1360, 720)
+                window.show()
+                APP.processEvents()
+                self.assertEqual(
+                    window.sidebar._settings_scroll.verticalScrollBar().maximum(),
+                    0)
+                pages = window._stream_pages
+                pages["serial"].send_bar.text.setPlainText("serial draft")
+                pages["tcpserver"].send_bar.text.setPlainText("server draft")
+                pages["tcpclient"].send_bar.text.setPlainText("client draft")
+                pages["serial"].log_panel.append_data("rx", b"SERIAL")
+                pages["tcpserver"].log_panel.append_data("rx", b"SERVER")
+                pages["tcpclient"].log_panel.append_data("rx", b"CLIENT")
+
+                window.sidebar._mode_group.button(0).click()
+                APP.processEvents()
+                self.assertEqual(window.send_bar.text.toPlainText(),
+                                 "serial draft")
+                self.assertEqual(window.log_panel._rx_total, 6)
+
+                window.sidebar._mode_group.button(1).click()
+                APP.processEvents()
+                self.assertEqual(window.send_bar.text.toPlainText(),
+                                 "server draft")
+                self.assertEqual(window.log_panel._rx_total, 6)
+
+                window.sidebar._mode_group.button(2).click()
+                APP.processEvents()
+                self.assertEqual(window.send_bar.text.toPlainText(),
+                                 "client draft")
+                self.assertEqual(window.log_panel._rx_total, 6)
+                self.assertEqual(
+                    pages["serial"].send_bar.text.toPlainText(),
+                    "serial draft")
+
+                snapshot = window._snapshot_ui()
+                self.assertEqual(
+                    snapshot["streams"]["serial"]["send"]["draft"],
+                    "serial draft")
+                self.assertEqual(
+                    snapshot["streams"]["tcpserver"]["send"]["draft"],
+                    "server draft")
+                self.assertEqual(
+                    snapshot["streams"]["tcpclient"]["send"]["draft"],
+                    "client draft")
+
+                window._apply_profile({
+                    "mode": "serial",
+                    "streams": {
+                        "serial": {"send": {"draft": "new serial"}},
+                        "tcpserver": {"send": {"draft": "new server"}},
+                        "tcpclient": {"send": {"draft": "new client"}},
+                    },
+                })
+                self.assertEqual(
+                    pages["serial"].send_bar.text.toPlainText(), "new serial")
+                self.assertEqual(
+                    pages["tcpserver"].send_bar.text.toPlainText(), "new server")
+                self.assertEqual(
+                    pages["tcpclient"].send_bar.text.toPlainText(), "new client")
+            finally:
                 close_window(window)
 
 

@@ -3,7 +3,7 @@
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QComboBox,
-    QPushButton, QSpinBox, QStackedWidget, QLineEdit,
+    QPushButton, QSpinBox, QStackedWidget, QLineEdit, QCheckBox,
     QFrame, QButtonGroup, QSizePolicy, QScrollArea
 )
 from PySide6.QtGui import QIntValidator
@@ -59,8 +59,8 @@ class Sidebar(QWidget):
 
     def _build(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 14, 10, 14)
-        layout.setSpacing(8)
+        layout.setContentsMargins(10, 12, 10, 8)
+        layout.setSpacing(6)
 
         # -- 标题 --
         title = QLabel("Anhu 百宝箱")
@@ -84,10 +84,10 @@ class Sidebar(QWidget):
 
         version_key = QLabel("版本号：")
         version_key.setFont(QFont("Microsoft YaHei", 10))
-        version_key.setStyleSheet("color: #888; padding: 0 0 16px 0;")
+        version_key.setStyleSheet("color: #888; padding: 0 0 8px 0;")
         version_val = QLabel("V1.0.0")
         version_val.setFont(QFont("Microsoft YaHei", 10))
-        version_val.setStyleSheet("color: #888; padding: 0 0 16px 0;")
+        version_val.setStyleSheet("color: #888; padding: 0 0 8px 0;")
 
         # 前缀列统一取最大宽度，保证值列起点严格对齐
         key_width = max(author_key.sizeHint().width(), version_key.sizeHint().width())
@@ -100,11 +100,11 @@ class Sidebar(QWidget):
         info_grid.addWidget(version_val, 1, 1)
         layout.addLayout(info_grid)
 
-        # -- 功能控件容器 (串口调试页之外隐藏) --
+        # -- 功能控件容器 (通信调试页之外隐藏) --
         self._controls_widget = QWidget()
         ctrl_lo = QVBoxLayout(self._controls_widget)
         ctrl_lo.setContentsMargins(0, 0, 0, 0)
-        ctrl_lo.setSpacing(8)
+        ctrl_lo.setSpacing(6)
 
         # -- 项目区块 (一个项目 = 一整套连接/发送/显示/预设配置) --
         proj_head = QHBoxLayout()
@@ -131,7 +131,8 @@ class Sidebar(QWidget):
         self._cb_project = QComboBox()
         self._cb_project.setStyleSheet(COMBO_STYLE)   # 与参数配置下拉框同一套样式
         self._cb_project.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self._cb_project.setToolTip("切换项目会整套切换连接参数、发送/显示配置和预设命令")
+        self._cb_project.setToolTip(
+            "每个项目独立保存六种通信模式的参数、编辑内容、当前模式和预设命令")
         self._cb_project.currentIndexChanged.connect(self._on_project_selected)
         ctrl_lo.addWidget(self._cb_project)
 
@@ -148,7 +149,7 @@ class Sidebar(QWidget):
 
         # -- 连接模式标签 --
         mode_label = QLabel("连接模式")
-        mode_label.setStyleSheet("color: #3D3D3D; font-size: 14px; font-weight: 600; padding: 8px 4px 4px 4px;")
+        mode_label.setStyleSheet("color: #3D3D3D; font-size: 14px; font-weight: 600; padding: 4px 4px 2px 4px;")
         ctrl_lo.addWidget(mode_label)
 
         # -- 模式按钮组 --
@@ -156,19 +157,42 @@ class Sidebar(QWidget):
         self._mode_group.setExclusive(True)
 
         modes = [
-            ("serial",    "串口 (Serial)"),
-            ("tcpserver", "TCP 服务器"),
-            ("tcpclient", "TCP 客户端"),
+            ("serial",    "串口", "串口 (Serial)"),
+            ("tcpserver", "TCP 服务端", "TCP 服务器"),
+            ("tcpclient", "TCP 客户端", "TCP 客户端"),
+            ("mqtt",      "MQTT", "MQTT 客户端"),
+            ("websocket", "WebSocket", "WebSocket 客户端"),
+            ("http",      "HTTP", "HTTP 请求"),
         ]
-        for i, (key, label) in enumerate(modes):
+        mode_grid = QGridLayout()
+        mode_grid.setHorizontalSpacing(6)
+        mode_grid.setVerticalSpacing(6)
+        mode_grid.setContentsMargins(0, 0, 0, 0)
+        mode_grid.setColumnStretch(0, 1)
+        mode_grid.setColumnStretch(1, 1)
+        mode_grid.setColumnStretch(2, 1)
+        for i, (key, label, tooltip) in enumerate(modes):
             btn = QPushButton(label)
             btn.setCheckable(True)
-            btn.setProperty("class", "mode_btn")
+            btn.setToolTip(tooltip)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            # 三列等宽，按钮文字按 13px 字号排列；水平方向忽略 sizeHint，
+            # 避免 WebSocket 的长英文名称把另外两列挤成不同宽度。
+            btn.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+            btn.setFixedHeight(30)
+            btn.setStyleSheet(
+                "QPushButton{background:transparent;border:1px solid transparent;"
+                "border-radius:5px;padding:4px 2px;font-size:13px;"
+                "font-weight:500;color:#666;text-align:center;}"
+                "QPushButton:hover{background:#E8F0FE;color:#1A1A1A;}"
+                "QPushButton:checked{background:#E8F0FE;border-color:#0078D4;"
+                "color:#0078D4;font-weight:500;}"
+            )
             self._mode_group.addButton(btn, i)
-            ctrl_lo.addWidget(btn)
+            mode_grid.addWidget(btn, i // 3, i % 3)
 
         self._mode_group.idClicked.connect(self._on_mode_changed)
+        ctrl_lo.addLayout(mode_grid)
 
         # -- 分隔线 --
         sep = QFrame()
@@ -177,7 +201,7 @@ class Sidebar(QWidget):
 
         # -- 设置标题 --
         self._settings_label = QLabel("参数配置")
-        self._settings_label.setStyleSheet("color: #3D3D3D; font-size: 14px; font-weight: 600; padding: 8px 4px 4px 4px;")
+        self._settings_label.setStyleSheet("color: #3D3D3D; font-size: 14px; font-weight: 600; padding: 4px 4px 2px 4px;")
         ctrl_lo.addWidget(self._settings_label)
 
         # -- 堆叠设置页 --
@@ -185,6 +209,9 @@ class Sidebar(QWidget):
         self._settings_stack.addWidget(self._build_serial_page())
         self._settings_stack.addWidget(self._build_tcpserver_page())
         self._settings_stack.addWidget(self._build_tcpclient_page())
+        self._settings_stack.addWidget(self._build_mqtt_page())
+        self._settings_stack.addWidget(self._build_websocket_page())
+        self._settings_stack.addWidget(self._build_http_page())
 
         # 窗口不够高时, 参数区应该出现滚动条, 而不是把每一行压扁
         inner = QWidget()
@@ -473,7 +500,7 @@ class Sidebar(QWidget):
         # 统一用 QGridLayout: 标签列宽一致, 所有下拉框左对齐
         form = QGridLayout()
         form.setHorizontalSpacing(8)
-        form.setVerticalSpacing(8)
+        form.setVerticalSpacing(5)
         form.setColumnStretch(1, 1)
 
         labels = ["串口号", "波特率", "数据位", "停止位", "校验位", "流控"]
@@ -519,6 +546,7 @@ class Sidebar(QWidget):
             form.addWidget(combo, i, 1)
 
         outer.addLayout(form)
+        outer.addStretch(1)
 
         return w
 
@@ -532,7 +560,7 @@ class Sidebar(QWidget):
         # 标签作为 col0, SpinBox 作为 col1, col1 stretch=1 占满.
         form = QGridLayout()
         form.setHorizontalSpacing(8)
-        form.setVerticalSpacing(8)
+        form.setVerticalSpacing(5)
         form.setColumnStretch(1, 1)
 
         lab_port = QLabel("监听端口")
@@ -571,7 +599,7 @@ class Sidebar(QWidget):
         # 与 TCP 服务器页一致: 用 QGridLayout 保证三个输入框左对齐
         form = QGridLayout()
         form.setHorizontalSpacing(8)
-        form.setVerticalSpacing(8)
+        form.setVerticalSpacing(5)
         form.setColumnStretch(1, 1)
 
         lab_host = QLabel("远端地址")
@@ -613,17 +641,137 @@ class Sidebar(QWidget):
         outer.addStretch()
         return w
 
+    @staticmethod
+    def _form_label(labels):
+        widths = [label.sizeHint().width() for label in labels]
+        if widths:
+            width = max(widths)
+            for label in labels:
+                label.setMinimumWidth(width)
+        return labels
+
+    def _build_mqtt_page(self) -> QWidget:
+        w = QWidget()
+        outer = QVBoxLayout(w)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(8)
+        form = QGridLayout()
+        form.setHorizontalSpacing(8)
+        form.setVerticalSpacing(5)
+        form.setColumnStretch(1, 1)
+
+        labels = self._form_label([
+            QLabel("Broker"), QLabel("端口"), QLabel("客户端 ID"),
+            QLabel("用户名"), QLabel("密码"), QLabel("KeepAlive"),
+            QLabel("协议"),
+        ])
+        self._le_mqtt_host = QLineEdit("broker.emqx.io")
+        self._sp_mqtt_port = QSpinBox()
+        self._sp_mqtt_port.setRange(1, 65535)
+        self._sp_mqtt_port.setValue(1883)
+        self._le_mqtt_client_id = QLineEdit()
+        self._le_mqtt_client_id.setPlaceholderText("留空自动生成")
+        self._le_mqtt_user = QLineEdit()
+        self._le_mqtt_password = QLineEdit()
+        self._le_mqtt_password.setEchoMode(QLineEdit.Password)
+        self._sp_mqtt_keepalive = QSpinBox()
+        self._sp_mqtt_keepalive.setRange(5, 3600)
+        self._sp_mqtt_keepalive.setValue(60)
+        self._cb_mqtt_protocol = QComboBox()
+        self._cb_mqtt_protocol.addItems(["MQTT 3.1.1", "MQTT 5.0"])
+
+        widgets = [
+            self._le_mqtt_host, self._sp_mqtt_port,
+            self._le_mqtt_client_id, self._le_mqtt_user,
+            self._le_mqtt_password, self._sp_mqtt_keepalive,
+            self._cb_mqtt_protocol,
+        ]
+        for row, (label, widget) in enumerate(zip(labels, widgets)):
+            form.addWidget(label, row, 0, Qt.AlignLeft)
+            form.addWidget(widget, row, 1)
+
+        self._chk_mqtt_tls = QCheckBox("启用 TLS")
+        self._chk_mqtt_clean = QCheckBox("Clean Session")
+        self._chk_mqtt_clean.setChecked(True)
+        self._chk_mqtt_reconnect = QCheckBox("自动重连")
+        self._chk_mqtt_reconnect.setChecked(True)
+        form.addWidget(self._chk_mqtt_tls, 7, 0, 1, 2)
+        form.addWidget(self._chk_mqtt_clean, 8, 0, 1, 2)
+        form.addWidget(self._chk_mqtt_reconnect, 9, 0, 1, 2)
+        outer.addLayout(form)
+        outer.addStretch()
+        return w
+
+    def _build_websocket_page(self) -> QWidget:
+        w = QWidget()
+        outer = QVBoxLayout(w)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(8)
+        form = QGridLayout()
+        form.setHorizontalSpacing(8)
+        form.setVerticalSpacing(5)
+        form.setColumnStretch(1, 1)
+
+        labels = self._form_label([
+            QLabel("Origin"), QLabel("子协议"), QLabel("Ping(s)"),
+        ])
+        self._le_ws_origin = QLineEdit()
+        self._le_ws_protocol = QLineEdit()
+        self._le_ws_protocol.setPlaceholderText("可选，逗号分隔")
+        self._sp_ws_ping = QSpinBox()
+        self._sp_ws_ping.setRange(0, 3600)
+        self._sp_ws_ping.setValue(30)
+        for row, (label, widget) in enumerate(zip(labels, [
+                self._le_ws_origin, self._le_ws_protocol,
+                self._sp_ws_ping])):
+            form.addWidget(label, row, 0, Qt.AlignLeft)
+            form.addWidget(widget, row, 1)
+        self._chk_ws_reconnect = QCheckBox("自动重连")
+        self._chk_ws_reconnect.setChecked(True)
+        self._chk_ws_verify = QCheckBox("校验证书")
+        self._chk_ws_verify.setChecked(True)
+        form.addWidget(self._chk_ws_reconnect, 3, 0, 1, 2)
+        form.addWidget(self._chk_ws_verify, 4, 0, 1, 2)
+        outer.addLayout(form)
+        outer.addStretch()
+        return w
+
+    def _build_http_page(self) -> QWidget:
+        w = QWidget()
+        outer = QVBoxLayout(w)
+        outer.setContentsMargins(4, 4, 4, 4)
+        tip = QLabel(
+            "HTTP 是无连接请求。\n\n"
+            "Method、URL、Headers、Body、认证和响应内容均在右侧工作区编辑。")
+        tip.setWordWrap(True)
+        tip.setStyleSheet("color:#666;font-size:12px;line-height:1.5;")
+        outer.addWidget(tip)
+        outer.addStretch()
+        return w
+
     def _on_mode_changed(self, idx: int):
-        modes = ["serial", "tcpserver", "tcpclient"]
+        modes = [
+            "serial", "tcpserver", "tcpclient",
+            "mqtt", "websocket", "http",
+        ]
         self._current_mode = modes[idx]
         self._settings_stack.setCurrentIndex(idx)
 
         is_serial = (self._current_mode == "serial")
         self._btn_refresh.setVisible(is_serial)
+        self._btn_connect.setVisible(
+            self._current_mode not in ("http", "websocket"))
 
         if self._connected:
             return
-        labels = {"serial": "打开串口", "tcpserver": "启动服务器", "tcpclient": "连接服务器"}
+        labels = {
+            "serial": "打开串口",
+            "tcpserver": "启动服务器",
+            "tcpclient": "连接服务器",
+            "mqtt": "连接 Broker",
+            "websocket": "连接 WebSocket",
+            "http": "HTTP 请求",
+        }
         self._btn_connect.setText(labels[self._current_mode])
 
         self.mode_changed.emit(self._current_mode)
@@ -636,8 +784,16 @@ class Sidebar(QWidget):
 
     def set_connected(self, connected: bool):
         self._connected = connected
-        labels = {"serial": "打开串口", "tcpserver": "启动服务器", "tcpclient": "连接服务器"}
-        disc_labels = {"serial": "关闭串口", "tcpserver": "停止服务器", "tcpclient": "断开连接"}
+        labels = {
+            "serial": "打开串口", "tcpserver": "启动服务器",
+            "tcpclient": "连接服务器", "mqtt": "连接 Broker",
+            "websocket": "连接 WebSocket", "http": "HTTP 请求",
+        }
+        disc_labels = {
+            "serial": "关闭串口", "tcpserver": "停止服务器",
+            "tcpclient": "断开连接", "mqtt": "断开 Broker",
+            "websocket": "断开 WebSocket", "http": "HTTP 请求",
+        }
 
         if connected:
             self._btn_connect.setText(disc_labels[self._current_mode])
@@ -655,7 +811,15 @@ class Sidebar(QWidget):
             self._cb_port, self._cb_baud, self._cb_data, self._cb_stop,
             self._cb_parity, self._cb_flow, self._sp_server_port,
             self._sp_client_timeout,
-            self._le_client_host, self._sp_client_port, self._le_local_port
+            self._le_client_host, self._sp_client_port, self._le_local_port,
+            self._le_mqtt_host, self._sp_mqtt_port,
+            self._le_mqtt_client_id, self._le_mqtt_user,
+            self._le_mqtt_password, self._sp_mqtt_keepalive,
+            self._cb_mqtt_protocol, self._chk_mqtt_tls,
+            self._chk_mqtt_clean, self._chk_mqtt_reconnect,
+            self._le_ws_origin, self._le_ws_protocol,
+            self._sp_ws_ping,
+            self._chk_ws_reconnect, self._chk_ws_verify,
         ]
         for w in widgets:
             w.setEnabled(enabled)
@@ -703,6 +867,66 @@ class Sidebar(QWidget):
     @property
     def le_local_port(self) -> QLineEdit:
         return self._le_local_port
+
+    @property
+    def le_mqtt_host(self) -> QLineEdit:
+        return self._le_mqtt_host
+
+    @property
+    def sp_mqtt_port(self) -> QSpinBox:
+        return self._sp_mqtt_port
+
+    @property
+    def le_mqtt_client_id(self) -> QLineEdit:
+        return self._le_mqtt_client_id
+
+    @property
+    def le_mqtt_user(self) -> QLineEdit:
+        return self._le_mqtt_user
+
+    @property
+    def le_mqtt_password(self) -> QLineEdit:
+        return self._le_mqtt_password
+
+    @property
+    def sp_mqtt_keepalive(self) -> QSpinBox:
+        return self._sp_mqtt_keepalive
+
+    @property
+    def cb_mqtt_protocol(self) -> QComboBox:
+        return self._cb_mqtt_protocol
+
+    @property
+    def chk_mqtt_tls(self) -> QCheckBox:
+        return self._chk_mqtt_tls
+
+    @property
+    def chk_mqtt_clean(self) -> QCheckBox:
+        return self._chk_mqtt_clean
+
+    @property
+    def chk_mqtt_reconnect(self) -> QCheckBox:
+        return self._chk_mqtt_reconnect
+
+    @property
+    def le_ws_origin(self) -> QLineEdit:
+        return self._le_ws_origin
+
+    @property
+    def le_ws_protocol(self) -> QLineEdit:
+        return self._le_ws_protocol
+
+    @property
+    def sp_ws_ping(self) -> QSpinBox:
+        return self._sp_ws_ping
+
+    @property
+    def chk_ws_reconnect(self) -> QCheckBox:
+        return self._chk_ws_reconnect
+
+    @property
+    def chk_ws_verify(self) -> QCheckBox:
+        return self._chk_ws_verify
 
     @property
     def current_mode(self) -> str:

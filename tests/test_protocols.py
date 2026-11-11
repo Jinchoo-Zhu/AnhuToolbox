@@ -1,0 +1,720 @@
+# -*- coding: utf-8 -*-
+"""MQTT、HTTP、WebSocket 协议扩展回归测试。"""
+
+import json
+import os
+import tempfile
+import threading
+import time
+import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from unittest import mock
+
+import msgpack
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PySide6.QtCore import Qt
+from PySide6.QtTest import QTest
+from PySide6.QtWidgets import (
+    QApplication, QGroupBox, QPushButton, QStyle, QStyleOptionGroupBox,
+)
+
+from anhutoolbox.main_window import MainWindow
+from anhutoolbox.protocol_pages import (
+    HTTPPage, MQTTPage, WebSocketPage,
+)
+from anhutoolbox.protocol_workers import (
+    HTTPRequestWorker, MQTTWorker, WebSocketWorker,
+)
+
+_HARDWARE_TEST_PATCH = mock.patch(
+    "anhutoolbox.hardware.collect_hardware_info",
+    return_value={},
+)
+_HARDWARE_TEST_PATCH.start()
+
+
+APP = QApplication.instance() or QApplication([])
+
+
+def close_page(page):
+    if hasattr(page, "cleanup"):
+        page.cleanup()
+    page.close()
+    page.deleteLater()
+    APP.processEvents()
+
+
+class _HTTPHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        payload = json.dumps({
+            "path": self.path,
+            "header": self.headers.get("X-Test", ""),
+            "cookie": self.headers.get("Cookie", ""),
+        }).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.send_header("Set-Cookie", "session=abc; Path=/; HttpOnly; Secure")
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def log_message(self, format, *args):
+        pass
+
+
+class ProtocolWorkerTests(unittest.TestCase):
+    def test_http_request_worker(self):
+        server = ThreadingHTTPServer(("127.0.0.1", 0), _HTTPHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        worker = HTTPRequestWorker()
+        try:
+            worker.configure({
+                "method": "GET",
+                "url": "http://127.0.0.1:{}/api".format(
+                    server.server_address[1]),
+                "params": [("a", "1")],
+                "headers": {"X-Test": "yes"},
+                "content": None,
+                "timeout": 5,
+                "follow_redirects": True,
+                "verify_tls": True,
+            })
+            worker.start()
+            self.assertTrue(worker.wait(5000))
+            event = worker.pop_event()
+        finally:
+            server.shutdown()
+            server.server_close()
+        self.assertEqual(event[0], "ok")
+        result = event[1]
+        self.assertEqual(result["status"], 200)
+        self.assertEqual(
+            json.loads(result["content"])["header"], "yes")
+
+    def test_mqtt_worker_subscription_state(self):
+        worker = MQTTWorker()
+        worker.set_subscriptions([
+            {"topic": "a/+", "qos": 0},
+            {"topic": "b/#", "qos": 2},
+        ])
+        self.assertEqual(len(worker._subscriptions), 2)
+        worker.sync_subscriptions([{"topic": "b/#", "qos": 1}])
+        self.assertEqual(worker._subscriptions, [{"topic": "b/#", "qos": 1}])
+
+    def test_websocket_worker_configuration(self):
+        worker = WebSocketWorker()
+        worker.configure({
+            "url": "ws://127.0.0.1/test",
+            "headers": {"X-Test": "yes"},
+            "auto_reconnect": False,
+        })
+        self.assertEqual(worker._config["url"], "ws://127.0.0.1/test")
+        self.assertFalse(worker._config["auto_reconnect"])
+
+    def test_websocket_text_send_uses_text_opcode(self):
+        worker = WebSocketWorker()
+        app = mock.Mock()
+        app.sock.connected = True
+        worker._app = app
+        self.assertTrue(worker.send(b"hello", binary=False))
+        app.send.assert_called_once()
+        self.assertEqual(
+            app.send.call_args.kwargs["opcode"],
+            __import__("websocket").ABNF.OPCODE_TEXT)
+
+
+class ProtocolPageTests(unittest.TestCase):
+    def test_protocol_group_title_has_vertical_clearance(self):
+        page = MQTTPage()
+        page.show()
+        APP.processEvents()
+        group = [
+            item for item in page.findChildren(QGroupBox)
+            if item.title() == "消息"
+        ][0]
+        option = QStyleOptionGroupBox()
+        group.initStyleOption(option)
+        label = group.style().subControlRect(
+            QStyle.ComplexControl.CC_GroupBox,
+            option, QStyle.SubControl.SC_GroupBoxLabel, group)
+        frame = group.style().subControlRect(
+            QStyle.ComplexControl.CC_GroupBox,
+            option, QStyle.SubControl.SC_GroupBoxFrame, group)
+        self.assertGreaterEqual(label.top(), 5)
+        self.assertGreater(frame.top() - label.bottom(), 1)
+        close_page(page)
+
+    def test_mqtt_page_snapshot_and_hex_payload(self):
+        page = MQTTPage()
+        page.set_subscriptions([{"topic": "device/+", "qos": 1}])
+        page._pub_topic.setText("device/cmd")
+        page._pub_format.setCurrentText("HEX")
+        page._pub_payload.setPlainText("01 02 FF")
+        requests = []
+        page.publish_requested.connect(requests.append)
+        page.set_connected(True)
+        page._publish()
+        self.assertEqual(requests[0]["payload"], b"\x01\x02\xff")
+        snapshot = page.snapshot()
+        self.assertEqual(snapshot["subscriptions"][0]["topic"], "device/+")
+        self.assertEqual(snapshot["publish_format"], "HEX")
+        close_page(page)
+
+    def test_websocket_page_state(self):
+        page = WebSocketPage()
+        page.set_url("ws://127.0.0.1/ws")
+        page.set_headers([
+            {"name": "Authorization", "value": "Bearer x", "enabled": True},
+        ])
+        page._format.setCurrentText("HEX/二进制")
+        page._payload.setPlainText("AA 01")
+        page.set_connected(True)
+        requests = []
+        page.send_requested.connect(requests.append)
+        page._send()
+        self.assertEqual(requests[0]["payload"], b"\xaa\x01")
+        self.assertTrue(requests[0]["binary"])
+        self.assertEqual(page.headers(), [("Authorization", "Bearer x")])
+        self.assertEqual(page.url(), "ws://127.0.0.1/ws")
+        close_page(page)
+
+    def test_websocket_url_and_connect_button_are_in_workspace(self):
+        page = WebSocketPage()
+        events = []
+        page.connect_requested.connect(lambda: events.append("connect"))
+        page.disconnect_requested.connect(lambda: events.append("disconnect"))
+
+        page.set_url("ws://127.0.0.1:8080/ws")
+        page._btn_connect.click()
+        self.assertEqual(events, ["connect"])
+        self.assertEqual(page.snapshot()["url"], "ws://127.0.0.1:8080/ws")
+
+        page.set_connected(True)
+        self.assertEqual(page._btn_connect.text(), "断开 WebSocket")
+        self.assertFalse(page._url.isEnabled())
+        page._btn_connect.click()
+        self.assertEqual(events, ["connect", "disconnect"])
+
+        page.set_connected(False)
+        self.assertEqual(page._btn_connect.text(), "连接 WebSocket")
+        self.assertTrue(page._url.isEnabled())
+        close_page(page)
+
+    def test_http_page_snapshot(self):
+        page = HTTPPage()
+        page._method.setCurrentText("POST")
+        page._url.setText("https://example.com/api")
+        page._set_body_type("raw")
+        page._raw_format.setCurrentText("JSON")
+        page._body.setPlainText('{"a": 1}')
+        page._timeout.setValue(12)
+        snapshot = page.snapshot()
+        self.assertEqual(snapshot["method"], "POST")
+        self.assertEqual(snapshot["body"], '{"a": 1}')
+        self.assertEqual(snapshot["body_type"], "raw")
+        self.assertEqual(snapshot["timeout"], 12)
+        self.assertNotIn("auth_token", snapshot)
+        close_page(page)
+
+    def test_http_body_types_and_tab_list(self):
+        page = HTTPPage()
+        self.assertEqual(
+            [page._request_tabs.tabText(i)
+             for i in range(page._request_tabs.count())],
+            ["Header", "Query", "Path", "Body", "认证", "Cookie"],
+        )
+
+        headers = {}
+        page._set_body_type("urlencoded")
+        page._body.setPlainText("name=anhu\ncode=1")
+        self.assertEqual(
+            page._request_body(headers), b"name=anhu&code=1")
+
+        headers = {}
+        page._set_body_type("binary")
+        page._body.setPlainText("01 02 FF")
+        self.assertEqual(page._request_body(headers), b"\x01\x02\xff")
+
+        headers = {}
+        page._set_body_type("msgpack")
+        page._body.setPlainText('{"code": "0"}')
+        packed = page._request_body(headers)
+        self.assertEqual(msgpack.unpackb(packed, raw=False), {"code": "0"})
+
+        headers = {}
+        page._set_body_type("form-data")
+        page._body.setPlainText("name=anhu")
+        multipart = page._request_body(headers)
+        self.assertIn(b'name="name"', multipart)
+        self.assertIn(b"anhu", multipart)
+        close_page(page)
+
+    def test_http_lists_start_empty_and_add_button_creates_one_row(self):
+        page = HTTPPage()
+        request_tables = [
+            page._http_headers,
+            page._params,
+            page._path_params,
+            page._request_cookies,
+        ]
+        for table in request_tables:
+            self.assertEqual(table.rowCount(), 0)
+
+        header_page = page._request_tabs.widget(0)
+        add_button = next(
+            button for button in header_page.findChildren(QPushButton)
+            if button.text() == "+ 添加一行"
+        )
+        add_button.click()
+        self.assertEqual(page._http_headers.rowCount(), 1)
+
+        page._set_entries(page._http_headers, [])
+        self.assertEqual(page._http_headers.rowCount(), 0)
+        close_page(page)
+
+    def test_http_tables_use_sim_mate_list_style(self):
+        page = HTTPPage()
+        table = page._http_headers
+        self.assertEqual(table.verticalHeader().defaultSectionSize(), 38)
+        self.assertEqual(table.font().family(), "Microsoft YaHei UI")
+        self.assertEqual(table.font().pointSize(), 11)
+        self.assertIn("#E8F0FE", table.styleSheet())
+        self.assertIn("#FAFAFA", table.styleSheet())
+        self.assertIn("#C5CBD3", table.styleSheet())
+        close_page(page)
+
+    def test_checkbox_headers_select_all_and_hide_enable_label(self):
+        page = HTTPPage()
+        request_tables = [
+            page._http_headers,
+            page._params,
+            page._path_params,
+            page._request_cookies,
+        ]
+        for table in request_tables:
+            self.assertEqual(table.horizontalHeaderItem(0).text(), "")
+            self.assertEqual(table.property("checkboxColumn"), 0)
+
+        page._set_entries(page._http_headers, [
+            {"name": "A", "value": "1", "enabled": True},
+            {"name": "B", "value": "2", "enabled": False},
+            {"name": "C", "value": "3", "enabled": True},
+        ])
+        header = page._http_headers.horizontalHeader()
+        self.assertEqual(header._check_state(), Qt.CheckState.Unchecked)
+        header.toggle_all()
+        self.assertEqual(header._check_state(), Qt.CheckState.Checked)
+        self.assertTrue(all(
+            page._http_headers.item(row, 0).checkState()
+            == Qt.CheckState.Checked
+            for row in range(page._http_headers.rowCount())
+        ))
+        page._http_headers.item(1, 0).setCheckState(
+            Qt.CheckState.Unchecked)
+        self.assertEqual(header._check_state(), Qt.CheckState.Unchecked)
+        header.toggle_all()
+        self.assertEqual(header._check_state(), Qt.CheckState.Checked)
+        header.toggle_all()
+        self.assertEqual(header._check_state(), Qt.CheckState.Unchecked)
+        self.assertTrue(all(
+            page._http_headers.item(row, 0).checkState()
+            == Qt.CheckState.Unchecked
+            for row in range(page._http_headers.rowCount())
+        ))
+        close_page(page)
+
+        page = WebSocketPage()
+        self.assertEqual(page._headers.horizontalHeaderItem(0).text(), "")
+        page.set_headers([
+            {"name": "A", "value": "1", "enabled": True},
+            {"name": "B", "value": "2", "enabled": False},
+        ])
+        page._headers.horizontalHeader().toggle_all()
+        self.assertTrue(all(
+            page._headers.item(row, 0).checkState()
+            == Qt.CheckState.Checked
+            for row in range(page._headers.rowCount())
+        ))
+        close_page(page)
+
+    def test_checkbox_header_clicks_and_row_changes_stay_in_sync(self):
+        page = HTTPPage()
+        page.show()
+        page._set_entries(page._http_headers, [
+            {"name": "A", "value": "1", "enabled": False},
+            {"name": "B", "value": "2", "enabled": False},
+        ])
+        APP.processEvents()
+        table = page._http_headers
+        header = table.horizontalHeader()
+        header_hit = header._checkbox_rect(
+            header._section_rect(0)).center()
+
+        QTest.mouseClick(
+            header.viewport(), Qt.MouseButton.LeftButton, pos=header_hit)
+        APP.processEvents()
+        self.assertEqual(header._check_state(), Qt.CheckState.Checked)
+        self.assertTrue(all(
+            table.item(row, 0).checkState() == Qt.CheckState.Checked
+            for row in range(table.rowCount())
+        ))
+
+        QTest.mouseClick(
+            header.viewport(), Qt.MouseButton.LeftButton, pos=header_hit)
+        APP.processEvents()
+        self.assertEqual(header._check_state(), Qt.CheckState.Unchecked)
+        self.assertTrue(all(
+            table.item(row, 0).checkState() == Qt.CheckState.Unchecked
+            for row in range(table.rowCount())
+        ))
+
+        first_row_center = table.visualItemRect(table.item(0, 0)).center()
+        QTest.mouseClick(
+            table.viewport(), Qt.MouseButton.LeftButton,
+            pos=first_row_center,
+        )
+        APP.processEvents()
+        self.assertEqual(
+            table.item(0, 0).checkState(), Qt.CheckState.Checked)
+        self.assertEqual(header._check_state(), Qt.CheckState.Unchecked)
+
+        second_row_center = table.visualItemRect(table.item(1, 0)).center()
+        QTest.mouseClick(
+            table.viewport(), Qt.MouseButton.LeftButton,
+            pos=second_row_center,
+        )
+        APP.processEvents()
+        self.assertEqual(header._check_state(), Qt.CheckState.Checked)
+
+        page._set_entries(table, [
+            {"name": "C", "value": "3", "enabled": True},
+            {"name": "D", "value": "4", "enabled": False},
+        ])
+        APP.processEvents()
+        self.assertEqual(header._check_state(), Qt.CheckState.Unchecked)
+        close_page(page)
+
+    def test_http_bearer_requires_non_empty_token(self):
+        page = HTTPPage()
+        page._url.setText("http://127.0.0.1/")
+        page._auth_type.setCurrentText("Bearer")
+        page._auth_token.clear()
+        with mock.patch("anhutoolbox.http_page.show_warning") as warning:
+            page._send()
+        warning.assert_called_once()
+        self.assertIsNone(page._worker)
+
+        page._auth_token.setText("  abc  ")
+        self.assertEqual(
+            page._build_headers()["Authorization"], "Bearer abc")
+        close_page(page)
+
+    def test_http_delete_uses_only_checked_rows(self):
+        page = HTTPPage()
+        page._set_entries(page._http_headers, [
+            {"name": "A", "value": "1", "enabled": True},
+            {"name": "B", "value": "2", "enabled": False},
+            {"name": "C", "value": "3", "enabled": True},
+        ])
+        header_page = page._request_tabs.widget(0)
+        delete_button = next(
+            button for button in header_page.findChildren(QPushButton)
+            if button.text() == "删除选中"
+        )
+        page._http_headers.selectRow(1)
+        delete_button.click()
+        self.assertEqual(page._http_headers.rowCount(), 1)
+        self.assertEqual(
+            page._http_headers.item(0, 1).text(), "B")
+
+        page._http_headers.selectRow(0)
+        with mock.patch(
+                "anhutoolbox.http_page.show_information") as info:
+            delete_button.click()
+        info.assert_called_once()
+        self.assertEqual(page._http_headers.rowCount(), 1)
+        self.assertEqual(
+            page._http_headers.item(0, 1).text(), "B")
+
+        page._http_headers.item(0, 0).setCheckState(
+            Qt.CheckState.Checked)
+        delete_button.click()
+        self.assertEqual(page._http_headers.rowCount(), 0)
+
+        delete_buttons = [
+            button for button in page.findChildren(QPushButton)
+            if button.text() == "删除选中"
+        ]
+        self.assertTrue(delete_buttons)
+        self.assertTrue(all(
+            button.objectName() == "httpDeleteRows"
+            for button in delete_buttons))
+        close_page(page)
+
+    def test_websocket_delete_uses_only_checked_headers(self):
+        page = WebSocketPage()
+        page.set_headers([
+            {"name": "A", "value": "1", "enabled": True},
+            {"name": "B", "value": "2", "enabled": False},
+            {"name": "C", "value": "3", "enabled": True},
+        ])
+        page._headers.selectRow(1)
+        page._btn_remove_header.click()
+        self.assertEqual(page._headers.rowCount(), 1)
+        self.assertEqual(page._headers.item(0, 1).text(), "B")
+
+        page._headers.selectRow(0)
+        with mock.patch(
+                "anhutoolbox.protocol_pages.show_information") as info:
+            page._btn_remove_header.click()
+        info.assert_called_once()
+        self.assertEqual(page._headers.rowCount(), 1)
+
+        page._headers.item(0, 0).setCheckState(Qt.CheckState.Checked)
+        page._btn_remove_header.click()
+        self.assertEqual(page._headers.rowCount(), 0)
+        close_page(page)
+
+    def test_http_page_executes_request(self):
+        server = ThreadingHTTPServer(("127.0.0.1", 0), _HTTPHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        page = HTTPPage()
+        try:
+            page._url.setText(
+                "http://127.0.0.1:{}/page".format(server.server_address[1]))
+            page._send()
+            deadline = time.monotonic() + 5
+            while page._worker.isRunning() and time.monotonic() < deadline:
+                APP.processEvents()
+                time.sleep(0.01)
+            APP.processEvents()
+            page._poll_request()
+            self.assertIn("200", page._status.text())
+            self.assertIn('"path": "/page"', page._response_body.toPlainText())
+        finally:
+            close_page(page)
+            server.shutdown()
+            server.server_close()
+
+    def test_http_page_builds_path_query_header_and_cookie(self):
+        server = ThreadingHTTPServer(("127.0.0.1", 0), _HTTPHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        page = HTTPPage()
+        try:
+            page._url.setText(
+                "http://127.0.0.1:{}/item/{{id}}".format(
+                    server.server_address[1]))
+            page._set_entries(page._path_params, [{
+                "name": "id", "value": "42", "enabled": True,
+            }])
+            page._set_entries(page._params, [{
+                "name": "q", "value": "hello", "enabled": True,
+            }])
+            page._set_entries(page._http_headers, [{
+                "name": "X-Test", "value": "yes", "enabled": True,
+            }])
+            page._set_entries(page._request_cookies, [{
+                "name": "session", "value": "abc", "enabled": True,
+            }])
+            page._send()
+            deadline = time.monotonic() + 5
+            while page._worker.isRunning() and time.monotonic() < deadline:
+                APP.processEvents()
+                time.sleep(0.01)
+            APP.processEvents()
+            page._poll_request()
+            result = json.loads(page._response_body.toPlainText())
+            self.assertEqual(result["path"], "/item/42?q=hello")
+            self.assertEqual(result["header"], "yes")
+            self.assertEqual(result["cookie"], "session=abc")
+            self.assertEqual(page._actual_method.text(), "GET")
+            self.assertIn("/item/42?q=hello", page._actual_url.text())
+            self.assertGreater(page._actual_headers.rowCount(), 0)
+            response_tabs = [
+                page._response_tabs.tabText(i)
+                for i in range(page._response_tabs.count())
+            ]
+            self.assertEqual(response_tabs[0], "实时响应")
+            self.assertTrue(response_tabs[1].startswith("响应头("))
+            self.assertEqual(response_tabs[2:], [
+                "Cookie(1)", "响应示例", "实际请求 ●", "控制台"])
+            self.assertEqual(page._response_cookies.columnCount(), 7)
+        finally:
+            close_page(page)
+            server.shutdown()
+            server.server_close()
+
+
+class ProtocolProjectTests(unittest.TestCase):
+    def test_new_modes_switch_pages_and_project_fields(self):
+        with tempfile.TemporaryDirectory() as temp:
+            window = MainWindow(temp)
+            try:
+                window.sidebar._mode_group.button(3).click()
+                APP.processEvents()
+                self.assertIs(window._comm_stack.currentWidget(),
+                              window._mqtt_page)
+                window.sidebar._mode_group.button(4).click()
+                APP.processEvents()
+                self.assertIs(window._comm_stack.currentWidget(),
+                              window._websocket_page)
+                self.assertTrue(window.sidebar._btn_connect.isHidden())
+                window.sidebar._mode_group.button(5).click()
+                APP.processEvents()
+                self.assertIs(window._comm_stack.currentWidget(),
+                              window._http_page)
+
+                window.sidebar.le_mqtt_host.setText("broker.local")
+                window.sidebar.le_mqtt_password.setText("secret")
+                window._mqtt_page.set_subscriptions([
+                    {"topic": "test/#", "qos": 2},
+                ])
+                window._websocket_page.set_url("ws://127.0.0.1/ws")
+                window._http_page._url.setText("https://example.com")
+                snapshot = window._snapshot_ui()
+                self.assertEqual(snapshot["mqtt"]["host"], "broker.local")
+                self.assertNotIn("password", snapshot["mqtt"])
+                self.assertEqual(
+                    snapshot["mqtt"]["subscriptions"][0]["topic"], "test/#")
+                self.assertEqual(
+                    snapshot["websocket"]["url"], "ws://127.0.0.1/ws")
+                self.assertEqual(
+                    snapshot["http"]["url"], "https://example.com")
+
+                window._apply_profile({
+                    "mode": "mqtt",
+                    "mqtt": {
+                        "host": "mqtt.example",
+                        "port": 1884,
+                        "subscriptions": [
+                            {"topic": "restored/+", "qos": 1},
+                        ],
+                    },
+                    "websocket": {"url": "wss://restored.example/ws"},
+                    "http": {"method": "DELETE", "url": "https://delete"},
+                })
+                self.assertEqual(window.sidebar.current_mode, "mqtt")
+                self.assertEqual(window.sidebar.le_mqtt_host.text(),
+                                 "mqtt.example")
+                self.assertEqual(
+                    window._mqtt_page.subscriptions()[0]["topic"],
+                    "restored/+")
+                self.assertEqual(window._http_page._method.currentText(),
+                                 "DELETE")
+                self.assertEqual(
+                    window._websocket_page.url(),
+                    "wss://restored.example/ws")
+            finally:
+                window.close()
+                window.deleteLater()
+                APP.processEvents()
+
+    def test_projects_keep_all_six_mode_contents_and_active_mode(self):
+        with tempfile.TemporaryDirectory() as temp:
+            window = MainWindow(temp)
+            try:
+                first = window._current_project
+                window.sidebar._mode_group.button(0).click()
+                window.sidebar.cb_baud.setCurrentText("57600")
+                window.sidebar.sp_server_port.setValue(41001)
+                window.sidebar.le_client_host.setText("a.client.local")
+                window.sidebar.le_mqtt_host.setText("a.broker.local")
+                window._mqtt_page.set_subscriptions([
+                    {"topic": "project-a/#", "qos": 1},
+                ])
+                window._websocket_page.set_url("ws://a.example/ws")
+                window._http_page._url.setText("https://a.example/api")
+                for key in ("serial", "tcpserver", "tcpclient"):
+                    window._stream_pages[key].send_bar.text.setPlainText(
+                        "{} draft A".format(key))
+
+                # 模式切换本身也必须立即写回当前项目。
+                window.sidebar._mode_group.button(3).click()
+                self.assertEqual(window._pm.load(first)["mode"], "mqtt")
+                window.sidebar._mode_group.button(0).click()
+                self.assertEqual(window._pm.load(first)["mode"], "serial")
+
+                second = window._pm.create(
+                    "项目B", window._default_profile())
+                window._reload_project_list(second)
+                window.sidebar._mode_group.button(3).click()
+                window.sidebar.cb_baud.setCurrentText("921600")
+                window.sidebar.sp_server_port.setValue(42002)
+                window.sidebar.le_client_host.setText("b.client.local")
+                window.sidebar.le_mqtt_host.setText("b.broker.local")
+                window._mqtt_page.set_subscriptions([
+                    {"topic": "project-b/#", "qos": 2},
+                ])
+                window._websocket_page.set_url("wss://b.example/ws")
+                window._http_page._url.setText("https://b.example/api")
+                for key in ("serial", "tcpserver", "tcpclient"):
+                    window._stream_pages[key].send_bar.text.setPlainText(
+                        "{} draft B".format(key))
+
+                window._switch_project(first)
+                self.assertEqual(window.sidebar.current_mode, "serial")
+                self.assertIs(
+                    window._comm_stack.currentWidget(),
+                    window._stream_pages["serial"])
+                self.assertEqual(
+                    window.sidebar.cb_baud.currentText(), "57600")
+                self.assertEqual(
+                    window.sidebar.sp_server_port.value(), 41001)
+                self.assertEqual(
+                    window.sidebar.le_client_host.text(),
+                    "a.client.local")
+                self.assertEqual(
+                    window.sidebar.le_mqtt_host.text(),
+                    "a.broker.local")
+                self.assertEqual(
+                    window._mqtt_page.subscriptions()[0]["topic"],
+                    "project-a/#")
+                self.assertEqual(
+                    window._websocket_page.url(), "ws://a.example/ws")
+                self.assertEqual(
+                    window._http_page._url.text(),
+                    "https://a.example/api")
+                for key in ("serial", "tcpserver", "tcpclient"):
+                    self.assertEqual(
+                        window._stream_pages[key].send_bar.text.toPlainText(),
+                        "{} draft A".format(key))
+
+                window._switch_project(second)
+                self.assertEqual(window.sidebar.current_mode, "mqtt")
+                self.assertIs(
+                    window._comm_stack.currentWidget(), window._mqtt_page)
+                self.assertEqual(
+                    window.sidebar.cb_baud.currentText(), "921600")
+                self.assertEqual(
+                    window.sidebar.sp_server_port.value(), 42002)
+                self.assertEqual(
+                    window.sidebar.le_client_host.text(),
+                    "b.client.local")
+                self.assertEqual(
+                    window.sidebar.le_mqtt_host.text(),
+                    "b.broker.local")
+                self.assertEqual(
+                    window._mqtt_page.subscriptions()[0]["topic"],
+                    "project-b/#")
+                self.assertEqual(
+                    window._websocket_page.url(), "wss://b.example/ws")
+                self.assertEqual(
+                    window._http_page._url.text(),
+                    "https://b.example/api")
+                for key in ("serial", "tcpserver", "tcpclient"):
+                    self.assertEqual(
+                        window._stream_pages[key].send_bar.text.toPlainText(),
+                        "{} draft B".format(key))
+            finally:
+                window.close()
+                window.deleteLater()
+                APP.processEvents()
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -486,6 +486,21 @@ QTableWidget::item {{
 QTableWidget::item:selected {{
     background-color: {BG_HOVER};
 }}
+QTableWidget::indicator {{
+    width: 15px;
+    height: 15px;
+    background-color: #FFFFFF;
+    border: 1px solid #BFC5CC;
+    border-radius: 0;
+}}
+QTableWidget::indicator:hover {{
+    border-color: {BORDER_FOCUS};
+}}
+QTableWidget::indicator:checked {{
+    background-color: #FFFFFF;
+    border-color: #BFC5CC;
+    image: url({_CHECK_MARK});
+}}
 QHeaderView::section {{
     background-color: {BG_PANEL};
     color: {TEXT_SECONDARY};
