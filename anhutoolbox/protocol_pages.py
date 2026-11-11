@@ -256,17 +256,23 @@ class MQTTPage(QWidget):
         self._pub_topic = QLineEdit()
         self._pub_topic.setPlaceholderText("发布 Topic")
         self._pub_topic.setMinimumWidth(120)
-        self._pub_topic.setMaximumWidth(260)
+        self._pub_topic.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
+        )
         prow.addWidget(self._pub_topic, 1)
         self._pub_qos = QComboBox()
         self._pub_qos.addItems(["QoS 0", "QoS 1", "QoS 2"])
+        self._pub_qos.setMaximumWidth(100)
         prow.addWidget(self._pub_qos)
         self._pub_retain = QCheckBox("保留消息")
+        self._pub_retain.setMaximumWidth(110)
         self._pub_retain.setToolTip(
             "服务端保留最后一条消息，新订阅者连接后可立即收到")
         prow.addWidget(self._pub_retain)
         self._pub_format = QComboBox()
         self._pub_format.addItems(["文本", "HEX", "JSON"])
+        self._pub_format.setMaximumWidth(100)
         prow.addWidget(self._pub_format)
         self._btn_publish = QPushButton("发布")
         self._btn_publish.setFixedSize(84, 34)

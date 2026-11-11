@@ -201,8 +201,19 @@ class ProtocolPageTests(unittest.TestCase):
         topic_center = page._pub_topic.mapTo(
             page._publish_panel, page._pub_topic.rect().center()).y()
         self.assertEqual(button_center, topic_center)
-        self.assertLessEqual(page._pub_topic.width(), 260)
+        page._pub_topic.setText("ah/emis/equipmentAll/11")
+        APP.processEvents()
+        self.assertGreater(page._pub_topic.width(), 150)
+        self.assertLessEqual(
+            page._pub_qos.x()
+            - (page._pub_topic.x() + page._pub_topic.width()),
+            8,
+        )
         self.assertGreater(page._btn_publish.x(), page._pub_format.x())
+        self.assertGreaterEqual(
+            page._btn_publish.geometry().right(),
+            page._publish_input_row.width() - 2,
+        )
         payload_bottom = page._pub_payload.mapTo(
             page._publish_panel,
             QPoint(0, page._pub_payload.height()),
