@@ -14,10 +14,12 @@ import msgpack
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QPoint, QPointF, Qt
+from PySide6.QtGui import QWheelEvent
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
-    QApplication, QGroupBox, QPushButton, QStyle, QStyleOptionGroupBox,
+    QApplication, QAbstractItemView, QGroupBox, QLabel, QPushButton,
+    QSizePolicy, QStyle, QStyleOptionGroupBox, QToolButton,
 )
 
 from anhutoolbox.main_window import MainWindow
@@ -27,6 +29,7 @@ from anhutoolbox.protocol_pages import (
 from anhutoolbox.protocol_workers import (
     HTTPRequestWorker, MQTTWorker, WebSocketWorker,
 )
+from anhutoolbox.sidebar import Sidebar
 
 _HARDWARE_TEST_PATCH = mock.patch(
     "anhutoolbox.hardware.collect_hardware_info",
@@ -128,12 +131,12 @@ class ProtocolWorkerTests(unittest.TestCase):
 
 class ProtocolPageTests(unittest.TestCase):
     def test_protocol_group_title_has_vertical_clearance(self):
-        page = MQTTPage()
+        page = WebSocketPage()
         page.show()
         APP.processEvents()
         group = [
             item for item in page.findChildren(QGroupBox)
-            if item.title() == "消息"
+            if item.title() == "连接请求头"
         ][0]
         option = QStyleOptionGroupBox()
         group.initStyleOption(option)
@@ -161,6 +164,258 @@ class ProtocolPageTests(unittest.TestCase):
         snapshot = page.snapshot()
         self.assertEqual(snapshot["subscriptions"][0]["topic"], "device/+")
         self.assertEqual(snapshot["publish_format"], "HEX")
+        self.assertFalse(hasattr(page, "_state"))
+        close_page(page)
+
+    def test_mqtt_messages_are_full_width_and_panels_are_side_by_side(self):
+        page = MQTTPage()
+        page.resize(1200, 720)
+        page.show()
+        APP.processEvents()
+        split = page._mqtt_bottom_split
+        self.assertEqual(
+            split.orientation(), Qt.Orientation.Horizontal)
+        self.assertEqual(split.count(), 2)
+        self.assertIs(split.widget(0), page._subscriptions_panel)
+        self.assertIs(split.widget(1), page._publish_panel)
+        self.assertEqual(
+            page._subscriptions_panel.height(),
+            page._publish_panel.height(),
+        )
+        self.assertEqual(
+            page._btn_publish.sizePolicy().verticalPolicy(),
+            QSizePolicy.Policy.Fixed,
+        )
+        for button, row in (
+            (page._btn_subscribe, page._subscription_input_row),
+            (page._btn_unsubscribe, page._subscription_input_row),
+            (page._btn_publish, page._publish_input_row),
+        ):
+            self.assertGreaterEqual(button.height(), 34)
+            self.assertLessEqual(
+                button.geometry().bottom(), row.height() - 1)
+        self.assertGreater(page._pub_payload.maximumHeight(), 10000)
+        self.assertGreater(page._pub_payload.height(), 200)
+        button_center = page._btn_publish.mapTo(
+            page._publish_panel, page._btn_publish.rect().center()).y()
+        topic_center = page._pub_topic.mapTo(
+            page._publish_panel, page._pub_topic.rect().center()).y()
+        self.assertEqual(button_center, topic_center)
+        self.assertLessEqual(page._pub_topic.width(), 260)
+        self.assertGreater(page._btn_publish.x(), page._pub_format.x())
+        payload_bottom = page._pub_payload.mapTo(
+            page._publish_panel,
+            QPoint(0, page._pub_payload.height()),
+        ).y()
+        self.assertGreaterEqual(
+            payload_bottom, page._publish_panel.height() - 10)
+        self.assertIsNot(page._messages_container.parentWidget(), split)
+        self.assertGreaterEqual(page._subscriptions_panel.height(), 200)
+        self.assertGreaterEqual(page._publish_panel.height(), 200)
+        self.assertEqual(
+            page._subscriptions_title_label.mapTo(page, QPoint(0, 0)).y(),
+            page._publish_title_label.mapTo(page, QPoint(0, 0)).y(),
+        )
+        self.assertEqual(
+            page._sub_topic.mapTo(page, QPoint(0, 0)).y(),
+            page._pub_topic.mapTo(page, QPoint(0, 0)).y(),
+        )
+        self.assertIs(
+            page._btn_clear.parentWidget(), page._messages_container)
+        self.assertLess(page.chk_pause.x(), page._btn_clear.x())
+        close_page(page)
+
+    def test_mqtt_message_page_pause_buffers_and_resumes(self):
+        page = MQTTPage()
+        page.show()
+        APP.processEvents()
+        page.append_message({
+            "timestamp": 1700000000,
+            "direction": "RX",
+            "topic": "before",
+            "payload": b"1",
+            "text": "1",
+        })
+        self.assertEqual(page._messages.rowCount(), 1)
+
+        page.chk_pause.setChecked(True)
+        page.append_message({
+            "timestamp": 1700000001,
+            "direction": "RX",
+            "topic": "paused",
+            "payload": b"2",
+            "text": "2",
+        })
+        self.assertEqual(page._messages.rowCount(), 1)
+        self.assertEqual(len(page._paused_messages), 1)
+
+        page.chk_pause.setChecked(False)
+        self.assertEqual(page._messages.rowCount(), 2)
+        self.assertEqual(page._messages.item(1, 2).text(), "paused")
+
+        page.chk_pause.setChecked(True)
+        page.append_message({
+            "timestamp": 1700000002,
+            "direction": "RX",
+            "topic": "cleared",
+            "payload": b"3",
+            "text": "3",
+        })
+        page.clear_messages()
+        page.chk_pause.setChecked(False)
+        self.assertEqual(page._messages.rowCount(), 0)
+        close_page(page)
+
+    def test_mqtt_message_payload_has_full_tooltip_and_is_read_only(self):
+        page = MQTTPage()
+        full_payload = json.dumps({
+            "set": 1,
+            "equipment": [
+                {"id": index, "value": "x" * 20}
+                for index in range(20)
+            ],
+        }, ensure_ascii=False)
+        page.append_message({
+            "timestamp": 1700000000,
+            "direction": "RX",
+            "topic": "ah/emis/status",
+            "qos": 0,
+            "retain": False,
+            "payload": full_payload.encode("utf-8"),
+            "text": full_payload,
+        })
+        payload_item = page._messages.item(0, 6)
+        self.assertEqual(page._messages.item(0, 1).text(), "接收")
+        tooltip = payload_item.toolTip()
+        self.assertIn('width="640"', tooltip)
+        self.assertIn("<pre", tooltip)
+        self.assertIn("\n  &quot;set&quot;: 1", tooltip)
+        self.assertIn("&quot;set&quot;", tooltip)
+        self.assertIn("&quot;equipment&quot;", tooltip)
+        self.assertFalse(
+            payload_item.flags() & Qt.ItemFlag.ItemIsEditable)
+        self.assertEqual(
+            page._messages.editTriggers(),
+            QAbstractItemView.EditTrigger.NoEditTriggers,
+        )
+        required_time_width = (
+            page._messages.fontMetrics().horizontalAdvance(
+                "00:00:00.000") + 26
+        )
+        self.assertEqual(
+            page._messages.columnWidth(0), required_time_width)
+        self.assertGreaterEqual(page._pub_payload.minimumHeight(), 200)
+        close_page(page)
+
+    def test_mqtt_sidebar_uses_server_ip_label_and_default_port(self):
+        sidebar = Sidebar()
+        self.assertEqual(sidebar.sp_mqtt_port.value(), 1883)
+        self.assertEqual(sidebar.sp_mqtt_keepalive.value(), 60)
+        sidebar._mode_group.button(3).click()
+        self.assertEqual(sidebar._btn_connect.text(), "连接服务端")
+        sidebar.set_connected(True)
+        self.assertEqual(sidebar._btn_connect.text(), "断开服务端")
+        sidebar.set_controls_enabled(False)
+        for widget in (
+            sidebar.le_mqtt_host,
+            sidebar.sp_mqtt_port,
+            sidebar.le_mqtt_client_id,
+            sidebar.le_mqtt_user,
+            sidebar.le_mqtt_password,
+            sidebar.sp_mqtt_keepalive,
+            sidebar.cb_mqtt_protocol,
+            sidebar.chk_mqtt_tls,
+            sidebar.chk_mqtt_clean,
+            sidebar.chk_mqtt_reconnect,
+        ):
+            self.assertFalse(widget.isEnabled())
+        sidebar.set_controls_enabled(True)
+        sidebar.set_connected(False)
+        self.assertTrue(any(
+            label.text() == "服务端IP"
+            for label in sidebar.findChildren(QLabel)
+        ))
+        self.assertTrue(any(
+            label.text() == "心跳间隔(秒)"
+            for label in sidebar.findChildren(QLabel)
+        ))
+        close_page(sidebar)
+
+    def test_mqtt_connection_validates_server_and_credentials(self):
+        with tempfile.TemporaryDirectory() as temp:
+            window = MainWindow(temp)
+            try:
+                window.sidebar.le_mqtt_host.setText("192.168.2.115")
+                window.sidebar.le_mqtt_client_id.setText("MQTTDESKT")
+                window.sidebar.le_mqtt_user.setText("admin")
+                window.sidebar.le_mqtt_password.clear()
+                with mock.patch(
+                        "anhutoolbox.main_window.show_warning") as warning:
+                    window._connect_mqtt()
+                warning.assert_called_once()
+                self.assertEqual(
+                    warning.call_args.args[2], "请填写密码。")
+                self.assertIsNone(window._active_worker)
+
+                window.sidebar.le_mqtt_user.clear()
+                window.sidebar.le_mqtt_password.setText("secret")
+                with mock.patch(
+                        "anhutoolbox.main_window.show_warning") as warning:
+                    window._connect_mqtt()
+                self.assertEqual(
+                    warning.call_args.args[2], "请填写用户名。")
+                self.assertIsNone(window._active_worker)
+
+                window.sidebar.le_mqtt_host.clear()
+                window.sidebar.le_mqtt_user.clear()
+                window.sidebar.le_mqtt_password.clear()
+                with mock.patch(
+                        "anhutoolbox.main_window.show_warning") as warning:
+                    window._connect_mqtt()
+                self.assertEqual(
+                    warning.call_args.args[2], "请填写服务端IP。")
+                self.assertIsNone(window._active_worker)
+
+                window.sidebar.le_mqtt_host.setText("broker.example")
+                error, field = window._validate_mqtt_fields()
+                self.assertIsNone(error)
+                self.assertIsNone(field)
+            finally:
+                window.close()
+                window.deleteLater()
+                APP.processEvents()
+
+    def test_mqtt_subscriptions_have_checkboxes_and_delete_only_checked(self):
+        page = MQTTPage()
+        page.set_subscriptions([
+            {"topic": "a/#", "qos": 0},
+            {"topic": "b/#", "qos": 1},
+            {"topic": "c/#", "qos": 2},
+        ])
+        self.assertEqual(page._subscriptions.columnCount(), 3)
+        self.assertEqual(
+            page._subscriptions.horizontalHeaderItem(0).text(), "")
+        self.assertEqual(
+            page._subscriptions.selectionMode(),
+            QAbstractItemView.SelectionMode.NoSelection,
+        )
+        self.assertFalse(page._subscriptions.alternatingRowColors())
+        self.assertEqual(page._pub_retain.text(), "保留消息")
+        page._subscriptions.item(0, 0).setCheckState(
+            Qt.CheckState.Unchecked)
+        page._subscriptions.item(2, 0).setCheckState(
+            Qt.CheckState.Unchecked)
+        page._remove_subscription()
+        self.assertEqual(
+            [item["topic"] for item in page.subscriptions()],
+            ["a/#", "c/#"],
+        )
+
+        with mock.patch(
+                "anhutoolbox.protocol_pages.show_information") as info:
+            page._remove_subscription()
+        info.assert_called_once()
+        self.assertEqual(len(page.subscriptions()), 2)
         close_page(page)
 
     def test_websocket_page_state(self):
@@ -179,6 +434,14 @@ class ProtocolPageTests(unittest.TestCase):
         self.assertTrue(requests[0]["binary"])
         self.assertEqual(page.headers(), [("Authorization", "Bearer x")])
         self.assertEqual(page.url(), "ws://127.0.0.1/ws")
+        page.append_message({
+            "timestamp": 1700000000,
+            "direction": "TX",
+            "binary": False,
+            "payload": b"hello",
+            "text": "hello",
+        })
+        self.assertEqual(page._messages.item(0, 1).text(), "发送")
         close_page(page)
 
     def test_websocket_url_and_connect_button_are_in_workspace(self):
@@ -203,6 +466,101 @@ class ProtocolPageTests(unittest.TestCase):
         self.assertTrue(page._url.isEnabled())
         close_page(page)
 
+    def test_sidebar_wheel_requires_focus_for_parameter_controls(self):
+        sidebar = Sidebar()
+        sidebar.resize(260, 360)
+        sidebar._mode_group.button(3).click()
+        sidebar.show()
+        sidebar.activateWindow()
+        APP.processEvents()
+
+        spin = sidebar.sp_mqtt_port
+        spin_editor = spin.lineEdit()
+        sidebar._cb_project.setFocus(Qt.FocusReason.OtherFocusReason)
+        APP.processEvents()
+        self.assertFalse(spin.hasFocus())
+        scrollbar = sidebar._settings_scroll.verticalScrollBar()
+        scrollbar.setValue(scrollbar.maximum())
+        initial_value = spin.value()
+        wheel_up = QWheelEvent(
+            QPointF(5, 5), QPointF(5, 5),
+            QPoint(), QPoint(0, 120),
+            Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier,
+            Qt.ScrollPhase.NoScrollPhase, False,
+        )
+        QApplication.sendEvent(spin_editor, wheel_up)
+        APP.processEvents()
+        self.assertEqual(spin.value(), initial_value)
+        self.assertLess(scrollbar.value(), scrollbar.maximum())
+
+        spin.setFocus(Qt.FocusReason.OtherFocusReason)
+        APP.processEvents()
+        scrollbar.setValue(scrollbar.maximum())
+        automatic_focus_wheel = QWheelEvent(
+            QPointF(5, 5), QPointF(5, 5),
+            QPoint(), QPoint(0, 120),
+            Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier,
+            Qt.ScrollPhase.NoScrollPhase, False,
+        )
+        QApplication.sendEvent(spin_editor, automatic_focus_wheel)
+        APP.processEvents()
+        self.assertEqual(spin.value(), initial_value)
+        self.assertLess(scrollbar.value(), scrollbar.maximum())
+
+        sidebar._cb_project.setFocus(Qt.FocusReason.OtherFocusReason)
+        APP.processEvents()
+        spin.setFocus(Qt.FocusReason.TabFocusReason)
+        APP.processEvents()
+        self.assertTrue(spin.hasFocus())
+        focused_value = spin.value()
+        focused_wheel = QWheelEvent(
+            QPointF(5, 5), QPointF(5, 5),
+            QPoint(), QPoint(0, 120),
+            Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier,
+            Qt.ScrollPhase.NoScrollPhase, False,
+        )
+        QApplication.sendEvent(spin_editor, focused_wheel)
+        APP.processEvents()
+        self.assertEqual(spin.value(), focused_value + 1)
+
+        combo = sidebar.cb_mqtt_protocol
+        combo.setCurrentIndex(0)
+        scrollbar.setValue(scrollbar.minimum())
+        unfocused_combo_wheel = QWheelEvent(
+            QPointF(5, 5), QPointF(5, 5),
+            QPoint(), QPoint(0, -120),
+            Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier,
+            Qt.ScrollPhase.NoScrollPhase, False,
+        )
+        QApplication.sendEvent(combo, unfocused_combo_wheel)
+        APP.processEvents()
+        self.assertEqual(combo.currentIndex(), 0)
+        self.assertGreater(scrollbar.value(), scrollbar.minimum())
+
+        combo.setFocus(Qt.FocusReason.TabFocusReason)
+        APP.processEvents()
+        self.assertTrue(combo.hasFocus())
+        focused_combo_wheel = QWheelEvent(
+            QPointF(5, 5), QPointF(5, 5),
+            QPoint(), QPoint(0, -120),
+            Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier,
+            Qt.ScrollPhase.NoScrollPhase, False,
+        )
+        QApplication.sendEvent(combo, focused_combo_wheel)
+        APP.processEvents()
+        self.assertEqual(combo.currentIndex(), 1)
+        close_page(sidebar)
+
+    def test_sidebar_short_mode_has_no_scrollbar(self):
+        sidebar = Sidebar()
+        sidebar.resize(260, 500)
+        sidebar.show()
+        sidebar._mode_group.button(1).click()
+        APP.processEvents()
+        self.assertEqual(
+            sidebar._settings_scroll.verticalScrollBar().maximum(), 0)
+        close_page(sidebar)
+
     def test_http_page_snapshot(self):
         page = HTTPPage()
         page._method.setCurrentText("POST")
@@ -218,6 +576,206 @@ class ProtocolPageTests(unittest.TestCase):
         self.assertEqual(snapshot["timeout"], 12)
         self.assertNotIn("auth_token", snapshot)
         close_page(page)
+
+    def test_http_save_creates_interface_and_clears_unsaved_dot(self):
+        page = HTTPPage()
+        saved = []
+        page.save_requested.connect(lambda: saved.append(True))
+        self.assertIn("●", page._document_tabs.tabText(0))
+
+        page._method.setCurrentText("POST")
+        page._url.setText("https://example.com/api/users")
+        page._btn_save.click()
+        APP.processEvents()
+
+        interfaces = page.interfaces()
+        self.assertEqual(len(interfaces), 1)
+        self.assertEqual(interfaces[0]["name"], "users")
+        self.assertEqual(
+            interfaces[0]["request"]["method"], "POST")
+        self.assertEqual(saved, [True])
+        self.assertNotIn("●", page._document_tabs.tabText(0))
+
+        page._url.setText("https://example.com/api/users?page=2")
+        self.assertIn("●", page._document_tabs.tabText(0))
+        close_page(page)
+
+    def test_http_tabs_preserve_drafts_and_restore_saved_interfaces(self):
+        page = HTTPPage()
+        page._url.setText("https://example.com/api/first")
+        page._btn_save.click()
+        first_id = page.interfaces()[0]["id"]
+
+        page.new_document()
+        self.assertEqual(page._document_tabs.count(), 2)
+        page._url.setText("https://example.com/api/second")
+        page._btn_save.click()
+        second_id = page.interfaces()[1]["id"]
+        self.assertNotEqual(first_id, second_id)
+
+        self.assertTrue(page.open_interface(first_id))
+        self.assertEqual(
+            page._url.text(), "https://example.com/api/first")
+        page._url.setText("https://example.com/api/first/draft")
+        page._document_tabs.setCurrentIndex(1)
+        self.assertEqual(
+            page._url.text(), "https://example.com/api/second")
+        page._document_tabs.setCurrentIndex(0)
+        self.assertEqual(
+            page._url.text(), "https://example.com/api/first/draft")
+        self.assertIn("●", page._document_tabs.tabText(0))
+
+        snapshot = page.snapshot()
+        restored = HTTPPage()
+        restored.apply(snapshot)
+        self.assertEqual(len(restored.interfaces()), 2)
+        self.assertEqual(restored._document_tabs.count(), 2)
+        self.assertEqual(
+            restored._url.text(), "https://example.com/api/first/draft")
+        self.assertIn("●", restored._document_tabs.tabText(0))
+        close_page(restored)
+        close_page(page)
+
+    def test_sidebar_http_interface_list_filters_and_opens(self):
+        sidebar = Sidebar()
+        sidebar._mode_group.button(5).click()
+        sidebar.set_http_interfaces([
+            {
+                "id": "api-1", "name": "用户列表", "method": "GET",
+                "url": "https://example.com/users",
+            },
+            {
+                "id": "api-2", "name": "创建订单", "method": "POST",
+                "url": "https://example.com/orders",
+            },
+        ])
+        selected = []
+        created = []
+        sidebar.http_interface_selected.connect(selected.append)
+        sidebar.http_new_requested.connect(lambda: created.append(True))
+        self.assertEqual(
+            sidebar._http_interface_tree.topLevelItemCount(), 2)
+
+        sidebar._http_api_search.setText("订单")
+        visible_items = [
+            sidebar._http_interface_tree.topLevelItem(index)
+            for index in range(
+                sidebar._http_interface_tree.topLevelItemCount())
+            if not sidebar._http_interface_tree.topLevelItem(
+                index).isHidden()
+        ]
+        self.assertEqual(len(visible_items), 1)
+        item = visible_items[0]
+        sidebar._on_http_interface_clicked(item, 1)
+        self.assertEqual(selected, ["api-2"])
+
+        sidebar._btn_http_new.click()
+        self.assertEqual(created, [True])
+        close_page(sidebar)
+
+    def test_http_documents_show_hover_close_and_can_be_closed(self):
+        page = HTTPPage()
+        page.show()
+        APP.processEvents()
+        page.new_document()
+        APP.processEvents()
+        self.assertEqual(page._document_tabs.count(), 2)
+        tab_bar = page._document_tabs
+        QTest.mouseMove(tab_bar, tab_bar.tabRect(1).center())
+        APP.processEvents()
+        close_button = tab_bar.tabButton(
+            1, tab_bar.ButtonPosition.RightSide)
+        self.assertIsNotNone(close_button)
+        self.assertTrue(close_button.isVisible())
+        close_tool = close_button.findChild(QToolButton)
+        self.assertIsNotNone(close_tool)
+        for index in range(tab_bar.count()):
+            if index == 1:
+                continue
+            other = tab_bar.tabButton(
+                index, tab_bar.ButtonPosition.RightSide)
+            self.assertFalse(other.isVisible())
+        close_tool.click()
+        APP.processEvents()
+        self.assertEqual(page._document_tabs.count(), 1)
+        close_page(page)
+
+    def test_http_folders_and_interface_names_are_project_scoped(self):
+        page = HTTPPage()
+        parent = page.create_folder("业务接口")
+        child = page.create_folder("订单", parent)
+        page.set_current_folder(child)
+        page._url.setText("https://example.com/api/orders")
+        page._btn_save.click()
+        api_id = page.interfaces()[0]["id"]
+        self.assertEqual(page.interfaces()[0]["folder_id"], child)
+        self.assertTrue(page.rename_interface(api_id, "创建订单"))
+        self.assertTrue(page.rename_folder(child, "订单管理"))
+
+        snapshot = page.snapshot()
+        restored = HTTPPage()
+        restored.apply(snapshot)
+        self.assertEqual(
+            {item["name"] for item in restored.folders()},
+            {"业务接口", "订单管理"},
+        )
+        self.assertEqual(
+            restored.interfaces()[0]["name"], "创建订单")
+        self.assertEqual(
+            restored.interfaces()[0]["folder_id"], child)
+        archive = page.create_folder("归档", parent)
+        self.assertTrue(page.move_interface(api_id, archive))
+        self.assertEqual(page.interfaces()[0]["folder_id"], archive)
+        self.assertEqual(
+            page.snapshot()["documents"][0]["folder_id"], archive)
+        self.assertTrue(page.move_interface(api_id, None))
+        self.assertIsNone(page.interfaces()[0]["folder_id"])
+        close_page(restored)
+        close_page(page)
+
+    def test_sidebar_http_folder_tree_and_rename_actions(self):
+        sidebar = Sidebar()
+        sidebar._mode_group.button(5).click()
+        sidebar.set_http_folders([
+            {"id": "folder-1", "name": "业务接口", "parent_id": None},
+        ])
+        sidebar.set_http_interfaces([
+            {
+                "id": "api-1", "name": "用户列表", "method": "GET",
+                "url": "https://example.com/users",
+                "folder_id": "folder-1",
+            },
+        ])
+        folder_item = sidebar._http_interface_tree.topLevelItem(0)
+        self.assertEqual(folder_item.text(0), "业务接口")
+        self.assertEqual(folder_item.childCount(), 1)
+        self.assertEqual(folder_item.child(0).text(0), "用户列表")
+
+        renames = []
+        folder_events = []
+        sidebar.http_rename_requested.connect(
+            lambda *values: renames.append(values))
+        sidebar.http_folder_selected.connect(folder_events.append)
+        folder_item.setText(0, "核心业务")
+        APP.processEvents()
+        self.assertEqual(
+            renames[-1], ("folder", "folder-1", "核心业务"))
+        sidebar._on_http_interface_clicked(folder_item, 1)
+        self.assertEqual(folder_events[-1], "folder-1")
+
+        interface_item = folder_item.child(0)
+        menu, _, _, _, _ = sidebar._build_http_library_menu(
+            interface_item)
+        move_action = next(
+            action for action in menu.actions()
+            if action.text() == "移动至...")
+        move_texts = [
+            action.text() for action in move_action.menu().actions()
+            if action.text()
+        ]
+        self.assertIn("全部接口（根目录）", move_texts)
+        self.assertIn("业务接口", move_texts)
+        close_page(sidebar)
 
     def test_http_body_types_and_tab_list(self):
         page = HTTPPage()
@@ -281,10 +839,37 @@ class ProtocolPageTests(unittest.TestCase):
         self.assertEqual(table.verticalHeader().defaultSectionSize(), 38)
         self.assertEqual(table.font().family(), "Microsoft YaHei UI")
         self.assertEqual(table.font().pointSize(), 11)
+        self.assertFalse(table.alternatingRowColors())
+        self.assertIn("border-bottom:1px solid #EEF1F4", table.styleSheet())
         self.assertIn("#E8F0FE", table.styleSheet())
         self.assertIn("#FAFAFA", table.styleSheet())
         self.assertIn("#C5CBD3", table.styleSheet())
         close_page(page)
+
+    def test_mqtt_and_websocket_tables_use_http_list_style(self):
+        mqtt = MQTTPage()
+        websocket = WebSocketPage()
+        for table in (
+            mqtt._messages,
+            mqtt._subscriptions,
+            websocket._headers,
+            websocket._messages,
+        ):
+            self.assertEqual(
+                table.verticalHeader().defaultSectionSize(), 38)
+            self.assertFalse(table.showGrid())
+            self.assertFalse(table.alternatingRowColors())
+            self.assertIn(
+                "border-bottom:1px solid #EEF1F4",
+                table.styleSheet(),
+            )
+            self.assertEqual(table.font().family(), "Microsoft YaHei UI")
+            self.assertEqual(table.font().pointSize(), 11)
+            self.assertIn("#E8F0FE", table.styleSheet())
+            self.assertIn("#FAFAFA", table.styleSheet())
+            self.assertIn("#C5CBD3", table.styleSheet())
+        close_page(websocket)
+        close_page(mqtt)
 
     def test_checkbox_headers_select_all_and_hide_enable_label(self):
         page = HTTPPage()
@@ -578,7 +1163,8 @@ class ProtocolProjectTests(unittest.TestCase):
                 window._http_page._url.setText("https://example.com")
                 snapshot = window._snapshot_ui()
                 self.assertEqual(snapshot["mqtt"]["host"], "broker.local")
-                self.assertNotIn("password", snapshot["mqtt"])
+                self.assertEqual(
+                    snapshot["mqtt"]["password"], "secret")
                 self.assertEqual(
                     snapshot["mqtt"]["subscriptions"][0]["topic"], "test/#")
                 self.assertEqual(
@@ -591,6 +1177,8 @@ class ProtocolProjectTests(unittest.TestCase):
                     "mqtt": {
                         "host": "mqtt.example",
                         "port": 1884,
+                        "username": "admin",
+                        "password": "restored-secret",
                         "subscriptions": [
                             {"topic": "restored/+", "qos": 1},
                         ],
@@ -604,6 +1192,9 @@ class ProtocolProjectTests(unittest.TestCase):
                 self.assertEqual(
                     window._mqtt_page.subscriptions()[0]["topic"],
                     "restored/+")
+                self.assertEqual(
+                    window.sidebar.le_mqtt_password.text(),
+                    "restored-secret")
                 self.assertEqual(window._http_page._method.currentText(),
                                  "DELETE")
                 self.assertEqual(
@@ -624,6 +1215,8 @@ class ProtocolProjectTests(unittest.TestCase):
                 window.sidebar.sp_server_port.setValue(41001)
                 window.sidebar.le_client_host.setText("a.client.local")
                 window.sidebar.le_mqtt_host.setText("a.broker.local")
+                window.sidebar.le_mqtt_user.setText("admin")
+                window.sidebar.le_mqtt_password.setText("a-secret")
                 window._mqtt_page.set_subscriptions([
                     {"topic": "project-a/#", "qos": 1},
                 ])
@@ -647,6 +1240,8 @@ class ProtocolProjectTests(unittest.TestCase):
                 window.sidebar.sp_server_port.setValue(42002)
                 window.sidebar.le_client_host.setText("b.client.local")
                 window.sidebar.le_mqtt_host.setText("b.broker.local")
+                window.sidebar.le_mqtt_user.setText("admin")
+                window.sidebar.le_mqtt_password.setText("b-secret")
                 window._mqtt_page.set_subscriptions([
                     {"topic": "project-b/#", "qos": 2},
                 ])
@@ -671,6 +1266,9 @@ class ProtocolProjectTests(unittest.TestCase):
                 self.assertEqual(
                     window.sidebar.le_mqtt_host.text(),
                     "a.broker.local")
+                self.assertEqual(
+                    window.sidebar.le_mqtt_password.text(),
+                    "a-secret")
                 self.assertEqual(
                     window._mqtt_page.subscriptions()[0]["topic"],
                     "project-a/#")
@@ -699,6 +1297,9 @@ class ProtocolProjectTests(unittest.TestCase):
                     window.sidebar.le_mqtt_host.text(),
                     "b.broker.local")
                 self.assertEqual(
+                    window.sidebar.le_mqtt_password.text(),
+                    "b-secret")
+                self.assertEqual(
                     window._mqtt_page.subscriptions()[0]["topic"],
                     "project-b/#")
                 self.assertEqual(
@@ -710,6 +1311,46 @@ class ProtocolProjectTests(unittest.TestCase):
                     self.assertEqual(
                         window._stream_pages[key].send_bar.text.toPlainText(),
                         "{} draft B".format(key))
+            finally:
+                window.close()
+                window.deleteLater()
+                APP.processEvents()
+
+    def test_http_folder_and_interface_rename_work_from_sidebar(self):
+        with tempfile.TemporaryDirectory() as temp:
+            window = MainWindow(temp)
+            try:
+                window.sidebar._mode_group.button(5).click()
+                APP.processEvents()
+                page = window._http_page
+                folder_id = page.create_folder("业务接口")
+                page.set_current_folder(folder_id)
+                page._url.setText("https://example.com/api/orders")
+                page._btn_save.click()
+                APP.processEvents()
+                api_id = page.interfaces()[0]["id"]
+
+                api_item = window.sidebar._http_interface_items[api_id]
+                api_item.setText(0, "创建订单")
+                APP.processEvents()
+                self.assertEqual(
+                    page.interfaces()[0]["name"], "创建订单")
+
+                folder_item = window.sidebar._http_folder_items[folder_id]
+                folder_item.setText(0, "核心业务")
+                APP.processEvents()
+                self.assertEqual(
+                    page.folders()[0]["name"], "核心业务")
+
+                with mock.patch(
+                        "anhutoolbox.sidebar.get_text",
+                        return_value=("归档接口", True)):
+                    window.sidebar._btn_http_new_folder.click()
+                    APP.processEvents()
+                self.assertIn(
+                    "归档接口",
+                    {item["name"] for item in page.folders()},
+                )
             finally:
                 window.close()
                 window.deleteLater()

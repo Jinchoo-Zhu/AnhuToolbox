@@ -292,7 +292,8 @@ QSpinBox:hover, QLineEdit:hover {{
 QSpinBox:focus, QLineEdit:focus {{
     border-color: {BORDER_FOCUS};
 }}
-QSpinBox:disabled {{
+QSpinBox:disabled,
+QLineEdit:disabled {{
     background-color: {BG_CARD};
     color: {TEXT_MUTED};
     border-color: {BORDER};
@@ -316,6 +317,16 @@ QTextEdit {{
 }}
 QTextEdit:focus {{
     border-color: {BORDER_FOCUS};
+}}
+
+QToolTip {{
+    background-color: #FFFFFF;
+    color: #263238;
+    border: 1px solid #B8C3CF;
+    border-radius: 6px;
+    padding: 8px;
+    font-family: "Microsoft YaHei UI";
+    font-size: 10pt;
 }}
 
 QPushButton {{
@@ -482,6 +493,8 @@ QTableWidget {{
 }}
 QTableWidget::item {{
     padding: 3px 5px;
+    border: none;
+    border-bottom: 1px solid #EEF1F4;
 }}
 QTableWidget::item:selected {{
     background-color: {BG_HOVER};

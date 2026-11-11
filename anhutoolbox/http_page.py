@@ -2,6 +2,7 @@
 """APIpost 风格的 HTTP 请求与响应工作区。"""
 
 import base64
+import copy
 import json
 import mimetypes
 import os
@@ -17,17 +18,87 @@ from PySide6.QtWidgets import (
     QApplication, QButtonGroup, QCheckBox, QComboBox, QFileDialog,
     QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit, QPushButton,
     QRadioButton, QSpinBox,
-    QSplitter, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout,
-    QWidget,
+    QSplitter, QTableWidget, QTableWidgetItem, QTabBar, QTabWidget,
+    QToolButton, QVBoxLayout, QWidget,
 )
 
 from .dialogs import show_error, show_information, show_warning
 from .panels import parse_hex_bytes
 from .protocol_workers import HTTPRequestWorker
-from .table_actions import checked_row_indexes, install_select_all_header
+from .table_actions import (
+    apply_data_table_style, checked_row_indexes, install_select_all_header,
+)
 
 
 _HEADER_NAME = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
+
+
+class HoverCloseTabBar(QTabBar):
+    """鼠标悬停到标签上时才显示关闭按钮。"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setMouseTracking(True)
+
+    def _new_close_button(self):
+        wrapper = QWidget(self)
+        wrapper.setObjectName("httpTabCloseHost")
+        wrapper.setFixedSize(20, 20)
+        layout = QHBoxLayout(wrapper)
+        layout.setContentsMargins(0, 0, 4, 0)
+        layout.setSpacing(0)
+        button = QToolButton(wrapper)
+        button.setText("×")
+        button.setObjectName("httpTabClose")
+        button.setFixedSize(15, 15)
+        button.setCursor(Qt.CursorShape.PointingHandCursor)
+        button.setToolTip("关闭")
+        button.setStyleSheet(
+            "QToolButton#httpTabClose{background:transparent;border:none;"
+            "color:#7A8490;font-size:14px;font-weight:600;padding:0;}"
+            "QToolButton#httpTabClose:hover{background:#E3E7EC;"
+            "border-radius:7px;color:#1A1A1A;}"
+        )
+        layout.addWidget(button)
+        button.clicked.connect(
+            lambda _checked=False, current=wrapper:
+            self._close_button_clicked(current))
+        wrapper.hide()
+        return wrapper
+
+    def _close_button_clicked(self, wrapper):
+        for index in range(self.count()):
+            if self.tabButton(
+                    index, QTabBar.ButtonPosition.RightSide) is wrapper:
+                self.tabCloseRequested.emit(index)
+                return
+
+    def tabInserted(self, index):
+        super().tabInserted(index)
+        button = self._new_close_button()
+        self.setTabButton(
+            index, QTabBar.ButtonPosition.RightSide, button)
+        button.hide()
+
+    def tabSizeHint(self, index):
+        size = super().tabSizeHint(index)
+        size.setWidth(size.width() + 22)
+        return size
+
+    def _show_close_for(self, index):
+        for current in range(self.count()):
+            button = self.tabButton(
+                current, QTabBar.ButtonPosition.RightSide)
+            if button is not None:
+                button.setVisible(current == index)
+
+    def mouseMoveEvent(self, event):
+        super().mouseMoveEvent(event)
+        self._show_close_for(self.tabAt(event.position().toPoint()))
+
+    def leaveEvent(self, event):
+        self._show_close_for(-1)
+        super().leaveEvent(event)
 
 
 def _table(headers):
@@ -37,32 +108,9 @@ def _table(headers):
         headers[0] = ""
     widget = QTableWidget(0, len(headers))
     widget.setHorizontalHeaderLabels(headers)
-    widget.verticalHeader().setVisible(False)
-    widget.verticalHeader().setDefaultSectionSize(38)
-    widget.verticalHeader().setMinimumSectionSize(38)
-    widget.setAlternatingRowColors(True)
-    widget.setSelectionBehavior(QTableWidget.SelectRows)
-    widget.setShowGrid(False)
     if has_checkbox_column:
         install_select_all_header(widget)
-    widget.horizontalHeader().setStretchLastSection(True)
-    widget.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
-    widget.setFont(QFont("Microsoft YaHei UI", 11))
-    widget.horizontalHeader().setFont(
-        QFont("Microsoft YaHei UI", 9, QFont.Weight.Bold))
-    widget.setStyleSheet(
-        "QTableWidget{background:#FFFFFF;alternate-background-color:#FAFAFA;"
-        "border:1px solid #C5CBD3;selection-background-color:#E8F0FE;"
-        "selection-color:#1A1A1A;font-family:'Microsoft YaHei UI';"
-        "font-size:11pt;}"
-        "QTableWidget::item{padding:5px 7px;border:none;}"
-        "QTableWidget::item:selected{background:#E8F0FE;color:#1A1A1A;}"
-        "QHeaderView::section{background:#FAFAFA;color:#666666;"
-        "border:1px solid #C5CBD3;padding:5px 7px;"
-        "font-family:'Microsoft YaHei UI';font-size:9pt;font-weight:600;}"
-        "QHeaderView::section:hover{background:#F0F0F0;color:#1A1A1A;"
-        "border-color:#0078D4;}"
-    )
+    apply_data_table_style(widget)
     return widget
 
 
@@ -121,6 +169,9 @@ def _remove_rows(table):
 class HTTPPage(QWidget):
     request_status = Signal(str)
     save_requested = Signal()
+    interfaces_changed = Signal(object)
+    active_interface_changed = Signal(object)
+    folders_changed = Signal(object)
 
     def __init__(self):
         super().__init__()
@@ -128,10 +179,22 @@ class HTTPPage(QWidget):
         self._last_request = {}
         self._last_result = {}
         self._raw_response = ""
+        self._interfaces = []
+        self._folders = []
+        self._current_folder_id = None
+        self._documents = []
+        self._active_document = -1
+        self._loading_document = False
         self._poll_timer = QTimer(self)
         self._poll_timer.setInterval(20)
         self._poll_timer.timeout.connect(self._poll_request)
         self._build()
+        self._connect_document_signals()
+        self._documents = [self._new_document_data()]
+        self._active_document = 0
+        self._refresh_document_tabs()
+        self._emit_interfaces_changed()
+        self._emit_active_interface_changed()
 
     def _build(self):
         root = QVBoxLayout(self)
@@ -153,13 +216,42 @@ class HTTPPage(QWidget):
             "QPushButton#httpSave{background:#FFFFFF;color:#374151;"
             "border:1px solid #CDD3DC;border-radius:4px;padding:7px 17px;}"
             "QPushButton#httpSave:hover{background:#F5F8FC;border-color:#0078D4;}"
+            "QPushButton#httpNewDocument{background:#FFFFFF;color:#0078D4;"
+            "border:1px solid #CDD3DC;border-radius:4px;padding:0;"
+            "font-size:20px;font-weight:600;min-width:0;min-height:0;}"
+            "QPushButton#httpNewDocument:hover{background:#E8F0FE;"
+            "border-color:#0078D4;}"
             "QPushButton#httpDeleteRows{background:#D13438;color:#FFFFFF;"
             "border:1px solid #B52A2E;border-radius:3px;padding:4px 12px;}"
             "QPushButton#httpDeleteRows:hover{background:#A80000;"
             "border-color:#8A0000;}"
             "QLabel#httpChip{border-radius:10px;padding:3px 9px;"
             "font-size:12px;font-weight:600;}"
+            "QTabBar#httpDocuments::tab{background:#F7F8FA;color:#4B5563;"
+            "border:1px solid #D8DCE2;border-bottom:none;"
+            "padding:6px 12px;font-size:12px;margin-right:2px;}"
+            "QTabBar#httpDocuments::tab:selected{background:#FFFFFF;"
+            "color:#0078D4;border-color:#B9C4D0;font-weight:400;}"
         )
+
+        document_bar = QHBoxLayout()
+        document_bar.setSpacing(4)
+        self._document_tabs = HoverCloseTabBar()
+        self._document_tabs.setObjectName("httpDocuments")
+        self._document_tabs.setExpanding(False)
+        self._document_tabs.setMovable(False)
+        self._document_tabs.currentChanged.connect(
+            self._on_document_changed)
+        self._document_tabs.tabCloseRequested.connect(
+            self._close_document)
+        document_bar.addWidget(self._document_tabs, 1)
+        self._btn_new_document = QPushButton("+")
+        self._btn_new_document.setObjectName("httpNewDocument")
+        self._btn_new_document.setFixedWidth(32)
+        self._btn_new_document.setToolTip("新建接口")
+        self._btn_new_document.clicked.connect(self.new_document)
+        document_bar.addWidget(self._btn_new_document)
+        root.addLayout(document_bar)
 
         request_bar = QHBoxLayout()
         request_bar.setSpacing(6)
@@ -188,7 +280,7 @@ class HTTPPage(QWidget):
         self._btn_save = QPushButton("保存")
         self._btn_save.setObjectName("httpSave")
         self._btn_save.setMinimumWidth(78)
-        self._btn_save.clicked.connect(self.save_requested.emit)
+        self._btn_save.clicked.connect(self._save_current_document)
         request_bar.addWidget(self._btn_save)
         root.addLayout(request_bar)
 
@@ -314,6 +406,374 @@ class HTTPPage(QWidget):
         split.addWidget(response_page)
         split.setSizes([340, 330])
         root.addWidget(split, 1)
+
+    @staticmethod
+    def _blank_request():
+        return {
+            "method": "GET",
+            "url": "",
+            "timeout": 30,
+            "follow_redirects": True,
+            "verify_tls": True,
+            "http_version": "HTTP/1.1",
+            "params": [],
+            "headers": [],
+            "path_params": [],
+            "cookies": [],
+            "body_type": "none",
+            "raw_format": "JSON",
+            "body": "",
+            "auth_type": "无",
+            "auth_user": "",
+            "response_example": "",
+        }
+
+    def _connect_document_signals(self):
+        signals = (
+            self._method.currentTextChanged,
+            self._url.textChanged,
+            self._http_version.currentTextChanged,
+            self._timeout.valueChanged,
+            self._follow.toggled,
+            self._verify.toggled,
+            self._body_group.idClicked,
+            self._raw_format.currentTextChanged,
+            self._body.textChanged,
+            self._auth_type.currentTextChanged,
+            self._auth_user.textChanged,
+            self._response_example.textChanged,
+        )
+        for signal in signals:
+            signal.connect(self._mark_document_dirty)
+        for table in (
+            self._http_headers,
+            self._params,
+            self._path_params,
+            self._request_cookies,
+        ):
+            table.itemChanged.connect(self._mark_document_dirty)
+
+    def _new_document_data(self, request=None, **values):
+        folder_id = values.get("folder_id") or self._current_folder_id
+        return {
+            "api_id": values.get("api_id"),
+            "folder_id": str(folder_id) if folder_id else None,
+            "name": str(values.get("name") or "未命名接口"),
+            "request": copy.deepcopy(
+                request if isinstance(request, dict)
+                else self._blank_request()),
+            "dirty": bool(values.get("dirty", True)),
+        }
+
+    def _active_doc(self):
+        if 0 <= self._active_document < len(self._documents):
+            return self._documents[self._active_document]
+        return None
+
+    def _sync_active_document(self):
+        document = self._active_doc()
+        if document is not None and not self._loading_document:
+            document["request"] = self._capture_request()
+        return document
+
+    def _document_title(self, document):
+        request = document.get("request") or {}
+        method = str(request.get("method") or "GET").upper()
+        name = str(document.get("name") or "未命名接口")
+        dot = " ●" if document.get("dirty") else ""
+        return "{} {}{}".format(method, name, dot)
+
+    def _update_document_tab(self, index=None):
+        if index is None:
+            index = self._active_document
+        if 0 <= index < len(self._documents):
+            self._document_tabs.setTabText(
+                index, self._document_title(self._documents[index]))
+
+    def _refresh_document_tabs(self, select=None):
+        if select is None:
+            select = self._active_document
+        was_loading = self._loading_document
+        self._loading_document = True
+        self._document_tabs.blockSignals(True)
+        try:
+            while self._document_tabs.count():
+                self._document_tabs.removeTab(0)
+            for document in self._documents:
+                self._document_tabs.addTab(
+                    self._document_title(document))
+            if self._documents:
+                self._active_document = max(
+                    0, min(select, len(self._documents) - 1))
+                self._document_tabs.setCurrentIndex(
+                    self._active_document)
+                self._document_tabs._show_close_for(-1)
+        finally:
+            self._document_tabs.blockSignals(False)
+            self._loading_document = was_loading
+
+    def _mark_document_dirty(self, *_args):
+        if self._loading_document:
+            return
+        document = self._active_doc()
+        if document is None:
+            return
+        document["request"] = self._capture_request()
+        if not document.get("dirty"):
+            document["dirty"] = True
+        self._update_document_tab()
+
+    def _on_document_changed(self, index):
+        if (
+            self._loading_document
+            or index < 0
+            or index >= len(self._documents)
+            or index == self._active_document
+        ):
+            return
+        old = self._active_doc()
+        if old is not None:
+            old["request"] = self._capture_request()
+        self._active_document = index
+        self._loading_document = True
+        try:
+            self._apply_request(
+                self._documents[index].get("request") or {})
+        finally:
+            self._loading_document = False
+        self._emit_active_interface_changed()
+
+    def new_document(self):
+        self._sync_active_document()
+        self._documents.append(self._new_document_data())
+        self._active_document = len(self._documents) - 1
+        self._refresh_document_tabs(select=self._active_document)
+        self._loading_document = True
+        try:
+            self._apply_request(self._blank_request())
+        finally:
+            self._loading_document = False
+        self._emit_active_interface_changed()
+
+    def _close_document(self, index):
+        if (
+            self._loading_document
+            or index < 0
+            or index >= len(self._documents)
+        ):
+            return
+        self._sync_active_document()
+        old_active = self._active_document
+        del self._documents[index]
+        if not self._documents:
+            self._documents = [self._new_document_data()]
+            self._active_document = 0
+        elif index < old_active:
+            self._active_document = old_active - 1
+        else:
+            self._active_document = min(
+                old_active, len(self._documents) - 1)
+        self._refresh_document_tabs(select=self._active_document)
+        self._loading_document = True
+        try:
+            self._apply_request(
+                self._documents[self._active_document].get(
+                    "request") or {})
+        finally:
+            self._loading_document = False
+        self._emit_active_interface_changed()
+
+    def _suggest_interface_name(self, request):
+        parsed = urllib.parse.urlparse(str(request.get("url") or "").strip())
+        pieces = [
+            urllib.parse.unquote(item)
+            for item in parsed.path.split("/")
+            if item
+        ]
+        if pieces:
+            name = pieces[-1]
+            if "." in name:
+                name = name.rsplit(".", 1)[0]
+            if name:
+                return name[:60]
+        if parsed.netloc:
+            return parsed.netloc[:60]
+        return "接口 {}".format(len(self._interfaces) + 1)
+
+    def _save_current_document(self):
+        if self._loading_document:
+            return
+        document = self._sync_active_document()
+        if document is None:
+            return
+        request = copy.deepcopy(document["request"])
+        if not str(request.get("url") or "").strip():
+            show_warning(self, "无法保存", "请先填写接口 URL。")
+            return
+        if not document.get("name") or document["name"] == "未命名接口":
+            document["name"] = self._suggest_interface_name(request)
+        api_id = str(document.get("api_id") or secrets.token_hex(8))
+        document["api_id"] = api_id
+        document["dirty"] = False
+        document["folder_id"] = (
+            self._current_folder_id or document.get("folder_id"))
+        record = {
+            "id": api_id,
+            "name": document["name"],
+            "folder_id": document.get("folder_id"),
+            "request": request,
+        }
+        for index, item in enumerate(self._interfaces):
+            if item.get("id") == api_id:
+                self._interfaces[index] = record
+                break
+        else:
+            self._interfaces.append(record)
+        self._update_document_tab()
+        self._emit_interfaces_changed()
+        self._emit_active_interface_changed()
+        self._console.appendPlainText(
+            "已保存接口：{}".format(document["name"]))
+        self.request_status.emit(
+            "HTTP 接口已保存：{}".format(document["name"]))
+        self.save_requested.emit()
+
+    def _emit_interfaces_changed(self):
+        summaries = []
+        for item in self._interfaces:
+            request = item.get("request") or {}
+            summaries.append({
+                "id": item.get("id"),
+                "name": item.get("name"),
+                "folder_id": item.get("folder_id"),
+                "method": request.get("method", "GET"),
+                "url": request.get("url", ""),
+            })
+        self.interfaces_changed.emit(summaries)
+        self.folders_changed.emit(copy.deepcopy(self._folders))
+
+    def _emit_folders_changed(self):
+        self.folders_changed.emit(copy.deepcopy(self._folders))
+
+    def _emit_active_interface_changed(self):
+        document = self._active_doc()
+        self.active_interface_changed.emit(
+            document.get("api_id") if document is not None else None)
+
+    def interfaces(self):
+        return copy.deepcopy(self._interfaces)
+
+    def folders(self):
+        return copy.deepcopy(self._folders)
+
+    def set_current_folder(self, folder_id):
+        folder_id = str(folder_id or "") or None
+        if folder_id and not any(
+                item.get("id") == folder_id for item in self._folders):
+            folder_id = None
+        self._current_folder_id = folder_id
+
+    def create_folder(self, name, parent_id=None):
+        name = str(name or "").strip()
+        if not name:
+            return None
+        parent_id = str(parent_id or "") or None
+        if parent_id and not any(
+                item.get("id") == parent_id for item in self._folders):
+            parent_id = None
+        folder = {
+            "id": secrets.token_hex(8),
+            "name": name,
+            "parent_id": parent_id,
+        }
+        self._folders.append(folder)
+        self._emit_folders_changed()
+        return folder["id"]
+
+    def rename_folder(self, folder_id, name):
+        name = str(name or "").strip()
+        if not name:
+            return False
+        for folder in self._folders:
+            if folder.get("id") == str(folder_id):
+                folder["name"] = name
+                self._emit_folders_changed()
+                return True
+        return False
+
+    def rename_interface(self, api_id, name):
+        name = str(name or "").strip()
+        if not name:
+            return False
+        changed = False
+        for item in self._interfaces:
+            if item.get("id") == str(api_id):
+                item["name"] = name
+                changed = True
+                break
+        if not changed:
+            return False
+        for index, document in enumerate(self._documents):
+            if document.get("api_id") == str(api_id):
+                document["name"] = name
+                self._update_document_tab(index)
+        self._emit_interfaces_changed()
+        self._emit_active_interface_changed()
+        return True
+
+    def move_interface(self, api_id, folder_id=None):
+        folder_id = str(folder_id or "") or None
+        if folder_id and not any(
+                item.get("id") == folder_id for item in self._folders):
+            folder_id = None
+        changed = False
+        for item in self._interfaces:
+            if item.get("id") == str(api_id):
+                item["folder_id"] = folder_id
+                changed = True
+                break
+        if not changed:
+            return False
+        for document in self._documents:
+            if document.get("api_id") == str(api_id):
+                document["folder_id"] = folder_id
+        self._current_folder_id = folder_id
+        self._emit_interfaces_changed()
+        self._emit_active_interface_changed()
+        return True
+
+    def open_interface(self, api_id):
+        api_id = str(api_id or "")
+        if not api_id:
+            return False
+        for index, document in enumerate(self._documents):
+            if document.get("api_id") == api_id:
+                self._document_tabs.setCurrentIndex(index)
+                return True
+        interface = next(
+            (item for item in self._interfaces
+             if str(item.get("id") or "") == api_id),
+            None,
+        )
+        if interface is None:
+            return False
+        self._sync_active_document()
+        self._documents.append(self._new_document_data(
+            interface.get("request"),
+            api_id=api_id,
+            folder_id=interface.get("folder_id"),
+            name=interface.get("name"),
+            dirty=False,
+        ))
+        self._active_document = len(self._documents) - 1
+        self._refresh_document_tabs(select=self._active_document)
+        self._loading_document = True
+        try:
+            self._apply_request(interface.get("request") or {})
+        finally:
+            self._loading_document = False
+        self._emit_active_interface_changed()
+        return True
 
     def _make_pair_tab(self, title, headers):
         page = QWidget()
@@ -931,7 +1391,7 @@ class HTTPPage(QWidget):
         if self._raw_format.isVisible():
             self._raw_format.setCurrentText("JSON")
 
-    def snapshot(self):
+    def _capture_request(self):
         return {
             "method": self._method.currentText(),
             "url": self._url.text(),
@@ -951,8 +1411,136 @@ class HTTPPage(QWidget):
             "response_example": self._response_example.toPlainText(),
         }
 
+    def _normalise_request(self, data):
+        data = data if isinstance(data, dict) else {}
+        request = self._blank_request()
+        for key in request:
+            if key in data and data[key] is not None:
+                request[key] = copy.deepcopy(data[key])
+        return request
+
+    def _normalise_folder(self, item):
+        if not isinstance(item, dict):
+            return None
+        return {
+            "id": str(item.get("id") or secrets.token_hex(8)),
+            "name": str(item.get("name") or "新建文件夹"),
+            "parent_id": (
+                str(item.get("parent_id"))
+                if item.get("parent_id") else None),
+        }
+
+    def _normalise_interface(self, item):
+        if not isinstance(item, dict):
+            return None
+        request = item.get("request")
+        if not isinstance(request, dict):
+            request = {
+                key: value for key, value in item.items()
+                if key not in ("id", "name")
+            }
+        return {
+            "id": str(item.get("id") or secrets.token_hex(8)),
+            "name": str(item.get("name") or "未命名接口"),
+            "folder_id": (
+                str(item.get("folder_id"))
+                if item.get("folder_id") else None),
+            "request": self._normalise_request(request),
+        }
+
+    def _normalise_document(self, item):
+        if not isinstance(item, dict):
+            return None
+        request = item.get("request")
+        if not isinstance(request, dict):
+            request = item
+        return self._new_document_data(
+            request,
+            api_id=str(item.get("api_id") or "") or None,
+            folder_id=(
+                str(item.get("folder_id"))
+                if item.get("folder_id") else None),
+            name=str(item.get("name") or "未命名接口"),
+            dirty=bool(item.get("dirty", True)),
+        )
+
+    def snapshot(self):
+        self._sync_active_document()
+        current = self._capture_request()
+        current["interfaces"] = copy.deepcopy(self._interfaces)
+        current["folders"] = copy.deepcopy(self._folders)
+        current["current_folder"] = self._current_folder_id
+        current["documents"] = copy.deepcopy(self._documents)
+        current["active_document"] = self._active_document
+        return current
+
     def apply(self, data):
         data = data if isinstance(data, dict) else {}
+        self._loading_document = True
+        try:
+            self._folders = [
+                item for item in (
+                    self._normalise_folder(raw)
+                    for raw in (data.get("folders") or [])
+                )
+                if item is not None
+            ]
+            self._interfaces = [
+                item for item in (
+                    self._normalise_interface(raw)
+                    for raw in (data.get("interfaces") or [])
+                )
+                if item is not None
+            ]
+            folder_ids = {item["id"] for item in self._folders}
+            for item in self._interfaces:
+                if item.get("folder_id") not in folder_ids:
+                    item["folder_id"] = None
+            self._current_folder_id = str(
+                data.get("current_folder") or "") or None
+            if self._current_folder_id not in folder_ids:
+                self._current_folder_id = None
+            documents = [
+                item for item in (
+                    self._normalise_document(raw)
+                    for raw in (data.get("documents") or [])
+                )
+                if item is not None
+            ]
+            if not documents and self._interfaces:
+                documents = [
+                    self._new_document_data(
+                        item.get("request"),
+                        api_id=item.get("id"),
+                        name=item.get("name"),
+                        dirty=False,
+                    )
+                    for item in self._interfaces
+                ]
+            if not documents:
+                legacy_request = self._normalise_request(data)
+                documents = [
+                    self._new_document_data(
+                        legacy_request, dirty=True)
+                ]
+            try:
+                active = int(data.get("active_document", 0))
+            except (TypeError, ValueError):
+                active = 0
+            self._documents = documents
+            self._active_document = max(
+                0, min(active, len(documents) - 1))
+            self._refresh_document_tabs(select=self._active_document)
+            self._apply_request(
+                self._documents[self._active_document].get(
+                    "request") or {})
+        finally:
+            self._loading_document = False
+        self._emit_interfaces_changed()
+        self._emit_active_interface_changed()
+
+    def _apply_request(self, data):
+        data = self._normalise_request(data)
         self._method.setCurrentText(str(data.get("method") or "GET"))
         self._url.setText(str(data.get("url") or ""))
         self._http_version.setCurrentText(

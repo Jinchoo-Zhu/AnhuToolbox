@@ -2,11 +2,41 @@
 """带复选框表格的批量操作工具。"""
 
 from PySide6.QtCore import QEvent, QPointF, QRect, Qt
-from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
+from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import (
-    QApplication, QHeaderView, QStyle, QStyledItemDelegate,
+    QAbstractItemView, QApplication, QHeaderView, QStyle, QStyledItemDelegate,
     QStyleOptionViewItem,
 )
+
+
+def apply_data_table_style(table):
+    """应用 HTTP、MQTT、WebSocket 共用的列表视觉样式。"""
+    table.verticalHeader().setVisible(False)
+    table.verticalHeader().setDefaultSectionSize(38)
+    table.verticalHeader().setMinimumSectionSize(38)
+    table.setAlternatingRowColors(False)
+    table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+    table.setShowGrid(False)
+    table.horizontalHeader().setStretchLastSection(True)
+    table.horizontalHeader().setDefaultAlignment(
+        Qt.AlignmentFlag.AlignCenter)
+    table.setFont(QFont("Microsoft YaHei UI", 11))
+    table.horizontalHeader().setFont(
+        QFont("Microsoft YaHei UI", 9, QFont.Weight.Bold))
+    table.setStyleSheet(
+        "QTableWidget{background:#FFFFFF;"
+        "border:1px solid #C5CBD3;selection-background-color:#E8F0FE;"
+        "selection-color:#1A1A1A;font-family:'Microsoft YaHei UI';"
+        "font-size:11pt;}"
+        "QTableWidget::item{padding:5px 7px;border:none;"
+        "border-bottom:1px solid #EEF1F4;}"
+        "QTableWidget::item:selected{background:#E8F0FE;color:#1A1A1A;}"
+        "QHeaderView::section{background:#FAFAFA;color:#666666;"
+        "border:1px solid #C5CBD3;padding:5px 7px;"
+        "font-family:'Microsoft YaHei UI';font-size:9pt;font-weight:600;}"
+        "QHeaderView::section:hover{background:#F0F0F0;color:#1A1A1A;"
+        "border-color:#0078D4;}"
+    )
 
 
 def _draw_checkbox(painter, box, checked):

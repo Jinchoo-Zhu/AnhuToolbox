@@ -2,7 +2,9 @@
 """通信调试页中的 MQTT、HTTP、WebSocket 协议工作区。"""
 
 import base64
+import html
 import json
+import textwrap
 import time
 import urllib.parse
 from datetime import datetime
@@ -12,13 +14,44 @@ from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QFileDialog, QGroupBox,
     QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit, QPushButton, QSpinBox, QSplitter,
-    QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget,
+    QAbstractItemView, QTableWidget, QTableWidgetItem, QTabWidget,
+    QVBoxLayout, QWidget, QSizePolicy,
 )
 
 from .dialogs import show_error, show_information, show_warning
 from .panels import parse_hex_bytes
 from .protocol_workers import HTTPRequestWorker
-from .table_actions import checked_row_indexes, install_select_all_header
+from .table_actions import (
+    apply_data_table_style, checked_row_indexes, install_select_all_header,
+)
+
+
+def _wide_tooltip(value):
+    text = str(value)
+    try:
+        parsed = json.loads(text)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        pass
+    else:
+        text = json.dumps(parsed, ensure_ascii=False, indent=2)
+    lines = []
+    for line in text.splitlines() or [""]:
+        wrapped = textwrap.wrap(
+            line,
+            width=96,
+            replace_whitespace=False,
+            drop_whitespace=False,
+            break_long_words=False,
+            break_on_hyphens=False,
+        )
+        lines.extend(wrapped or [""])
+    content = html.escape("\n".join(lines))
+    return (
+        '<table width="640" cellspacing="0" cellpadding="8">'
+        '<tr><td style="font-family:Consolas;font-size:10pt;'
+        'color:#263238;"><pre style="margin:0;">{}</pre>'
+        '</td></tr></table>'.format(content)
+    )
 
 
 def _new_table(headers):
@@ -28,12 +61,9 @@ def _new_table(headers):
         headers[0] = ""
     table = QTableWidget(0, len(headers))
     table.setHorizontalHeaderLabels(headers)
-    table.verticalHeader().setVisible(False)
-    table.setSelectionBehavior(QTableWidget.SelectRows)
-    table.setAlternatingRowColors(True)
     if has_checkbox_column:
         install_select_all_header(table)
-    table.horizontalHeader().setStretchLastSection(True)
+    apply_data_table_style(table)
     return table
 
 
@@ -47,6 +77,30 @@ def _protocol_group(title):
         "top:4px;padding:4px 6px;color:#1A1A1A;font-size:13px;}"
     )
     return group
+
+
+def _compact_protocol_panel(title):
+    panel = QWidget()
+    panel.setObjectName("compactProtocolPanel")
+    panel.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+    panel.setStyleSheet(
+        "QWidget#compactProtocolPanel{background:#FAFAFA;"
+        "border:1px solid #D0D0D0;border-radius:6px;}")
+    layout = QVBoxLayout(panel)
+    layout.setContentsMargins(8, 6, 8, 8)
+    layout.setSpacing(4)
+    header_widget = QWidget()
+    header_widget.setFixedHeight(20)
+    header = QHBoxLayout(header_widget)
+    header.setContentsMargins(0, 0, 0, 0)
+    label = QLabel(title)
+    label.setFixedHeight(20)
+    label.setStyleSheet(
+        "color:#1A1A1A;font-size:13px;font-weight:600;padding-left:2px;")
+    header.addWidget(label)
+    header.addStretch()
+    layout.addWidget(header_widget)
+    return panel, layout, label
 
 
 def _table_add_row(table, values, checked=False):
@@ -92,10 +146,15 @@ def _table_pairs(table):
 class MQTTPage(QWidget):
     subscription_changed = Signal(object)
     publish_requested = Signal(dict)
+    MAX_PAUSED_BYTES = 16 * 1024 * 1024
 
     def __init__(self):
         super().__init__()
         self._connected = False
+        self._messages_paused = False
+        self._paused_messages = []
+        self._paused_bytes = 0
+        self._pause_dropped_bytes = 0
         self._build()
 
     def _build(self):
@@ -103,35 +162,61 @@ class MQTTPage(QWidget):
         root.setContentsMargins(12, 10, 12, 10)
         root.setSpacing(8)
 
-        header = QHBoxLayout()
-        self._state = QLabel("未连接")
-        self._state.setStyleSheet(
-            "color:#D83B01;font-size:13px;font-weight:600;")
-        header.addWidget(self._state)
-        header.addStretch()
-        self._btn_clear = QPushButton("清空消息")
-        self._btn_clear.clicked.connect(self.clear_messages)
-        header.addWidget(self._btn_clear)
-        root.addLayout(header)
-
-        split = QSplitter(Qt.Vertical)
-
-        messages = _protocol_group("消息")
+        messages = QWidget()
+        messages.setObjectName("mqttMessages")
+        messages.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        messages.setStyleSheet(
+            "QWidget#mqttMessages{background:#FAFAFA;"
+            "border:1px solid #D0D0D0;border-radius:6px;}")
+        self._messages_container = messages
         ml = QVBoxLayout(messages)
+        ml.setContentsMargins(8, 6, 8, 8)
+        ml.setSpacing(4)
+        message_title = QHBoxLayout()
+        title = QLabel("消息")
+        title.setStyleSheet(
+            "color:#1A1A1A;font-size:13px;font-weight:600;padding-left:2px;")
+        message_title.addWidget(title)
+        message_title.addStretch()
+        self.chk_pause = QCheckBox("页面暂停")
+        self.chk_pause.setToolTip(
+            "暂停时不刷新消息列表，继续接收的消息会在恢复后补显示")
+        self.chk_pause.toggled.connect(self._on_messages_pause)
+        message_title.addWidget(self.chk_pause)
+        self._btn_clear = QPushButton("清空消息")
+        self._btn_clear.setFixedHeight(26)
+        self._btn_clear.setStyleSheet(
+            "QPushButton{padding:2px 10px;font-size:12px;"
+            "border-radius:4px;min-height:20px;max-height:24px;}")
+        self._btn_clear.clicked.connect(self.clear_messages)
+        message_title.addWidget(self._btn_clear)
+        ml.addLayout(message_title)
         self._messages = _new_table([
-            "时间", "方向", "Topic", "QoS", "Retain", "大小", "Payload"])
-        self._messages.setColumnWidth(0, 88)
+            "时间", "方向", "Topic", "QoS", "保留", "大小", "Payload"])
+        time_width = max(
+            96,
+            self._messages.fontMetrics().horizontalAdvance(
+                "00:00:00.000") + 26,
+        )
+        self._messages.setColumnWidth(0, time_width)
         self._messages.setColumnWidth(1, 52)
         self._messages.setColumnWidth(2, 190)
         self._messages.setColumnWidth(3, 44)
         self._messages.setColumnWidth(4, 54)
         self._messages.setColumnWidth(5, 60)
+        self._messages.setEditTriggers(
+            QAbstractItemView.EditTrigger.NoEditTriggers)
         ml.addWidget(self._messages)
-        split.addWidget(messages)
+        messages.setMinimumHeight(180)
 
-        subscriptions = _protocol_group("订阅")
-        sl = QVBoxLayout(subscriptions)
-        row = QHBoxLayout()
+        subscriptions, sl, self._subscriptions_title_label = (
+            _compact_protocol_panel("订阅"))
+        self._subscriptions_panel = subscriptions
+        subscription_row = QWidget()
+        subscription_row.setFixedHeight(42)
+        self._subscription_input_row = subscription_row
+        row = QHBoxLayout(subscription_row)
+        row.setContentsMargins(0, 0, 0, 0)
         self._sub_topic = QLineEdit()
         self._sub_topic.setPlaceholderText("Topic，例如 device/+/status")
         row.addWidget(self._sub_topic, 1)
@@ -139,66 +224,105 @@ class MQTTPage(QWidget):
         self._sub_qos.addItems(["QoS 0", "QoS 1", "QoS 2"])
         row.addWidget(self._sub_qos)
         self._btn_subscribe = QPushButton("添加订阅")
+        self._btn_subscribe.setFixedHeight(34)
         self._btn_subscribe.clicked.connect(self._add_subscription)
         row.addWidget(self._btn_subscribe)
         self._btn_unsubscribe = QPushButton("删除选中")
+        self._btn_unsubscribe.setFixedHeight(34)
         self._btn_unsubscribe.clicked.connect(self._remove_subscription)
         row.addWidget(self._btn_unsubscribe)
-        sl.addLayout(row)
-        self._subscriptions = _new_table(["Topic", "QoS"])
-        self._subscriptions.setColumnWidth(0, 360)
-        self._subscriptions.setColumnWidth(1, 60)
+        sl.addWidget(subscription_row)
+        self._subscriptions = _new_table(["启用", "Topic", "QoS"])
+        self._subscriptions.setColumnWidth(0, 48)
+        self._subscriptions.setColumnWidth(1, 360)
+        self._subscriptions.setColumnWidth(2, 60)
+        self._subscriptions.setSelectionMode(
+            QAbstractItemView.SelectionMode.NoSelection)
+        self._subscriptions.setAlternatingRowColors(False)
         sl.addWidget(self._subscriptions)
-        split.addWidget(subscriptions)
-        split.setSizes([360, 150])
-        root.addWidget(split, 1)
+        sl.setStretch(0, 0)
+        sl.setStretch(1, 0)
+        sl.setStretch(2, 1)
+        subscriptions.setMinimumHeight(220)
 
-        publish = _protocol_group("发布")
-        pl = QVBoxLayout(publish)
-        prow = QHBoxLayout()
+        publish, pl, self._publish_title_label = (
+            _compact_protocol_panel("发布"))
+        self._publish_panel = publish
+        publish_row = QWidget()
+        publish_row.setFixedHeight(42)
+        self._publish_input_row = publish_row
+        prow = QHBoxLayout(publish_row)
+        prow.setContentsMargins(0, 0, 0, 0)
         self._pub_topic = QLineEdit()
         self._pub_topic.setPlaceholderText("发布 Topic")
+        self._pub_topic.setMinimumWidth(120)
+        self._pub_topic.setMaximumWidth(260)
         prow.addWidget(self._pub_topic, 1)
         self._pub_qos = QComboBox()
         self._pub_qos.addItems(["QoS 0", "QoS 1", "QoS 2"])
         prow.addWidget(self._pub_qos)
-        self._pub_retain = QCheckBox("Retain")
+        self._pub_retain = QCheckBox("保留消息")
+        self._pub_retain.setToolTip(
+            "服务端保留最后一条消息，新订阅者连接后可立即收到")
         prow.addWidget(self._pub_retain)
         self._pub_format = QComboBox()
         self._pub_format.addItems(["文本", "HEX", "JSON"])
         prow.addWidget(self._pub_format)
-        pl.addLayout(prow)
-        body_row = QHBoxLayout()
+        self._btn_publish = QPushButton("发布")
+        self._btn_publish.setFixedSize(84, 34)
+        self._btn_publish.clicked.connect(self._publish)
+        prow.addWidget(self._btn_publish)
+        pl.addWidget(publish_row)
         self._pub_payload = QPlainTextEdit()
-        self._pub_payload.setMaximumHeight(72)
+        self._pub_payload.setMinimumHeight(200)
+        self._pub_payload.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Expanding,
+        )
         self._pub_payload.setPlaceholderText("消息内容")
         self._pub_payload.setFont(QFont("Consolas", 10))
-        body_row.addWidget(self._pub_payload, 1)
-        self._btn_publish = QPushButton("发布")
-        self._btn_publish.setMinimumSize(80, 60)
-        self._btn_publish.clicked.connect(self._publish)
-        body_row.addWidget(self._btn_publish)
-        pl.addLayout(body_row)
-        root.addWidget(publish)
+        pl.addWidget(self._pub_payload, 1)
+        pl.setStretch(0, 0)
+        pl.setStretch(1, 0)
+        pl.setStretch(2, 1)
+        publish.setMinimumHeight(220)
+
+        bottom_split = QSplitter(Qt.Horizontal)
+        bottom_split.setChildrenCollapsible(False)
+        bottom_split.addWidget(subscriptions)
+        bottom_split.addWidget(publish)
+        bottom_split.setSizes([520, 520])
+        self._mqtt_bottom_split = bottom_split
+        root.addWidget(messages, 2)
+        root.addWidget(bottom_split, 3)
         self.set_connected(False)
 
     def set_connected(self, connected):
         self._connected = bool(connected)
-        self._state.setText("已连接" if connected else "未连接")
-        self._state.setStyleSheet(
-            "color:{};font-size:13px;font-weight:600;".format(
-                "#107C10" if connected else "#D83B01"))
         for widget in (
                 self._btn_subscribe, self._btn_unsubscribe,
                 self._btn_publish):
             widget.setEnabled(connected)
 
     def append_message(self, message):
+        if self._messages_paused:
+            payload_size = len(bytes(message.get("payload") or b""))
+            if self._paused_bytes + payload_size > self.MAX_PAUSED_BYTES:
+                self._pause_dropped_bytes += payload_size
+                return
+            self._paused_messages.append(dict(message))
+            self._paused_bytes += payload_size
+            return
+        self._append_message_now(message)
+
+    def _append_message_now(self, message):
         payload = bytes(message.get("payload") or b"")
         text = message.get("text")
         if text is None:
-            preview = payload.hex(" ").upper()
+            full_payload = payload.hex(" ").upper()
+            preview = full_payload
         else:
+            full_payload = str(text)
             preview = str(text).replace("\r", "\\r").replace("\n", "\\n")
         if len(preview) > 180:
             preview = preview[:177] + "..."
@@ -208,7 +332,13 @@ class MQTTPage(QWidget):
             datetime.fromtimestamp(
                 float(message.get("timestamp") or time.time())).strftime(
                     "%H:%M:%S.%f")[:-3],
-            str(message.get("direction") or "RX").upper(),
+            {
+                "RX": "接收",
+                "TX": "发送",
+            }.get(
+                str(message.get("direction") or "RX").upper(),
+                str(message.get("direction") or "RX").upper(),
+            ),
             str(message.get("topic") or ""),
             str(message.get("qos", 0)),
             "是" if message.get("retain") else "否",
@@ -217,23 +347,51 @@ class MQTTPage(QWidget):
         ]
         for column, value in enumerate(values):
             item = QTableWidgetItem(value)
+            item.setFlags(
+                item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             if column == 6:
-                item.setToolTip(str(text if text is not None
-                                    else payload.hex(" ").upper()))
+                item.setToolTip(_wide_tooltip(full_payload))
             self._messages.setItem(row, column, item)
         self._messages.scrollToBottom()
+
+    def _on_messages_pause(self, paused):
+        self._messages_paused = bool(paused)
+        if paused:
+            return
+        pending = self._paused_messages
+        dropped = self._pause_dropped_bytes
+        self._paused_messages = []
+        self._paused_bytes = 0
+        self._pause_dropped_bytes = 0
+        for message in pending:
+            self._append_message_now(message)
+        if dropped:
+            self._append_message_now({
+                "timestamp": time.time(),
+                "direction": "INFO",
+                "topic": "页面暂停",
+                "qos": 0,
+                "retain": False,
+                "payload": (
+                    "暂停缓存超过限制，已丢弃 {} 字节".format(
+                        dropped)).encode("utf-8"),
+                "text": "暂停缓存超过限制，已丢弃 {} 字节".format(
+                    dropped),
+            })
 
     def add_subscription(self, topic, qos=0, notify=False):
         topic = str(topic or "").strip()
         if not topic:
             return False
         for row in range(self._subscriptions.rowCount()):
-            if self._subscriptions.item(row, 0).text() == topic:
+            item = self._subscriptions.item(row, 1)
+            if item is not None and item.text() == topic:
                 return True
-        row = self._subscriptions.rowCount()
-        self._subscriptions.insertRow(row)
-        self._subscriptions.setItem(row, 0, QTableWidgetItem(topic))
-        self._subscriptions.setItem(row, 1, QTableWidgetItem(str(int(qos))))
+        _table_add_row(
+            self._subscriptions,
+            [topic, str(int(qos))],
+            checked=True,
+        )
         if notify:
             self.subscription_changed.emit(self.subscriptions())
         return True
@@ -248,23 +406,25 @@ class MQTTPage(QWidget):
             self._sub_topic.clear()
 
     def _remove_subscription(self):
-        rows = sorted({
-            index.row() for index in self._subscriptions.selectedIndexes()},
-            reverse=True)
+        rows = sorted(
+            checked_row_indexes(self._subscriptions), reverse=True)
+        if not rows:
+            show_information(
+                self, "删除订阅", "请先勾选需要删除的订阅。")
+            return
         for row in rows:
             self._subscriptions.removeRow(row)
-        if rows:
-            self.subscription_changed.emit(self.subscriptions())
+        self.subscription_changed.emit(self.subscriptions())
 
     def subscriptions(self):
         return [
             {
-                "topic": self._subscriptions.item(row, 0).text(),
-                "qos": int(self._subscriptions.item(row, 1).text()),
+                "topic": self._subscriptions.item(row, 1).text(),
+                "qos": int(self._subscriptions.item(row, 2).text()),
             }
             for row in range(self._subscriptions.rowCount())
-            if self._subscriptions.item(row, 0)
-            and self._subscriptions.item(row, 0).text().strip()
+            if self._subscriptions.item(row, 1)
+            and self._subscriptions.item(row, 1).text().strip()
         ]
 
     def set_subscriptions(self, items):
@@ -302,7 +462,18 @@ class MQTTPage(QWidget):
         self.append_message(message)
 
     def clear_messages(self):
+        self._paused_messages.clear()
+        self._paused_bytes = 0
+        self._pause_dropped_bytes = 0
         self._messages.setRowCount(0)
+
+    def reset_runtime_state(self):
+        if self.chk_pause.isChecked():
+            self.chk_pause.setChecked(False)
+        else:
+            self._paused_messages.clear()
+            self._paused_bytes = 0
+            self._pause_dropped_bytes = 0
 
     def snapshot(self):
         return {
@@ -400,6 +571,8 @@ class WebSocketPage(QWidget):
         self._messages.setColumnWidth(1, 52)
         self._messages.setColumnWidth(2, 65)
         self._messages.setColumnWidth(3, 60)
+        self._messages.setEditTriggers(
+            QAbstractItemView.EditTrigger.NoEditTriggers)
         root.addWidget(self._messages, 1)
 
         composer = _protocol_group("发送消息")
@@ -466,17 +639,25 @@ class WebSocketPage(QWidget):
             datetime.fromtimestamp(
                 float(message.get("timestamp") or time.time())).strftime(
                     "%H:%M:%S.%f")[:-3],
-            str(message.get("direction") or "rx").upper(),
+            {
+                "RX": "接收",
+                "TX": "发送",
+            }.get(
+                str(message.get("direction") or "rx").upper(),
+                str(message.get("direction") or "rx").upper(),
+            ),
             "Binary" if binary else "Text",
             str(len(payload)),
             preview,
         ]
         for column, value in enumerate(values):
             item = QTableWidgetItem(value)
+            item.setFlags(
+                item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             if column == 4:
-                item.setToolTip(str(
+                item.setToolTip(_wide_tooltip(str(
                     text if text is not None and not binary
-                    else payload.hex(" ").upper()))
+                    else payload.hex(" ").upper())))
             self._messages.setItem(row, column, item)
         self._messages.scrollToBottom()
 

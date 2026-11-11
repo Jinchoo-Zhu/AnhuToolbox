@@ -924,6 +924,7 @@ class PresetPanel(QWidget):
         self.table.setColumnWidth(4, 48)
         self.table.setColumnWidth(5, 52)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setAlternatingRowColors(False)
         self.table.setStyleSheet(
             "QTableWidget{selection-background-color:#D0E4FC;selection-color:#1A1A1A}"
         )

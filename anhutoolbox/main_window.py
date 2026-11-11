@@ -555,6 +555,24 @@ class MainWindow(QMainWindow):
             lambda: self._on_disconnect("websocket"))
         self._http_page.request_status.connect(self._log)
         self._http_page.save_requested.connect(self._save_current_project)
+        self._http_page.interfaces_changed.connect(
+            self.sidebar.set_http_interfaces)
+        self._http_page.folders_changed.connect(
+            self.sidebar.set_http_folders)
+        self._http_page.active_interface_changed.connect(
+            self.sidebar.select_http_interface)
+        self.sidebar.http_interface_selected.connect(
+            self._http_page.open_interface)
+        self.sidebar.http_new_requested.connect(
+            self._http_page.new_document)
+        self.sidebar.http_folder_selected.connect(
+            self._http_page.set_current_folder)
+        self.sidebar.http_new_folder_requested.connect(
+            self._http_page.create_folder)
+        self.sidebar.http_rename_requested.connect(
+            self._rename_http_item)
+        self.sidebar.http_move_requested.connect(
+            self._http_page.move_interface)
         for page in self._stream_pages.values():
             page.send_bar.send_data.connect(self._on_send_data)
             page.send_bar.repeat_tick.connect(self._on_repeat_tick)
@@ -566,6 +584,13 @@ class MainWindow(QMainWindow):
         self._sync_timer = QTimer()
         self._sync_timer.timeout.connect(self._sync_preset_text)
         self._sync_timer.start(500)
+
+    @Slot(str, str, str)
+    def _rename_http_item(self, kind, item_id, name):
+        if kind == "folder":
+            self._http_page.rename_folder(item_id, name)
+        elif kind == "interface":
+            self._http_page.rename_interface(item_id, name)
 
     def _sync_preset_text(self):
         self.preset_panel.set_current_text(
@@ -667,6 +692,7 @@ class MainWindow(QMainWindow):
                 "port": self.sidebar.sp_mqtt_port.value(),
                 "client_id": self.sidebar.le_mqtt_client_id.text(),
                 "username": self.sidebar.le_mqtt_user.text(),
+                "password": self.sidebar.le_mqtt_password.text(),
                 "keepalive": self.sidebar.sp_mqtt_keepalive.value(),
                 "protocol": self.sidebar.cb_mqtt_protocol.currentText(),
                 "clean_session": self.sidebar.chk_mqtt_clean.isChecked(),
@@ -823,7 +849,8 @@ class MainWindow(QMainWindow):
         self.sidebar.le_mqtt_client_id.setText(
             str(mq.get("client_id") or ""))
         self.sidebar.le_mqtt_user.setText(str(mq.get("username") or ""))
-        self.sidebar.le_mqtt_password.clear()
+        self.sidebar.le_mqtt_password.setText(
+            str(mq.get("password") or ""))
         self.sidebar.sp_mqtt_keepalive.setValue(
             _profile_int(mq.get("keepalive", 60), 60, 5, 3600))
         self.sidebar.cb_mqtt_protocol.setCurrentText(
@@ -888,6 +915,7 @@ class MainWindow(QMainWindow):
                 page.send_bar.chk_repeat.setChecked(False)
             page.send_bar.stop_repeat()
             page.log_panel.reset_runtime_state()
+        self._mqtt_page.reset_runtime_state()
         self.preset_panel.stop_loops()
         if self._active_worker:
             self._on_disconnect(self.sidebar.current_mode)
@@ -1152,10 +1180,15 @@ class MainWindow(QMainWindow):
         self.status_bar.showMessage("TCP客户端连接中 {}:{}...".format(host,port),3000)
 
     def _connect_mqtt(self):
-        host = self.sidebar.le_mqtt_host.text().strip()
-        if not host:
-            show_warning(self, "提示", "请输入 MQTT Broker 地址")
+        error, field = self._validate_mqtt_fields()
+        if error:
+            show_warning(self, "无法连接", error)
+            if field is not None:
+                field.setFocus()
+                if hasattr(field, "selectAll"):
+                    field.selectAll()
             return
+        host = self.sidebar.le_mqtt_host.text().strip()
         if self._mqtt_worker.isRunning():
             self._mqtt_worker.stop()
         config = {
@@ -1183,11 +1216,31 @@ class MainWindow(QMainWindow):
         self._mqtt_tx_count = 0
         self._lbl_dot.setStyleSheet("color:#AAA;font-size:12px")
         self._lbl_status_text.setText("连接中...")
-        self._lbl_local.setText("Broker={}:{}".format(
+        self._lbl_local.setText("服务端={}:{}".format(
             host, self.sidebar.sp_mqtt_port.value()))
         self._lbl_remote.setText("")
         self._lbl_stats.setText("Rx:0 | Tx:0")
-        self.status_bar.showMessage("正在连接 MQTT Broker...", 3000)
+        self.status_bar.showMessage("正在连接 MQTT 服务端...", 3000)
+
+    def _validate_mqtt_fields(self):
+        host = self.sidebar.le_mqtt_host.text().strip()
+        if not host:
+            return "请填写服务端IP。", self.sidebar.le_mqtt_host
+        if self.sidebar.sp_mqtt_port.value() <= 0:
+            return "请填写有效端口。", self.sidebar.sp_mqtt_port
+        username = self.sidebar.le_mqtt_user.text().strip()
+        password = self.sidebar.le_mqtt_password.text().strip()
+        if username and not password:
+            return (
+                "请填写密码。",
+                self.sidebar.le_mqtt_password,
+            )
+        if password and not username:
+            return (
+                "请填写用户名。",
+                self.sidebar.le_mqtt_user,
+            )
+        return None, None
 
     def _connect_websocket(self):
         url = self._websocket_page.url()
@@ -1279,7 +1332,7 @@ class MainWindow(QMainWindow):
     @Slot(dict)
     def _on_mqtt_publish(self, request):
         if self._active_worker is not self._mqtt_worker:
-            show_warning(self, "提示", "请先连接 MQTT Broker")
+            show_warning(self, "提示", "请先连接 MQTT 服务端")
             return
         if not self._mqtt_worker.publish(
                 request["topic"], request["payload"],
