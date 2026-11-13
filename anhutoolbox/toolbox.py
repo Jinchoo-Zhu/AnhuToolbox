@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """工具箱 -- 外置工具集 (图吧工具箱模式)。
 
-程序从 exe 根目录下的 tools/ 文件夹读取工具清单 tools.json,
-点击工具图标即可打开对应工具软件。tools 文件夹与 exe 一同分发
-(zip 打包), 不打包进 exe, 以保持 exe 体积小、启动快。
+程序可从 exe 根目录下的 tools/ 文件夹读取可选工具清单 tools.json,
+点击工具图标即可打开对应工具软件。官方工具由安装器按用户选择复制,
+不打包进 exe, 以保持 exe 体积小、启动快。
 
 工具登记方式: tools/tools.json 中的 tools 数组, 每条:
     name     工具名称
@@ -25,9 +25,32 @@ from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor, QFont
 from .dialogs import show_warning
 
 MANIFEST_NAME = "tools.json"
+INSTALL_STATE_NAME = "toolbox.install-state"
 # 用户自定义工具清单 (自定义库), 与官方 tools.json 同目录但互不干扰:
 # 官方条目 path 相对 tools\, 用户条目 path 是绝对路径。
 USER_MANIFEST_NAME = "tools.user.json"
+
+
+def install_state(tools_dir):
+    """返回安装器记录的工具箱状态：True、False 或 None(未记录)。"""
+    path = os.path.join(tools_dir, INSTALL_STATE_NAME)
+    try:
+        with open(path, "r", encoding="ascii") as stream:
+            value = stream.read().strip().lower()
+    except Exception:
+        return None
+    if value in ("1", "true", "enabled", "installed"):
+        return True
+    if value in ("0", "false", "disabled", "not-installed"):
+        return False
+    return None
+
+
+def is_toolbox_available(tools_dir):
+    state = install_state(tools_dir)
+    if state is False:
+        return False
+    return os.path.isfile(os.path.join(tools_dir, MANIFEST_NAME))
 
 
 def _manifest_version(path):
@@ -41,15 +64,17 @@ def _manifest_version(path):
 
 
 def ensure_tools(base_dir, resource_dir):
-    """准备 tools 目录 (外置优先)。
+    """准备外置 tools 目录，并兼容旧版内置资源升级。
 
-    外置模式: 直接使用 exe 根目录下的 tools/ 文件夹, 不复制任何内容。
-    若将来 exe 内置了 tools/ (spec 里重新加入), 首次运行或内置版本号
-    更高时会自动释放到 exe 根目录。返回 tools 目录路径。
+    安装器明确记录未安装工具箱时，不恢复任何官方资源；记录为已安装或
+    尚无记录时，若旧版 exe 仍内置 tools/，才按版本号释放到 exe 根目录。
+    当前构建不内置官方工具，官方内容由安装器可选复制。
     """
     tools_dir = os.path.join(base_dir, "tools")
     src = os.path.join(resource_dir, "tools")
     os.makedirs(tools_dir, exist_ok=True)
+    if install_state(tools_dir) is False:
+        return tools_dir
     if not os.path.isdir(src):
         return tools_dir
 

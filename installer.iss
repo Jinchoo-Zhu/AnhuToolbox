@@ -10,7 +10,8 @@
 ;     程序会自动把 data 和自定义库清单放到 %LOCALAPPDATA%\AnhuToolbox。
 ;   - 若用户在向导里改到受保护目录(如 Program Files), Inno Setup 会自动请求提权。
 ;   - data\ 里的配置只在首次安装时写入, 升级时不会覆盖用户已有配置;
-;     官方 tools 文件每次安装/升级都会更新, 用户自定义库清单 tools.user.json 始终保留。
+;     官方 tools 是可选的“安护工具箱”组件, 由安装任务决定是否复制;
+;     用户自定义库清单 tools.user.json 始终保留。
 
 #define MyAppName "Anhu百宝箱"
 #define MyAppVersion "1.0.0"
@@ -36,22 +37,24 @@ Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
 ArchitecturesInstallIn64BitMode=x64compatible
+UsePreviousTasks=yes
 
 [Languages]
 Name: "chinesesimplified"; MessagesFile: "ChineseSimplified.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: checkedonce
+Name: "installtoolbox"; Description: "安装安护工具箱（可选第三方工具）"; GroupDescription: "可选组件"
 
 [Files]
 Source: "dist\Anhu百宝箱\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "dist\Anhu百宝箱\lib\*"; DestDir: "{app}\lib"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; tools.json 是工具清单, 每次安装/升级都要用新版本覆盖,
 ; 否则升级时旧清单不更新, 新增的工具(如 Geek/TCPView)不会出现在工具箱里
-Source: "tools\tools.json"; DestDir: "{app}\tools"; Flags: ignoreversion
+Source: "tools\tools.json"; DestDir: "{app}\tools"; Tasks: installtoolbox; Flags: ignoreversion
 ; 官方便携工具及资源在升级时同步更新，避免 tools.json 已指向新文件但磁盘上
 ; 仍是旧版本。用户自己维护的 tools.user.json 单独排除。
-Source: "tools\*"; DestDir: "{app}\tools"; Excludes: "tools.json,tools.user.json"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "tools\*"; DestDir: "{app}\tools"; Excludes: "tools.json,tools.user.json,toolbox.install-state"; Tasks: installtoolbox; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"
@@ -61,6 +64,38 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilen
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#MyAppName}}"; Flags: nowait postinstall skipifsilent
 
 [Code]
+procedure RemoveOfficialToolboxFiles();
+var
+  ToolsDir: String;
+begin
+  ToolsDir := ExpandConstant('{app}\tools');
+  DeleteFile(AddBackslash(ToolsDir) + 'tools.json');
+  DeleteFile(AddBackslash(ToolsDir) + 'tools.gresource');
+  DeleteFile(AddBackslash(ToolsDir) + 'README.md');
+  DelTree(AddBackslash(ToolsDir) + '综合工具', True, True, True);
+  DelTree(AddBackslash(ToolsDir) + '硬盘工具', True, True, True);
+  DelTree(AddBackslash(ToolsDir) + '读写器工具', True, True, True);
+  DelTree(AddBackslash(ToolsDir) + '海康工具', True, True, True);
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  StateFile: String;
+begin
+  if CurStep = ssPostInstall then
+  begin
+    ForceDirectories(ExpandConstant('{app}\tools'));
+    StateFile := ExpandConstant('{app}\tools\toolbox.install-state');
+    if WizardIsTaskSelected('installtoolbox') then
+      SaveStringToFile(StateFile, '1', False)
+    else
+    begin
+      RemoveOfficialToolboxFiles();
+      SaveStringToFile(StateFile, '0', False);
+    end;
+  end;
+end;
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep = usUninstall then

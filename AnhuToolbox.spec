@@ -30,7 +30,9 @@ def _verify_external_tools():
     return os.path.dirname(tools_root)
 
 
-TOOLS_ROOT = os.path.join(_verify_external_tools(), "tools")
+# 构建前仍校验第三方资源完整性，但不再把官方工具打进 exe。
+# installer.iss 会根据任务选择把它们复制到安装目录的 tools\。
+_verify_external_tools()
 VERSION_FILE = os.path.join(
     os.path.dirname(os.path.abspath(SPEC)), "version_info.txt")
 
@@ -68,9 +70,7 @@ a = Analysis(
            ('anhutoolbox/assets/dialog_success.png', 'anhutoolbox/assets'),
            ('anhutoolbox/assets/dialog_question.png', 'anhutoolbox/assets'),
            # Qt 中文翻译: 让「新建项目」这类内置对话框的按钮显示 确定/取消
-           ('anhutoolbox/assets/qtbase_zh_CN.qm', 'anhutoolbox/assets'),
-           # 第三方工具: 安装包会使用这些外置资源，防止未打包工具附件
-           (TOOLS_ROOT, 'tools')],
+           ('anhutoolbox/assets/qtbase_zh_CN.qm', 'anhutoolbox/assets')],
     hiddenimports=['h2', 'hpack', 'hyperframe'],
     hookspath=[],
     hooksconfig={},

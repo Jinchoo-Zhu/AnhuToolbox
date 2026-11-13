@@ -32,6 +32,8 @@ from .dialogs import (
 
 
 # 工具库分组: (组名, [(key, 显示名), ...])，key 对应下方工具页字典
+LIBRARY_STANDALONE = [("hardware", "硬件信息")]
+
 LIBRARY_GROUPS = [
     ("转换与计算", [
         ("timestamp", "时间戳转换"),
@@ -55,7 +57,7 @@ LIBRARY_GROUPS = [
 ]
 
 # 工具库默认展示顺序 (与分组一致)
-LIBRARY_ORDER = ["timestamp", "base", "encode", "checksum", "amount",
+LIBRARY_ORDER = ["hardware", "timestamp", "base", "encode", "checksum", "amount",
                  "json", "regex", "diff", "sort", "qr", "network"]
 
 COMM_MODE_INDEX = {
@@ -321,12 +323,13 @@ class MainWindow(QMainWindow):
         self.status_bar.showMessage("就绪")
 
     def _build_extra_tabs(self):
-        """延迟创建工具箱/工具库/自定义库三个主 tab (避免首屏被阻塞)"""
+        """延迟创建工具库、可选工具箱和自定义库 (避免首屏被阻塞)"""
         if self._extra_tabs_built:
             return
         self._extra_tabs_built = True
         # --- 工具库 tab: 左侧分组列表在 sidebar, 右侧是工具页堆叠 ---
         self._library_pages = {
+            "hardware": HardwareInfoPage(),
             "timestamp": TimestampTool(),
             "base": BaseTool(),
             "encode": EncodeTool(),
@@ -346,29 +349,32 @@ class MainWindow(QMainWindow):
         # 通信调试在 _build_ui 里已占据 0, 这里追加即得 1
         self._tab_widget.addTab(self._library_stack, "工具库")
 
-        # --- 工具箱 tab: 左侧分类列表在 sidebar, 右侧是内容堆叠 ---
+        # --- 可选工具箱: 只有安装器勾选且工具清单存在时才创建 ---
         tools_dir = os.path.join(self._base_dir, "tools")
-        self._toolbox_tools = toolbox.load_manifest(tools_dir)
-        cats = toolbox.load_categories(tools_dir)
-        if cats is None:
-            cats = []
-        for t in self._toolbox_tools:
-            c = toolbox._norm_category(t)
-            if c not in cats:
-                cats.append(c)
+        self._toolbox_available = toolbox.is_toolbox_available(tools_dir)
+        self._toolbox_tools = []
+        cats = []
+        if self._toolbox_available:
+            self._toolbox_tools = toolbox.load_manifest(tools_dir)
+            cats = toolbox.load_categories(tools_dir)
+            if cats is None:
+                cats = []
+            for t in self._toolbox_tools:
+                c = toolbox._norm_category(t)
+                if c not in cats:
+                    cats.append(c)
 
-        self._toolbox_categories = ["硬件信息"] + cats
+        self._toolbox_categories = list(cats)
         self._toolbox_pages = {}
-        self._toolbox_stack = QStackedWidget()
-        hw = HardwareInfoPage()
-        self._toolbox_stack.addWidget(hw)
-        self._toolbox_pages["硬件信息"] = hw
-        for c in cats:
-            page = toolbox.build_category_page(c, self._toolbox_tools, tools_dir)
-            self._toolbox_stack.addWidget(page)
-            self._toolbox_pages[c] = page
-        # 追加在工具库之后, 即 工具库(1) / 工具箱(2)
-        self._tab_widget.addTab(self._toolbox_stack, "工具箱")
+        self._toolbox_stack = None
+        if self._toolbox_available:
+            self._toolbox_stack = QStackedWidget()
+            for c in cats:
+                page = toolbox.build_category_page(
+                    c, self._toolbox_tools, tools_dir)
+                self._toolbox_stack.addWidget(page)
+                self._toolbox_pages[c] = page
+            self._tab_widget.addTab(self._toolbox_stack, "工具箱")
 
         # --- 自定义库 tab: 用户自己添加的本地工具 (清单 tools\tools.user.json) ---
         manifest_dir = tools_dir
@@ -387,7 +393,8 @@ class MainWindow(QMainWindow):
         self._tab_widget.addTab(self._custom_library, "自定义库")
 
         # 填充左侧导航并连接信号
-        self.sidebar.set_library_groups(LIBRARY_GROUPS)
+        self.sidebar.set_library_groups(
+            LIBRARY_GROUPS, LIBRARY_STANDALONE)
         self.sidebar.set_toolbox_categories(self._toolbox_categories)
         self.sidebar.library_item_clicked.connect(self._on_library_item)
         self.sidebar.toolbox_item_clicked.connect(self._on_toolbox_item)
@@ -1833,8 +1840,7 @@ class MainWindow(QMainWindow):
             timestamp = self._library_pages.get("timestamp")
             if timestamp is not None:
                 timestamp.stop_timer()
-        if hasattr(self, "_toolbox_pages"):
-            hardware = self._toolbox_pages.get("硬件信息")
+            hardware = self._library_pages.get("hardware")
             if hardware is not None:
                 hardware.cleanup()
         self._http_page.cleanup()

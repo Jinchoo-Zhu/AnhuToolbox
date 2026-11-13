@@ -640,26 +640,55 @@ class Sidebar(QWidget):
         self._library_labels = {}        # {key: 显示名}
         self._library_group_labels = {}  # {组名: QLabel}
         self._library_tool_buttons = {}  # {key: QPushButton}
+        self._library_standalone_buttons = {}
+        self._library_standalone_separator = None
         self._library_group = QButtonGroup(self)
         self._library_group.setExclusive(True)
         return w
 
-    def set_library_groups(self, groups):
+    def set_library_groups(self, groups, standalone_items=None):
         """填充工具库分组列表。
 
         groups: [(组名, [(key, 显示名), ...]), ...]
+        standalone_items: [(key, 显示名), ...]，显示在所有分组之前
         """
+        standalone_items = list(standalone_items or [])
         # 清空旧项
         for btn in list(self._library_tool_buttons.values()):
             btn.deleteLater()
+        for btn in list(self._library_standalone_buttons.values()):
+            btn.deleteLater()
         for lbl in list(self._library_group_labels.values()):
             lbl.deleteLater()
+        if self._library_standalone_separator is not None:
+            self._library_standalone_separator.deleteLater()
+            self._library_standalone_separator = None
         self._library_tool_buttons.clear()
+        self._library_standalone_buttons.clear()
         self._library_group_labels.clear()
         self._library_groups_map.clear()
         self._library_labels.clear()
 
         last = self._library_list_lo.count() - 1  # 末尾是 stretch
+        for key, label in standalone_items:
+            btn = self._make_library_btn(label)
+            btn.clicked.connect(
+                lambda checked=False, k=key:
+                self.library_item_clicked.emit(k))
+            self._library_group.addButton(btn)
+            self._library_list_lo.insertWidget(last, btn)
+            last += 1
+            self._library_tool_buttons[key] = btn
+            self._library_standalone_buttons[key] = btn
+            self._library_labels[key] = label
+        if standalone_items and groups:
+            separator = QFrame()
+            separator.setObjectName("separator")
+            separator.setFixedHeight(1)
+            self._library_list_lo.insertWidget(last, separator)
+            self._library_standalone_separator = separator
+            last += 1
+
         for gname, items in groups:
             head = QLabel(gname)
             head.setStyleSheet(
@@ -685,8 +714,13 @@ class Sidebar(QWidget):
             self._library_groups_map[gname] = keys
 
         # 默认选中第一个工具
-        if groups and groups[0][1]:
-            first = self._library_tool_buttons.get(groups[0][1][0][0])
+        first_key = None
+        if standalone_items:
+            first_key = standalone_items[0][0]
+        elif groups and groups[0][1]:
+            first_key = groups[0][1][0][0]
+        if first_key is not None:
+            first = self._library_tool_buttons.get(first_key)
             if first is not None:
                 first.setChecked(True)
 
@@ -705,6 +739,15 @@ class Sidebar(QWidget):
 
     def _on_library_search(self, text):
         text = (text or "").strip().lower()
+        standalone_visible = False
+        for key, btn in self._library_standalone_buttons.items():
+            hit = (text == "") or (
+                text in self._library_labels[key].lower())
+            btn.setVisible(hit)
+            standalone_visible = standalone_visible or hit
+        if self._library_standalone_separator is not None:
+            self._library_standalone_separator.setVisible(
+                standalone_visible)
         for gname, keys in self._library_groups_map.items():
             any_visible = False
             for k in keys:

@@ -122,8 +122,8 @@ def main():
     base_dir = _get_base_dir()
     resource_dir = _get_resource_dir()
 
-    # 外置 tools 目录: 直接使用 exe 根目录下的 tools/ 文件夹
-    # (exe 未内置 tools 时 ensure_tools 不复制, 仅返回该目录)
+    # 官方 tools 由安装器按用户选择复制；这里只负责创建外置目录，
+    # 并兼容旧版仍内置 tools 资源的升级路径。
     toolbox.ensure_tools(base_dir, resource_dir)
 
     # 图标从资源目录加载 (只读)

@@ -21,15 +21,40 @@ _VARIABLE = re.compile(r"\{\{[^{}\r\n]+\}\}")
 class EnvironmentVariableHighlighter(QSyntaxHighlighter):
     """将请求文本中的 ``{{变量名}}`` 绘制为独立颜色。"""
 
-    def __init__(self, document, color=COLOR_VARIABLE):
+    def __init__(self, document, variable_provider, color=COLOR_VARIABLE):
         super().__init__(document)
-        self._format = QTextCharFormat()
-        self._format.setForeground(QColor(color))
+        self._variable_provider = variable_provider
+        self._normal_format = QTextCharFormat()
+        self._normal_format.setForeground(QColor(color))
+        self._missing_format = QTextCharFormat()
+        self._missing_format.setForeground(QColor("#C42B1C"))
+        self._missing_format.setBackground(QColor("#FDE7E9"))
+        self._missing_format.setFontStrikeOut(True)
+        self._known_variables = set()
+        self.refresh_known_variables()
+
+    def refresh_known_variables(self):
+        self._known_variables = {
+            str(name).strip()
+            for name in self._variable_provider() or []
+            if str(name).strip()
+        }
+        self.rehighlight()
+
+    @property
+    def missing_format(self):
+        return self._missing_format
 
     def highlightBlock(self, text):
         for match in _VARIABLE.finditer(text):
+            name = match.group(0)[2:-2].strip()
+            char_format = (
+                self._normal_format
+                if name in self._known_variables
+                else self._missing_format
+            )
             self.setFormat(
-                match.start(), match.end() - match.start(), self._format)
+                match.start(), match.end() - match.start(), char_format)
 
 
 class EnvironmentUrlEditor(QPlainTextEdit):
@@ -51,7 +76,8 @@ class EnvironmentUrlEditor(QPlainTextEdit):
         self.setFont(QFont(FONT_UI, 9))
         self.document().setDocumentMargin(0)
         self._center_document_vertically()
-        self._highlighter = EnvironmentVariableHighlighter(self.document())
+        self._highlighter = EnvironmentVariableHighlighter(
+            self.document(), self._variable_provider)
 
         self._completion_model = QStringListModel(self)
         self._completer = QCompleter(self._completion_model, self)
@@ -80,6 +106,21 @@ class EnvironmentUrlEditor(QPlainTextEdit):
             % (COLOR_PRIMARY_SOFT, COLOR_TEXT)
         )
         self.textChanged.connect(self._update_completion_popup)
+
+    def refresh_variable_highlight(self):
+        self._highlighter.refresh_known_variables()
+
+    def missing_variables(self):
+        names = {
+            str(name).strip()
+            for name in self._variable_provider() or []
+            if str(name).strip()
+        }
+        return {
+            match.group(0)[2:-2].strip()
+            for match in _VARIABLE.finditer(self.toPlainText())
+            if match.group(0)[2:-2].strip() not in names
+        }
 
     def text(self):
         return self.toPlainText()

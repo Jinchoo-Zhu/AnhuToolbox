@@ -1531,6 +1531,38 @@ class ProtocolPageTests(unittest.TestCase):
         close_page(restored)
         close_page(page)
 
+    def test_http_url_marks_missing_environment_variables(self):
+        page = HTTPPage()
+        page._environments = [{
+            "id": "vars",
+            "name": "变量环境",
+            "variables": [{
+                "name": "host",
+                "value": "api.example.com",
+                "description": "",
+            }],
+        }]
+        page._active_environment_id = "vars"
+        page._refresh_environment_button()
+        page._url.setText("{{host}}/items/{{missing}}")
+        self.assertEqual(
+            page._url.missing_variables(), {"missing"})
+        missing_format = page._url._highlighter.missing_format
+        self.assertTrue(missing_format.fontStrikeOut())
+        self.assertEqual(
+            missing_format.foreground().color().name(), "#c42b1c")
+        self.assertEqual(
+            missing_format.background().color().name(), "#fde7e9")
+
+        page._environments[0]["variables"].append({
+            "name": "missing",
+            "value": "ready",
+            "description": "",
+        })
+        page._refresh_environment_button()
+        self.assertEqual(page._url.missing_variables(), set())
+        close_page(page)
+
     def test_http_url_environment_completion_and_highlight(self):
         page = HTTPPage()
         page._environments = [{

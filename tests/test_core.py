@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """核心回归测试：不访问真实串口或用户数据。"""
 
+import json
 import os
 import socket
 import tempfile
@@ -20,7 +21,7 @@ from PySide6.QtWidgets import QApplication
 
 from anhutoolbox.main_window import MainWindow, _profile_bool, _profile_int
 from anhutoolbox.app_paths import choose_data_root
-from anhutoolbox import dialogs
+from anhutoolbox import dialogs, toolbox
 from anhutoolbox.dialogs import AnhuInputDialog
 from anhutoolbox.panels import LogPanel, PresetPanel, SendBar, parse_hex_bytes
 from anhutoolbox.log_writer import AsyncLogWriter
@@ -476,6 +477,145 @@ class StreamWorkspaceTests(unittest.TestCase):
                     pages["tcpclient"].send_bar.text.toPlainText(), "new client")
             finally:
                 close_window(window)
+
+
+class OptionalToolboxTests(unittest.TestCase):
+    @staticmethod
+    def _prepare_tools(temp, state=None):
+        tools_dir = Path(temp) / "tools"
+        tools_dir.mkdir()
+        (tools_dir / "tools.json").write_text(
+            json.dumps({
+                "version": 1,
+                "categories": ["测试工具"],
+                "tools": [],
+            }, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        if state is not None:
+            (tools_dir / "toolbox.install-state").write_text(
+                state, encoding="ascii")
+        return tools_dir
+
+    def test_install_state_prefers_explicit_installer_choice(self):
+        with tempfile.TemporaryDirectory() as temp:
+            tools_dir = self._prepare_tools(temp)
+            self.assertIsNone(toolbox.install_state(str(tools_dir)))
+            self.assertTrue(toolbox.is_toolbox_available(str(tools_dir)))
+
+            state_file = tools_dir / "toolbox.install-state"
+            state_file.write_text("1\n", encoding="ascii")
+            self.assertTrue(toolbox.install_state(str(tools_dir)))
+
+            state_file.write_text("0\n", encoding="ascii")
+            self.assertFalse(toolbox.install_state(str(tools_dir)))
+            # 即使升级后残留了 tools.json，也必须遵从安装器的“未安装”记录。
+            self.assertFalse(toolbox.is_toolbox_available(str(tools_dir)))
+
+    def test_ensure_tools_does_not_restore_uninstalled_toolbox(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base_dir = Path(temp) / "app"
+            resource_dir = Path(temp) / "bundle"
+            tools_dir = base_dir / "tools"
+            bundled_tools = resource_dir / "tools"
+            tools_dir.mkdir(parents=True)
+            bundled_tools.mkdir(parents=True)
+            (tools_dir / "toolbox.install-state").write_text(
+                "0", encoding="ascii")
+            (bundled_tools / "tools.json").write_text(
+                '{"version": 2, "tools": []}', encoding="utf-8")
+
+            toolbox.ensure_tools(str(base_dir), str(resource_dir))
+
+            self.assertFalse((tools_dir / "tools.json").exists())
+
+    def test_uninstalled_toolbox_tab_is_hidden_and_hardware_cleanup_runs(self):
+        with tempfile.TemporaryDirectory() as temp:
+            self._prepare_tools(temp, "0")
+            window = MainWindow(temp)
+            try:
+                window._extra_tabs_timer.stop()
+                window._build_extra_tabs()
+                tab_texts = [
+                    window._tab_widget.tabText(index)
+                    for index in range(window._tab_widget.count())
+                ]
+                self.assertEqual(
+                    tab_texts, ["通信调试", "工具库", "自定义库"])
+                self.assertIsNone(window._toolbox_stack)
+                self.assertEqual(window._toolbox_pages, {})
+                self.assertEqual(window._toolbox_categories, [])
+                self.assertNotIn("工具箱", window.sidebar._toolbox_buttons)
+
+                sidebar = window.sidebar
+                hardware = sidebar._library_standalone_buttons["hardware"]
+                first_group = next(
+                    iter(sidebar._library_group_labels.values()))
+                layout = sidebar._library_list_lo
+                self.assertEqual(hardware.text(), "硬件信息")
+                self.assertLess(
+                    layout.indexOf(hardware),
+                    layout.indexOf(first_group),
+                )
+                self.assertIs(
+                    window._library_stack.currentWidget(),
+                    window._library_pages["hardware"],
+                )
+
+                with mock.patch.object(
+                        window._library_pages["hardware"],
+                        "cleanup") as cleanup:
+                    window.close()
+                cleanup.assert_called_once_with()
+                APP.processEvents()
+            finally:
+                window.deleteLater()
+                APP.processEvents()
+
+    def test_installed_toolbox_tab_is_available(self):
+        with tempfile.TemporaryDirectory() as temp:
+            self._prepare_tools(temp, "1")
+            window = MainWindow(temp)
+            try:
+                window._extra_tabs_timer.stop()
+                window._build_extra_tabs()
+                tab_texts = [
+                    window._tab_widget.tabText(index)
+                    for index in range(window._tab_widget.count())
+                ]
+                self.assertEqual(
+                    tab_texts,
+                    ["通信调试", "工具库", "工具箱", "自定义库"],
+                )
+                self.assertIsNotNone(window._toolbox_stack)
+                self.assertEqual(
+                    window._toolbox_categories, ["测试工具"])
+                self.assertIn(
+                    "测试工具", window.sidebar._toolbox_buttons)
+            finally:
+                close_window(window)
+
+    def test_build_scripts_keep_toolbox_optional(self):
+        installer = (ROOT / "installer.iss").read_text(
+            encoding="utf-8")
+        spec = (ROOT / "AnhuToolbox.spec").read_text(encoding="utf-8")
+        self.assertIn(
+            'Name: "installtoolbox"; '
+            'Description: "安装安护工具箱（可选第三方工具）"',
+            installer,
+        )
+        self.assertGreaterEqual(
+            installer.count("Tasks: installtoolbox"), 2)
+        self.assertIn("UsePreviousTasks=yes", installer)
+        task_line = next(
+            line for line in installer.splitlines()
+            if line.startswith('Name: "installtoolbox"'))
+        self.assertNotIn("checkedonce", task_line)
+        self.assertIn("RemoveOfficialToolboxFiles", installer)
+        self.assertIn("toolbox.install-state", installer)
+        self.assertIn("tools.user.json", installer)
+        self.assertIn("_verify_external_tools()", spec)
+        self.assertNotIn("(TOOLS_ROOT, 'tools')", spec)
 
 
 class PersistenceTests(unittest.TestCase):

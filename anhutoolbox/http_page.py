@@ -1386,6 +1386,8 @@ class HTTPPage(QWidget):
         self._btn_environment.setText(shown_name)
         self._btn_environment.setToolTip(
             "当前环境：{}\n点击切换或管理本地环境".format(name))
+        if hasattr(self, "_url"):
+            self._url.refresh_variable_highlight()
 
     def _update_responsive_layout(self):
         compact = self.width() < 1060
