@@ -374,25 +374,40 @@ class HTTPRequestWorker:
         req = self._request
         started = time.perf_counter()
         try:
-            client = httpx.Client(
-                timeout=float(req.get("timeout", 30)),
-                follow_redirects=bool(req.get("follow_redirects", True)),
-                verify=(
-                    _DEFAULT_VERIFY_CONTEXT
-                    if req.get("verify_tls", True) else False),
-            )
-            self._client = client
-            try:
-                response = client.request(
-                    str(req.get("method") or "GET").upper(),
-                    str(req.get("url") or ""),
-                    params=req.get("params") or None,
-                    headers=req.get("headers") or None,
-                    content=req.get("content"),
+            version = str(
+                req.get("http_version") or "http/1.1").lower()
+            use_http2 = version in ("auto", "http/2")
+            auto_version = version == "auto"
+
+            def send_request(http2_enabled):
+                client = httpx.Client(
+                    timeout=float(req.get("timeout", 30)),
+                    follow_redirects=bool(
+                        req.get("follow_redirects", True)),
+                    verify=(
+                        _DEFAULT_VERIFY_CONTEXT
+                        if req.get("verify_tls", True) else False),
+                    http2=http2_enabled,
                 )
-            finally:
-                self._client = None
-                client.close()
+                self._client = client
+                try:
+                    return client.request(
+                        str(req.get("method") or "GET").upper(),
+                        str(req.get("url") or ""),
+                        params=req.get("params") or None,
+                        headers=req.get("headers") or None,
+                        content=req.get("content"),
+                    )
+                finally:
+                    self._client = None
+                    client.close()
+
+            try:
+                response = send_request(use_http2)
+            except Exception:
+                if self._stopping or not (auto_version and use_http2):
+                    raise
+                response = send_request(False)
             elapsed_ms = (time.perf_counter() - started) * 1000.0
             headers = [
                 {"name": str(name), "value": str(value)}

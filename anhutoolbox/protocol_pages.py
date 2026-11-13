@@ -4,26 +4,46 @@
 import base64
 import html
 import json
+import os
 import textwrap
 import time
 import urllib.parse
 from datetime import datetime
 
-from PySide6.QtCore import Qt, Signal, Slot
-from PySide6.QtGui import QFont
+from PySide6.QtCore import QSize, Qt, QTimer, Signal, Slot
+from PySide6.QtGui import QFont, QIcon
 from PySide6.QtWidgets import (
-    QApplication, QCheckBox, QComboBox, QFileDialog, QGroupBox,
-    QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit, QPushButton, QSpinBox, QSplitter,
+    QCheckBox, QComboBox, QFileDialog, QGroupBox,
+    QHBoxLayout, QHeaderView, QLabel, QLineEdit, QPlainTextEdit, QPushButton,
+    QSpinBox, QSplitter,
     QAbstractItemView, QTableWidget, QTableWidgetItem, QTabWidget,
     QVBoxLayout, QWidget, QSizePolicy,
 )
 
 from .dialogs import show_error, show_information, show_warning
-from .panels import parse_hex_bytes
+from .log_writer import (
+    AUTO_CLEAR_BYTES, AUTO_CLEAR_RECORDS, AsyncLogWriter,
+)
+from .panels import _save_rule_label, parse_hex_bytes
 from .protocol_workers import HTTPRequestWorker
+from .styles import _find_assets_dir
 from .table_actions import (
     apply_data_table_style, checked_row_indexes, install_select_all_header,
 )
+from .ui_tokens import (
+    FONT_UI, HTTP_TABLE_STYLE, PROTOCOL_WORKSPACE_STYLE, TABLE_ROW_HEIGHT,
+)
+
+
+def _protocol_icon(filename):
+    return QIcon(os.path.join(_find_assets_dir(), filename))
+
+
+def _set_button_icon(button, filename, size=16):
+    icon = _protocol_icon(filename)
+    if not icon.isNull():
+        button.setIcon(icon)
+        button.setIconSize(QSize(size, size))
 
 
 def _wide_tooltip(value):
@@ -64,40 +84,42 @@ def _new_table(headers):
     if has_checkbox_column:
         install_select_all_header(table)
     apply_data_table_style(table)
+    table.setFont(QFont(FONT_UI, 9))
+    table.horizontalHeader().setFont(
+        QFont(FONT_UI, 9, QFont.Weight.DemiBold))
+    table.setStyleSheet(HTTP_TABLE_STYLE)
+    table.verticalHeader().setDefaultSectionSize(TABLE_ROW_HEIGHT)
+    table.verticalHeader().setMinimumSectionSize(TABLE_ROW_HEIGHT)
+    table.horizontalHeader().setMinimumHeight(TABLE_ROW_HEIGHT)
     return table
 
 
 def _protocol_group(title):
     group = QGroupBox(title)
-    group.setStyleSheet(
-        "QGroupBox{margin-top:24px;padding:12px 8px 8px 8px;"
-        "border:1px solid #D0D0D0;border-radius:6px;background:#FAFAFA;"
-        "font-weight:600;color:#1A1A1A;}"
-        "QGroupBox::title{subcontrol-origin:margin;left:10px;"
-        "top:4px;padding:4px 6px;color:#1A1A1A;font-size:13px;}"
-    )
+    group.setObjectName("protocolGroupCard")
     return group
 
 
-def _compact_protocol_panel(title):
+def _compact_protocol_panel(title, description=""):
     panel = QWidget()
-    panel.setObjectName("compactProtocolPanel")
+    panel.setObjectName("protocolCard")
     panel.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-    panel.setStyleSheet(
-        "QWidget#compactProtocolPanel{background:#FAFAFA;"
-        "border:1px solid #D0D0D0;border-radius:6px;}")
     layout = QVBoxLayout(panel)
-    layout.setContentsMargins(8, 6, 8, 8)
-    layout.setSpacing(4)
+    layout.setContentsMargins(10, 8, 10, 10)
+    layout.setSpacing(8)
     header_widget = QWidget()
     header_widget.setFixedHeight(20)
     header = QHBoxLayout(header_widget)
     header.setContentsMargins(0, 0, 0, 0)
     label = QLabel(title)
-    label.setFixedHeight(20)
-    label.setStyleSheet(
-        "color:#1A1A1A;font-size:13px;font-weight:600;padding-left:2px;")
+    label.setObjectName("protocolSectionTitle")
     header.addWidget(label)
+    if description:
+        header.addSpacing(8)
+        description_label = QLabel(description)
+        description_label.setObjectName("protocolHint")
+        description_label.setWordWrap(False)
+        header.addWidget(description_label)
     header.addStretch()
     layout.addWidget(header_widget)
     return panel, layout, label
@@ -155,39 +177,49 @@ class MQTTPage(QWidget):
         self._paused_messages = []
         self._paused_bytes = 0
         self._pause_dropped_bytes = 0
+        self._save_writer = None
+        self._log_directory = os.getcwd()
+        self._save_prefix = "mqtt"
+        self._display_records = 0
+        self._display_bytes = 0
         self._build()
 
     def _build(self):
+        self.setObjectName("mqttPage")
+        self.setStyleSheet(PROTOCOL_WORKSPACE_STYLE)
         root = QVBoxLayout(self)
-        root.setContentsMargins(12, 10, 12, 10)
-        root.setSpacing(8)
+        root.setContentsMargins(14, 12, 14, 12)
+        root.setSpacing(10)
 
         messages = QWidget()
-        messages.setObjectName("mqttMessages")
+        messages.setObjectName("protocolCard")
         messages.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        messages.setStyleSheet(
-            "QWidget#mqttMessages{background:#FAFAFA;"
-            "border:1px solid #D0D0D0;border-radius:6px;}")
         self._messages_container = messages
         ml = QVBoxLayout(messages)
-        ml.setContentsMargins(8, 6, 8, 8)
-        ml.setSpacing(4)
+        ml.setContentsMargins(10, 8, 10, 10)
+        ml.setSpacing(8)
         message_title = QHBoxLayout()
-        title = QLabel("消息")
-        title.setStyleSheet(
-            "color:#1A1A1A;font-size:13px;font-weight:600;padding-left:2px;")
-        message_title.addWidget(title)
-        message_title.addStretch()
+        self._messages_title_label = QLabel("消息")
+        self._messages_title_label.setObjectName("protocolSectionTitle")
+        message_title.addWidget(self._messages_title_label)
+        message_title.addSpacing(12)
         self.chk_pause = QCheckBox("页面暂停")
         self.chk_pause.setToolTip(
             "暂停时不刷新消息列表，继续接收的消息会在恢复后补显示")
         self.chk_pause.toggled.connect(self._on_messages_pause)
         message_title.addWidget(self.chk_pause)
+        self.chk_save_file = QCheckBox("保存到文件")
+        self.chk_save_file.setToolTip(
+            "保存期间持续写盘；页面达到 10000 条或 300 MB 后自动清空")
+        self.chk_save_file.toggled.connect(
+            self._on_save_file_toggle)
+        message_title.addWidget(self.chk_save_file)
+        self.lbl_save_rule = _save_rule_label()
+        message_title.addWidget(self.lbl_save_rule)
+        message_title.addStretch()
         self._btn_clear = QPushButton("清空消息")
-        self._btn_clear.setFixedHeight(26)
-        self._btn_clear.setStyleSheet(
-            "QPushButton{padding:2px 10px;font-size:12px;"
-            "border-radius:4px;min-height:20px;max-height:24px;}")
+        _set_button_icon(self._btn_clear, "http_delete.svg")
+        self._btn_clear.setFixedHeight(30)
         self._btn_clear.clicked.connect(self.clear_messages)
         message_title.addWidget(self._btn_clear)
         ml.addLayout(message_title)
@@ -210,35 +242,55 @@ class MQTTPage(QWidget):
         messages.setMinimumHeight(180)
 
         subscriptions, sl, self._subscriptions_title_label = (
-            _compact_protocol_panel("订阅"))
+            _compact_protocol_panel(
+                "订阅", "勾选即订阅，取消勾选即退订"))
         self._subscriptions_panel = subscriptions
         subscription_row = QWidget()
         subscription_row.setFixedHeight(42)
         self._subscription_input_row = subscription_row
         row = QHBoxLayout(subscription_row)
         row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(8)
         self._sub_topic = QLineEdit()
         self._sub_topic.setPlaceholderText("Topic，例如 device/+/status")
+        self._sub_topic.setFixedHeight(32)
         row.addWidget(self._sub_topic, 1)
         self._sub_qos = QComboBox()
         self._sub_qos.addItems(["QoS 0", "QoS 1", "QoS 2"])
+        self._sub_qos.setFixedHeight(32)
         row.addWidget(self._sub_qos)
         self._btn_subscribe = QPushButton("添加订阅")
         self._btn_subscribe.setFixedHeight(34)
+        _set_button_icon(self._btn_subscribe, "http_add.svg")
         self._btn_subscribe.clicked.connect(self._add_subscription)
         row.addWidget(self._btn_subscribe)
         self._btn_unsubscribe = QPushButton("删除选中")
         self._btn_unsubscribe.setFixedHeight(34)
+        _set_button_icon(self._btn_unsubscribe, "http_delete.svg")
         self._btn_unsubscribe.clicked.connect(self._remove_subscription)
         row.addWidget(self._btn_unsubscribe)
         sl.addWidget(subscription_row)
         self._subscriptions = _new_table(["启用", "Topic", "QoS"])
         self._subscriptions.setColumnWidth(0, 48)
-        self._subscriptions.setColumnWidth(1, 360)
         self._subscriptions.setColumnWidth(2, 60)
+        self._subscriptions.horizontalHeader().setStretchLastSection(False)
+        self._subscriptions.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.ResizeMode.Fixed)
+        self._subscriptions.horizontalHeader().setSectionResizeMode(
+            1, QHeaderView.ResizeMode.Stretch)
+        self._subscriptions.horizontalHeader().setSectionResizeMode(
+            2, QHeaderView.ResizeMode.Fixed)
+        self._subscriptions.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._subscriptions.setSelectionMode(
             QAbstractItemView.SelectionMode.NoSelection)
         self._subscriptions.setAlternatingRowColors(False)
+        self._subscription_emit_timer = QTimer(self)
+        self._subscription_emit_timer.setSingleShot(True)
+        self._subscription_emit_timer.timeout.connect(
+            self._emit_subscription_change)
+        self._subscriptions.itemChanged.connect(
+            self._on_subscription_item_changed)
         sl.addWidget(self._subscriptions)
         sl.setStretch(0, 0)
         sl.setStretch(1, 0)
@@ -253,9 +305,11 @@ class MQTTPage(QWidget):
         self._publish_input_row = publish_row
         prow = QHBoxLayout(publish_row)
         prow.setContentsMargins(0, 0, 0, 0)
+        prow.setSpacing(8)
         self._pub_topic = QLineEdit()
         self._pub_topic.setPlaceholderText("发布 Topic")
-        self._pub_topic.setMinimumWidth(120)
+        self._pub_topic.setMinimumWidth(60)
+        self._pub_topic.setFixedHeight(32)
         self._pub_topic.setSizePolicy(
             QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Fixed,
@@ -264,6 +318,7 @@ class MQTTPage(QWidget):
         self._pub_qos = QComboBox()
         self._pub_qos.addItems(["QoS 0", "QoS 1", "QoS 2"])
         self._pub_qos.setMaximumWidth(100)
+        self._pub_qos.setFixedHeight(32)
         prow.addWidget(self._pub_qos)
         self._pub_retain = QCheckBox("保留消息")
         self._pub_retain.setMaximumWidth(110)
@@ -273,9 +328,12 @@ class MQTTPage(QWidget):
         self._pub_format = QComboBox()
         self._pub_format.addItems(["文本", "HEX", "JSON"])
         self._pub_format.setMaximumWidth(100)
+        self._pub_format.setFixedHeight(32)
         prow.addWidget(self._pub_format)
         self._btn_publish = QPushButton("发布")
         self._btn_publish.setFixedSize(84, 34)
+        self._btn_publish.setProperty("protocolPrimary", True)
+        _set_button_icon(self._btn_publish, "http_send.svg")
         self._btn_publish.clicked.connect(self._publish)
         prow.addWidget(self._btn_publish)
         pl.addWidget(publish_row)
@@ -294,7 +352,9 @@ class MQTTPage(QWidget):
         publish.setMinimumHeight(220)
 
         bottom_split = QSplitter(Qt.Horizontal)
+        bottom_split.setObjectName("protocolSplit")
         bottom_split.setChildrenCollapsible(False)
+        bottom_split.setHandleWidth(8)
         bottom_split.addWidget(subscriptions)
         bottom_split.addWidget(publish)
         bottom_split.setSizes([520, 520])
@@ -311,6 +371,8 @@ class MQTTPage(QWidget):
             widget.setEnabled(connected)
 
     def append_message(self, message):
+        if self._save_writer is not None:
+            self._write_saved_message(message)
         if self._messages_paused:
             payload_size = len(bytes(message.get("payload") or b""))
             if self._paused_bytes + payload_size > self.MAX_PAUSED_BYTES:
@@ -358,7 +420,106 @@ class MQTTPage(QWidget):
             if column == 6:
                 item.setToolTip(_wide_tooltip(full_payload))
             self._messages.setItem(row, column, item)
+        self._display_records += 1
+        self._display_bytes += 512 + max(
+            len(payload),
+            len(full_payload.encode("utf-8")),
+        )
         self._messages.scrollToBottom()
+        self._clear_messages_if_saving_limit_reached()
+
+    def _write_saved_message(self, message):
+        writer = self._save_writer
+        if writer is None:
+            return
+        payload = bytes(message.get("payload") or b"")
+        text = message.get("text")
+        record = {
+            "time": datetime.fromtimestamp(
+                float(message.get("timestamp") or time.time())).isoformat(
+                    timespec="milliseconds"),
+            "direction": str(
+                message.get("direction") or "RX").upper(),
+            "topic": str(message.get("topic") or ""),
+            "qos": int(message.get("qos", 0)),
+            "retain": bool(message.get("retain")),
+            "dup": bool(message.get("dup")),
+            "payload_encoding": "text" if text is not None else "hex",
+            "payload": str(text) if text is not None else payload.hex(" ").upper(),
+        }
+        if not writer.write_text(
+                json.dumps(record, ensure_ascii=False) + "\n"):
+            self._on_save_writer_error(
+                "日志写入失败，保存已停止")
+
+    def _on_save_file_toggle(self, checked):
+        if checked:
+            try:
+                os.makedirs(self._log_directory, exist_ok=True)
+            except Exception:
+                pass
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            default_path = os.path.join(
+                self._log_directory,
+                "{}_{}.log".format(self._save_prefix, timestamp),
+            )
+            path, _ = QFileDialog.getSaveFileName(
+                self, "保存日志", default_path,
+                "日志文件 (*.log);;所有文件 (*.*)",
+            )
+            if not path:
+                self.chk_save_file.blockSignals(True)
+                self.chk_save_file.setChecked(False)
+                self.chk_save_file.blockSignals(False)
+                return
+            try:
+                self._save_writer = AsyncLogWriter(path, self)
+                self._save_writer.error.connect(
+                    self._on_save_writer_error)
+                for message in self._paused_messages:
+                    self._write_saved_message(message)
+            except Exception as exc:
+                self._close_save_writer()
+                show_error(self, "保存失败", str(exc))
+        else:
+            self._close_save_writer()
+
+    def _close_save_writer(self):
+        writer, self._save_writer = self._save_writer, None
+        if writer is not None:
+            writer.close()
+            writer.deleteLater()
+        if self.chk_save_file.isChecked():
+            self.chk_save_file.blockSignals(True)
+            self.chk_save_file.setChecked(False)
+            self.chk_save_file.blockSignals(False)
+
+    def _on_save_writer_error(self, message):
+        if self._save_writer is None and not self.chk_save_file.isChecked():
+            return
+        self._close_save_writer()
+        show_error(self, "保存失败", message)
+
+    def _clear_messages_if_saving_limit_reached(self):
+        if self._save_writer is None:
+            return
+        if (
+            self._display_records < AUTO_CLEAR_RECORDS
+            and self._display_bytes < AUTO_CLEAR_BYTES
+        ):
+            return
+        if not self._save_writer.flush():
+            self._on_save_writer_error(
+                "日志写入未完成，页面未清空，保存已停止")
+            return
+        self._messages.setRowCount(0)
+        self._display_records = 0
+        self._display_bytes = 0
+
+    def set_log_directory(self, directory, prefix=None):
+        self._log_directory = str(directory or "")
+        if prefix:
+            self._save_prefix = str(prefix)
 
     def _on_messages_pause(self, paused):
         self._messages_paused = bool(paused)
@@ -392,6 +553,12 @@ class MQTTPage(QWidget):
         for row in range(self._subscriptions.rowCount()):
             item = self._subscriptions.item(row, 1)
             if item is not None and item.text() == topic:
+                check = self._subscriptions.item(row, 0)
+                if check is not None and \
+                        check.checkState() != Qt.CheckState.Checked:
+                    check.setCheckState(Qt.CheckState.Checked)
+                    if notify:
+                        self._schedule_subscription_change()
                 return True
         _table_add_row(
             self._subscriptions,
@@ -399,7 +566,7 @@ class MQTTPage(QWidget):
             checked=True,
         )
         if notify:
-            self.subscription_changed.emit(self.subscriptions())
+            self._schedule_subscription_change()
         return True
 
     def _add_subscription(self):
@@ -420,25 +587,56 @@ class MQTTPage(QWidget):
             return
         for row in rows:
             self._subscriptions.removeRow(row)
-        self.subscription_changed.emit(self.subscriptions())
+        self._schedule_subscription_change()
 
     def subscriptions(self):
         return [
             {
                 "topic": self._subscriptions.item(row, 1).text(),
                 "qos": int(self._subscriptions.item(row, 2).text()),
+                "enabled": (
+                    self._subscriptions.item(row, 0) is not None
+                    and self._subscriptions.item(row, 0).checkState()
+                    == Qt.CheckState.Checked),
             }
             for row in range(self._subscriptions.rowCount())
             if self._subscriptions.item(row, 1)
             and self._subscriptions.item(row, 1).text().strip()
         ]
 
+    def enabled_subscriptions(self):
+        return [
+            {"topic": item["topic"], "qos": item["qos"]}
+            for item in self.subscriptions() if item["enabled"]
+        ]
+
+    def _on_subscription_item_changed(self, _item):
+        self._schedule_subscription_change()
+
+    def _schedule_subscription_change(self):
+        self._subscription_emit_timer.start(0)
+
+    def _emit_subscription_change(self):
+        self.subscription_changed.emit(
+            self.enabled_subscriptions())
+
     def set_subscriptions(self, items):
+        self._subscriptions.blockSignals(True)
         self._subscriptions.setRowCount(0)
-        for item in items or []:
-            if isinstance(item, dict):
-                self.add_subscription(
-                    item.get("topic", ""), item.get("qos", 0), notify=False)
+        try:
+            for item in items or []:
+                if not isinstance(item, dict):
+                    continue
+                topic = str(item.get("topic") or "").strip()
+                if not topic:
+                    continue
+                _table_add_row(
+                    self._subscriptions,
+                    [topic, str(int(item.get("qos", 0)))],
+                    checked=bool(item.get("enabled", True)),
+                )
+        finally:
+            self._subscriptions.blockSignals(False)
 
     def _publish(self):
         topic = self._pub_topic.text().strip()
@@ -468,9 +666,18 @@ class MQTTPage(QWidget):
         self.append_message(message)
 
     def clear_messages(self):
+        if (
+            self._save_writer is not None
+            and not self._save_writer.flush()
+        ):
+            self._on_save_writer_error(
+                "日志写入未完成，页面未清空，保存已停止")
+            return
         self._paused_messages.clear()
         self._paused_bytes = 0
         self._pause_dropped_bytes = 0
+        self._display_records = 0
+        self._display_bytes = 0
         self._messages.setRowCount(0)
 
     def reset_runtime_state(self):
@@ -480,6 +687,10 @@ class MQTTPage(QWidget):
             self._paused_messages.clear()
             self._paused_bytes = 0
             self._pause_dropped_bytes = 0
+        self._close_save_writer()
+
+    def cleanup(self):
+        self._close_save_writer()
 
     def snapshot(self):
         return {
@@ -512,54 +723,100 @@ class WebSocketPage(QWidget):
     ping_requested = Signal()
     connect_requested = Signal()
     disconnect_requested = Signal()
+    MAX_PAUSED_BYTES = 16 * 1024 * 1024
 
     def __init__(self):
         super().__init__()
         self._connected = False
+        self._messages_paused = False
+        self._paused_messages = []
+        self._paused_bytes = 0
+        self._pause_dropped_bytes = 0
+        self._save_writer = None
+        self._log_directory = os.getcwd()
+        self._save_prefix = "websocket"
+        self._display_records = 0
+        self._display_bytes = 0
         self._build()
 
     def _build(self):
+        self.setObjectName("websocketPage")
+        self.setStyleSheet(PROTOCOL_WORKSPACE_STYLE)
         root = QVBoxLayout(self)
-        root.setContentsMargins(12, 10, 12, 10)
-        root.setSpacing(8)
-        self.setStyleSheet(
-            "QPushButton#wsConnect{background:#0078D4;color:#FFFFFF;"
-            "border:1px solid #0078D4;border-radius:4px;padding:6px 14px;"
-            "font-weight:600;}"
-            "QPushButton#wsConnect:hover{background:#106EBE;}"
-            "QPushButton#wsConnect[connected=\"true\"]{"
-            "background:#D13438;border-color:#B52A2E;}"
-            "QPushButton#wsConnect[connected=\"true\"]:hover{"
-            "background:#A80000;border-color:#8A0000;}"
-        )
+        root.setContentsMargins(14, 12, 14, 12)
+        root.setSpacing(10)
 
+        top_card = QWidget()
+        top_card.setObjectName("protocolCard")
+        top_card.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        top_card_layout = QVBoxLayout(top_card)
+        top_card_layout.setContentsMargins(10, 9, 10, 9)
+        top_card_layout.setSpacing(4)
         top = QHBoxLayout()
+        top.setContentsMargins(0, 0, 0, 0)
+        top.setSpacing(8)
         self._url = QLineEdit()
         self._url.setPlaceholderText("ws://127.0.0.1:8080/ws")
         self._url.setClearButtonEnabled(True)
+        self._url.setFixedHeight(32)
         self._url.returnPressed.connect(self._toggle_connection)
         top.addWidget(self._url, 1)
         self._btn_connect = QPushButton("连接 WebSocket")
         self._btn_connect.setObjectName("wsConnect")
+        self._btn_connect.setProperty("protocolPrimary", True)
+        self._btn_connect.setProperty("connected", "false")
+        _set_button_icon(self._btn_connect, "http_send.svg")
         self._btn_connect.setMinimumWidth(136)
+        self._btn_connect.setFixedHeight(34)
         self._btn_connect.clicked.connect(self._toggle_connection)
         top.addWidget(self._btn_connect)
+        top_card_layout.addLayout(top)
+
+        actions = QHBoxLayout()
+        actions.setContentsMargins(0, 0, 0, 0)
+        actions.setSpacing(8)
         self._btn_ping = QPushButton("发送 Ping")
+        self._btn_ping.setFixedHeight(30)
         self._btn_ping.clicked.connect(self.ping_requested.emit)
-        top.addWidget(self._btn_ping)
+        actions.addWidget(self._btn_ping)
+        self.chk_pause = QCheckBox("页面暂停")
+        self.chk_pause.setToolTip(
+            "暂停时不刷新消息列表，继续接收的消息会在恢复后补显示")
+        self.chk_pause.toggled.connect(self._on_messages_pause)
+        actions.addWidget(self.chk_pause)
+        self.chk_save_file = QCheckBox("保存到文件")
+        self.chk_save_file.setToolTip(
+            "保存期间持续写盘；页面达到 10000 条或 300 MB 后自动清空")
+        self.chk_save_file.toggled.connect(
+            self._on_save_file_toggle)
+        actions.addWidget(self.chk_save_file)
+        self.lbl_save_rule = _save_rule_label()
+        actions.addWidget(self.lbl_save_rule)
+        actions.addStretch()
         self._btn_clear = QPushButton("清空消息")
+        self._btn_clear.setFixedHeight(30)
+        _set_button_icon(self._btn_clear, "http_delete.svg")
         self._btn_clear.clicked.connect(self.clear_messages)
-        top.addWidget(self._btn_clear)
-        root.addLayout(top)
+        actions.addWidget(self._btn_clear)
+        top_card_layout.addLayout(actions)
+        root.addWidget(top_card)
 
         headers_group = _protocol_group("连接请求头")
         hl = QVBoxLayout(headers_group)
+        hl.setContentsMargins(10, 22, 10, 10)
+        hl.setSpacing(8)
         hrow = QHBoxLayout()
+        hrow.setSpacing(8)
         self._btn_add_header = QPushButton("+ 添加 Header")
+        self._btn_add_header.setText("添加 Header")
+        _set_button_icon(self._btn_add_header, "http_add.svg")
+        self._btn_add_header.setFixedHeight(30)
         self._btn_add_header.clicked.connect(
             lambda: _table_add_row(self._headers, ["", ""], True))
         hrow.addWidget(self._btn_add_header)
         self._btn_remove_header = QPushButton("删除选中")
+        _set_button_icon(self._btn_remove_header, "http_delete.svg")
+        self._btn_remove_header.setFixedHeight(30)
         self._btn_remove_header.clicked.connect(
             lambda: self._remove_checked_rows(self._headers))
         hrow.addWidget(self._btn_remove_header)
@@ -567,14 +824,15 @@ class WebSocketPage(QWidget):
         hl.addLayout(hrow)
         self._headers = _new_table(["启用", "Header", "值"])
         self._headers.setColumnWidth(0, 48)
+        self._headers.setColumnWidth(1, 280)
         self._headers.setMaximumHeight(120)
         hl.addWidget(self._headers)
         root.addWidget(headers_group)
 
         self._messages = _new_table([
             "时间", "方向", "类型", "大小", "内容"])
-        self._messages.setColumnWidth(0, 90)
-        self._messages.setColumnWidth(1, 52)
+        self._messages.setColumnWidth(0, 112)
+        self._messages.setColumnWidth(1, 58)
         self._messages.setColumnWidth(2, 65)
         self._messages.setColumnWidth(3, 60)
         self._messages.setEditTriggers(
@@ -583,16 +841,24 @@ class WebSocketPage(QWidget):
 
         composer = _protocol_group("发送消息")
         cl = QVBoxLayout(composer)
+        cl.setContentsMargins(10, 22, 10, 10)
+        cl.setSpacing(8)
         row = QHBoxLayout()
+        row.setSpacing(8)
         self._format = QComboBox()
         self._format.addItems(["文本", "JSON", "HEX/二进制"])
+        self._format.setFixedSize(110, 32)
         row.addWidget(self._format)
         row.addStretch()
         self._btn_send = QPushButton("发送")
+        self._btn_send.setProperty("protocolPrimary", True)
+        _set_button_icon(self._btn_send, "http_send.svg")
+        self._btn_send.setFixedHeight(34)
         self._btn_send.clicked.connect(self._send)
         row.addWidget(self._btn_send)
         cl.addLayout(row)
         self._payload = QPlainTextEdit()
+        self._payload.setMinimumHeight(72)
         self._payload.setMaximumHeight(72)
         self._payload.setFont(QFont("Consolas", 10))
         self._payload.setPlaceholderText("输入 WebSocket 消息")
@@ -621,6 +887,10 @@ class WebSocketPage(QWidget):
         self._connected = bool(connected)
         self._btn_connect.setText(
             "断开 WebSocket" if connected else "连接 WebSocket")
+        _set_button_icon(
+            self._btn_connect,
+            "http_close.svg" if connected else "http_send.svg",
+        )
         self._btn_connect.setProperty(
             "connected", "true" if connected else "false")
         self._btn_connect.style().unpolish(self._btn_connect)
@@ -630,6 +900,19 @@ class WebSocketPage(QWidget):
         self._btn_ping.setEnabled(connected)
 
     def append_message(self, message):
+        if self._save_writer is not None:
+            self._write_saved_message(message)
+        if self._messages_paused:
+            payload_size = len(bytes(message.get("payload") or b""))
+            if self._paused_bytes + payload_size > self.MAX_PAUSED_BYTES:
+                self._pause_dropped_bytes += payload_size
+                return
+            self._paused_messages.append(dict(message))
+            self._paused_bytes += payload_size
+            return
+        self._append_message_now(message)
+
+    def _append_message_now(self, message):
         payload = bytes(message.get("payload") or b"")
         binary = bool(message.get("binary"))
         text = message.get("text")
@@ -665,7 +948,123 @@ class WebSocketPage(QWidget):
                     text if text is not None and not binary
                     else payload.hex(" ").upper())))
             self._messages.setItem(row, column, item)
+        self._display_records += 1
+        self._display_bytes += 512 + max(
+            len(payload),
+            len(preview.encode("utf-8")),
+        )
         self._messages.scrollToBottom()
+        self._clear_messages_if_saving_limit_reached()
+
+    def _on_messages_pause(self, paused):
+        self._messages_paused = bool(paused)
+        if paused:
+            return
+        pending = self._paused_messages
+        dropped = self._pause_dropped_bytes
+        self._paused_messages = []
+        self._paused_bytes = 0
+        self._pause_dropped_bytes = 0
+        for message in pending:
+            self._append_message_now(message)
+        if dropped:
+            text = "暂停缓存超过限制，已丢弃 {} 字节".format(dropped)
+            self._append_message_now({
+                "timestamp": time.time(),
+                "direction": "INFO",
+                "binary": False,
+                "payload": text.encode("utf-8"),
+                "text": text,
+            })
+
+    def _write_saved_message(self, message):
+        writer = self._save_writer
+        if writer is None:
+            return
+        payload = bytes(message.get("payload") or b"")
+        binary = bool(message.get("binary"))
+        text = message.get("text")
+        record = {
+            "time": datetime.fromtimestamp(
+                float(message.get("timestamp") or time.time())).isoformat(
+                    timespec="milliseconds"),
+            "direction": str(
+                message.get("direction") or "rx").upper(),
+            "type": "binary" if binary else "text",
+            "payload_encoding": "hex" if binary else "text",
+            "payload": payload.hex(" ").upper() if binary else str(text or ""),
+        }
+        if not writer.write_text(
+                json.dumps(record, ensure_ascii=False) + "\n"):
+            self._on_save_writer_error(
+                "日志写入失败，保存已停止")
+
+    def _on_save_file_toggle(self, checked):
+        if checked:
+            try:
+                os.makedirs(self._log_directory, exist_ok=True)
+            except Exception:
+                pass
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            default_path = os.path.join(
+                self._log_directory,
+                "{}_{}.log".format(self._save_prefix, timestamp),
+            )
+            path, _ = QFileDialog.getSaveFileName(
+                self, "保存日志", default_path,
+                "日志文件 (*.log);;所有文件 (*.*)",
+            )
+            if not path:
+                self.chk_save_file.blockSignals(True)
+                self.chk_save_file.setChecked(False)
+                self.chk_save_file.blockSignals(False)
+                return
+            try:
+                self._save_writer = AsyncLogWriter(path, self)
+                self._save_writer.error.connect(
+                    self._on_save_writer_error)
+            except Exception as exc:
+                self._close_save_writer()
+                show_error(self, "保存失败", str(exc))
+        else:
+            self._close_save_writer()
+
+    def _close_save_writer(self):
+        writer, self._save_writer = self._save_writer, None
+        if writer is not None:
+            writer.close()
+            writer.deleteLater()
+        if self.chk_save_file.isChecked():
+            self.chk_save_file.blockSignals(True)
+            self.chk_save_file.setChecked(False)
+            self.chk_save_file.blockSignals(False)
+
+    def _on_save_writer_error(self, message):
+        if self._save_writer is None and not self.chk_save_file.isChecked():
+            return
+        self._close_save_writer()
+        show_error(self, "保存失败", message)
+
+    def _clear_messages_if_saving_limit_reached(self):
+        if self._save_writer is None:
+            return
+        if (
+            self._display_records < AUTO_CLEAR_RECORDS
+            and self._display_bytes < AUTO_CLEAR_BYTES
+        ):
+            return
+        if not self._save_writer.flush():
+            self._on_save_writer_error(
+                "日志写入未完成，页面未清空，保存已停止")
+            return
+        self._messages.setRowCount(0)
+        self._display_records = 0
+        self._display_bytes = 0
+
+    def set_log_directory(self, directory, prefix=None):
+        self._log_directory = str(directory or "")
+        if prefix:
+            self._save_prefix = str(prefix)
 
     def _send(self):
         mode = self._format.currentText()
@@ -711,7 +1110,31 @@ class WebSocketPage(QWidget):
                 )
 
     def clear_messages(self):
+        if (
+            self._save_writer is not None
+            and not self._save_writer.flush()
+        ):
+            self._on_save_writer_error(
+                "日志写入未完成，页面未清空，保存已停止")
+            return
+        self._paused_messages.clear()
+        self._paused_bytes = 0
+        self._pause_dropped_bytes = 0
+        self._display_records = 0
+        self._display_bytes = 0
         self._messages.setRowCount(0)
+
+    def reset_runtime_state(self):
+        if self.chk_pause.isChecked():
+            self.chk_pause.setChecked(False)
+        else:
+            self._paused_messages.clear()
+            self._paused_bytes = 0
+            self._pause_dropped_bytes = 0
+        self._close_save_writer()
+
+    def cleanup(self):
+        self._close_save_writer()
 
     def snapshot(self):
         return {

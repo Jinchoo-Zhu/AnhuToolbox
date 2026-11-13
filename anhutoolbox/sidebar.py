@@ -1,19 +1,22 @@
 # -*- coding: utf-8 -*-
 """AnhuToolbox 侧边栏 -- 连接模式选择与参数配置"""
 
+import os
+
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QComboBox,
+    QAbstractItemView, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QComboBox,
     QPushButton, QSpinBox, QStackedWidget, QLineEdit, QCheckBox,
     QFrame, QButtonGroup, QSizePolicy, QScrollArea, QApplication,
     QTreeWidget, QTreeWidgetItem, QStyle, QStyledItemDelegate,
-    QStyleOptionViewItem, QMenu,
+    QMenu, QHeaderView,
 )
-from PySide6.QtGui import QColor, QFontMetrics, QIcon, QIntValidator
-from PySide6.QtCore import Qt, Signal, QEvent, QTimer
+from PySide6.QtGui import QColor, QFontMetrics, QIntValidator
+from PySide6.QtCore import QEvent, QRect, QTimer, Qt, Signal
 from PySide6.QtGui import QFont
 
-from .styles import SIDEBAR_STYLE, COMBO_STYLE, prepare_menu
-from .dialogs import get_text
+from .styles import _find_assets_dir, SIDEBAR_STYLE, COMBO_STYLE, prepare_menu
+from .dialogs import ask_yes_no, get_text
+from .ui_tokens import HTTP_METHOD_COLORS, PROTOCOL_SETTINGS_STYLE
 
 
 # 参数配置滚动区: 只在需要时露出细滚动条, 无边框, 背景与侧边栏一致
@@ -42,18 +45,26 @@ _HTTP_NAME_ROLE = Qt.ItemDataRole.UserRole + 3
 _HTTP_URL_ROLE = Qt.ItemDataRole.UserRole + 4
 _HTTP_FOLDER_ROLE = Qt.ItemDataRole.UserRole + 5
 _HTTP_COUNT_ROLE = Qt.ItemDataRole.UserRole + 6
+_HTTP_DIRTY_ROLE = Qt.ItemDataRole.UserRole + 7
+_HTTP_DRAFT_ROLE = Qt.ItemDataRole.UserRole + 8
+_HTTP_MENU_WIDTH = 26
+_BRANCH_RIGHT_ICON = os.path.join(
+    _find_assets_dir(), "http_next.svg").replace("\\", "/")
+_BRANCH_DOWN_ICON = os.path.join(
+    _find_assets_dir(), "http_chevron_down.svg").replace("\\", "/")
+
+
+def _http_menu_button_rect(row_rect):
+    return QRect(
+        row_rect.right() - _HTTP_MENU_WIDTH - 4,
+        row_rect.top(),
+        _HTTP_MENU_WIDTH,
+        row_rect.height(),
+    )
 
 
 class HttpLibraryDelegate(QStyledItemDelegate):
     """接口树单列绘制：彩色方法名、文件夹图标和计数。"""
-
-    METHOD_COLORS = {
-        "GET": QColor("#00A06A"),
-        "POST": QColor("#F08A00"),
-        "PUT": QColor("#0078D4"),
-        "PATCH": QColor("#8764B8"),
-        "DELETE": QColor("#D13438"),
-    }
 
     def sizeHint(self, option, index):
         size = super().sizeHint(option, index)
@@ -63,9 +74,21 @@ class HttpLibraryDelegate(QStyledItemDelegate):
     def paint(self, painter, option, index):
         painter.save()
         rect = option.rect.adjusted(1, 1, -1, -1)
+        tree = option.widget
+        hovered_item = (
+            tree.hovered_item
+            if isinstance(tree, HttpLibraryTree) else None
+        )
+        index_item = (
+            tree.itemFromIndex(index)
+            if isinstance(tree, HttpLibraryTree) else None
+        )
+        is_hovered = (
+            index_item is not None and index_item is hovered_item
+        )
         if option.state & QStyle.StateFlag.State_Selected:
             painter.fillRect(rect, QColor("#E8EEF5"))
-        elif option.state & QStyle.StateFlag.State_MouseOver:
+        elif is_hovered:
             painter.fillRect(rect, QColor("#F1F4F7"))
 
         kind = index.data(_HTTP_KIND_ROLE)
@@ -82,7 +105,6 @@ class HttpLibraryDelegate(QStyledItemDelegate):
                 text_rect.adjusted(0, 2, 0, -2),
                 Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
             )
-            name_left = text_rect.left() + 24
             count = int(index.data(_HTTP_COUNT_ROLE) or 0)
             display = "{}  ({})".format(name, count)
             painter.setPen(QColor("#3D4652"))
@@ -95,8 +117,12 @@ class HttpLibraryDelegate(QStyledItemDelegate):
             )
         else:
             method = str(index.data(_HTTP_METHOD_ROLE) or "GET").upper()
+            dirty = bool(index.data(_HTTP_DIRTY_ROLE))
+            display_name = "{} ●".format(name) if dirty else name
+            show_menu = is_hovered
+            menu_width = _HTTP_MENU_WIDTH if show_menu else 0
             painter.setPen(
-                self.METHOD_COLORS.get(method, QColor("#5B6470")))
+                QColor(HTTP_METHOD_COLORS.get(method, "#5B6470")))
             method_width = 48
             painter.drawText(
                 text_rect.adjusted(0, 0, -text_rect.width() + method_width, 0),
@@ -108,10 +134,69 @@ class HttpLibraryDelegate(QStyledItemDelegate):
                 text_rect.adjusted(52, 0, 0, 0),
                 Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
                 metrics.elidedText(
-                    name, Qt.TextElideMode.ElideRight,
-                    max(0, text_rect.width() - 52)),
+                    display_name, Qt.TextElideMode.ElideRight,
+                    max(0, text_rect.width() - 52 - menu_width)),
             )
+            if show_menu:
+                painter.setPen(QColor("#68727D"))
+                painter.drawText(
+                    _http_menu_button_rect(rect),
+                    Qt.AlignmentFlag.AlignCenter,
+                    "···",
+                )
         painter.restore()
+
+
+class HttpLibraryTree(QTreeWidget):
+    """在悬停接口行显示与右键一致的菜单入口。"""
+
+    menu_requested = Signal(object)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setMouseTracking(True)
+        self.viewport().setMouseTracking(True)
+        self._hovered_item = None
+
+    @property
+    def hovered_item(self):
+        return self._hovered_item
+
+    def _set_hovered_item(self, item):
+        if item is self._hovered_item:
+            return
+        previous = self._hovered_item
+        self._hovered_item = item
+        if previous is not None:
+            self.viewport().update(self.visualItemRect(previous))
+        if item is not None:
+            self.viewport().update(self.visualItemRect(item))
+
+    def mouseMoveEvent(self, event):
+        super().mouseMoveEvent(event)
+        self._set_hovered_item(
+            self.itemAt(event.position().toPoint()))
+
+    def leaveEvent(self, event):
+        self._set_hovered_item(None)
+        super().leaveEvent(event)
+
+    def menu_button_rect(self, item):
+        return _http_menu_button_rect(self.visualItemRect(item))
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            position = event.position().toPoint()
+            item = self.itemAt(position)
+            if (
+                item is not None
+                and item.data(0, _HTTP_KIND_ROLE) == "interface"
+                and self.menu_button_rect(item).contains(position)
+            ):
+                self.menu_requested.emit(position)
+                event.accept()
+                return
+        super().mouseReleaseEvent(event)
 
 
 class CurrentPageStackedWidget(QStackedWidget):
@@ -142,10 +227,15 @@ class Sidebar(QWidget):
     project_menu_requested = Signal()    # 点击项目菜单按钮
     http_interface_selected = Signal(str)
     http_new_requested = Signal()
+    http_import_requested = Signal()
+    http_export_requested = Signal()
     http_folder_selected = Signal(object)
     http_new_folder_requested = Signal(str, object)
     http_rename_requested = Signal(str, str, str)
     http_move_requested = Signal(str, object)
+    http_duplicate_requested = Signal(str)
+    http_delete_interface_requested = Signal(str)
+    http_delete_folder_requested = Signal(str)
 
     def __init__(self):
         super().__init__()
@@ -156,6 +246,8 @@ class Sidebar(QWidget):
         self._current_mode = "serial"
         self._connected = False
         self._wheel_active_control = None
+        self._http_pending_expand_ids = set()
+        self._http_expanded_target_folder_id = None
 
         self._build()
         self._install_focus_wheel_filters()
@@ -191,6 +283,13 @@ class Sidebar(QWidget):
         )
 
     def eventFilter(self, watched, event):
+        if (
+            event.type() == QEvent.Type.Resize
+            and hasattr(self, "_http_interface_tree")
+            and watched is self._http_interface_tree.viewport()
+        ):
+            QTimer.singleShot(0, self._update_http_tree_width)
+            return super().eventFilter(watched, event)
         control = self._wheel_control(watched)
         if event.type() == QEvent.Type.FocusIn and control is not None:
             if event.reason() in (
@@ -255,7 +354,7 @@ class Sidebar(QWidget):
         author_key = QLabel("作者：")
         author_key.setFont(QFont("Microsoft YaHei", 10))
         author_key.setStyleSheet("color: #888; padding: 0 0 2px 0;")
-        author_val = QLabel("Jinchoo（朱锦春）")
+        author_val = QLabel("Jinchoo Zhu | Jerry Lyu")
         author_val.setFont(QFont("Microsoft YaHei", 10))
         author_val.setStyleSheet("color: #888; padding: 0 0 2px 0;")
 
@@ -379,7 +478,23 @@ class Sidebar(QWidget):
         # -- 设置标题 --
         self._settings_label = QLabel("参数配置")
         self._settings_label.setStyleSheet("color: #3D3D3D; font-size: 14px; font-weight: 600; padding: 4px 4px 2px 4px;")
-        ctrl_lo.addWidget(self._settings_label)
+        settings_head = QHBoxLayout()
+        settings_head.setContentsMargins(0, 0, 0, 0)
+        settings_head.addWidget(self._settings_label)
+        settings_head.addStretch()
+        self._btn_http_transfer_menu = QPushButton("···")
+        self._btn_http_transfer_menu.setFixedSize(30, 26)
+        self._btn_http_transfer_menu.setCursor(
+            Qt.CursorShape.PointingHandCursor)
+        self._btn_http_transfer_menu.setToolTip("导入导出")
+        self._btn_http_transfer_menu.setStyleSheet(
+            "QPushButton{background:transparent;color:#5F6873;"
+            "border:none;border-radius:5px;font-size:17px;padding:0;}"
+            "QPushButton:hover{background:#E8EEF5;color:#0078D4;}")
+        self._btn_http_transfer_menu.clicked.connect(
+            self._show_http_transfer_menu)
+        settings_head.addWidget(self._btn_http_transfer_menu)
+        ctrl_lo.addLayout(settings_head)
 
         # -- 堆叠设置页 --
         self._settings_stack = CurrentPageStackedWidget()
@@ -397,6 +512,7 @@ class Sidebar(QWidget):
         inner_lo.setSpacing(0)
         inner_lo.addWidget(self._settings_stack)
         inner_lo.addStretch(1)
+        self._settings_inner_layout = inner_lo
 
         self._settings_scroll = QScrollArea()
         self._settings_scroll.setObjectName("settingsScroll")
@@ -829,12 +945,15 @@ class Sidebar(QWidget):
 
     def _build_mqtt_page(self) -> QWidget:
         w = QWidget()
+        w.setObjectName("mqttSettingsPage")
+        w.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        w.setStyleSheet(PROTOCOL_SETTINGS_STYLE)
         outer = QVBoxLayout(w)
-        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setContentsMargins(10, 10, 10, 10)
         outer.setSpacing(8)
         form = QGridLayout()
         form.setHorizontalSpacing(8)
-        form.setVerticalSpacing(5)
+        form.setVerticalSpacing(8)
         form.setColumnStretch(1, 1)
 
         labels = self._form_label([
@@ -856,6 +975,12 @@ class Sidebar(QWidget):
         self._sp_mqtt_keepalive.setValue(60)
         self._cb_mqtt_protocol = QComboBox()
         self._cb_mqtt_protocol.addItems(["MQTT 3.1.1", "MQTT 5.0"])
+        for widget in (
+                self._le_mqtt_host, self._sp_mqtt_port,
+                self._le_mqtt_client_id, self._le_mqtt_user,
+                self._le_mqtt_password, self._sp_mqtt_keepalive,
+                self._cb_mqtt_protocol):
+            widget.setFixedHeight(32)
 
         widgets = [
             self._le_mqtt_host, self._sp_mqtt_port,
@@ -881,12 +1006,15 @@ class Sidebar(QWidget):
 
     def _build_websocket_page(self) -> QWidget:
         w = QWidget()
+        w.setObjectName("websocketSettingsPage")
+        w.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        w.setStyleSheet(PROTOCOL_SETTINGS_STYLE)
         outer = QVBoxLayout(w)
-        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setContentsMargins(10, 10, 10, 10)
         outer.setSpacing(8)
         form = QGridLayout()
         form.setHorizontalSpacing(8)
-        form.setVerticalSpacing(5)
+        form.setVerticalSpacing(8)
         form.setColumnStretch(1, 1)
 
         labels = self._form_label([
@@ -898,6 +1026,9 @@ class Sidebar(QWidget):
         self._sp_ws_ping = QSpinBox()
         self._sp_ws_ping.setRange(0, 3600)
         self._sp_ws_ping.setValue(30)
+        self._le_ws_origin.setFixedHeight(32)
+        self._le_ws_protocol.setFixedHeight(32)
+        self._sp_ws_ping.setFixedHeight(32)
         for row, (label, widget) in enumerate(zip(labels, [
                 self._le_ws_origin, self._le_ws_protocol,
                 self._sp_ws_ping])):
@@ -931,64 +1062,95 @@ class Sidebar(QWidget):
             self._refresh_http_interfaces)
         outer.addWidget(self._http_api_search)
 
+        action_row = QHBoxLayout()
+        action_row.setSpacing(6)
+        action_button_style = (
+            "QPushButton{background:#F7F8FA;color:#4B5563;"
+            "border:1px solid #DDE2E8;border-radius:5px;"
+            "font-size:13px;font-weight:500;padding:6px 8px;}"
+            "QPushButton:hover{background:#EEF2F6;color:#1A1A1A;"
+            "border-color:#0078D4;}"
+        )
+        self._btn_http_new = QPushButton("+ 新建接口")
+        self._btn_http_new.setFixedHeight(36)
+        self._btn_http_new.setStyleSheet(action_button_style)
+        self._btn_http_new.clicked.connect(
+            self._create_http_interface)
+        action_row.addWidget(self._btn_http_new, 1)
+        self._btn_http_new_folder = QPushButton("+ 新建目录")
+        self._btn_http_new_folder.setFixedHeight(36)
+        self._btn_http_new_folder.setStyleSheet(action_button_style)
+        self._btn_http_new_folder.clicked.connect(
+            self._create_http_folder)
+        action_row.addWidget(self._btn_http_new_folder, 1)
+        outer.addLayout(action_row)
+
         self._http_interfaces = []
         self._http_folders = []
-        self._http_interface_tree = QTreeWidget()
+        self._http_interface_tree = HttpLibraryTree()
         self._http_interface_tree.setHeaderHidden(True)
         self._http_interface_tree.setColumnCount(1)
         self._http_interface_tree.setRootIsDecorated(True)
-        self._http_interface_tree.setIndentation(14)
+        self._http_interface_tree.setIndentation(22)
+        self._http_interface_tree.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self._http_interface_tree.header().setStretchLastSection(False)
+        self._http_interface_tree.header().setSectionResizeMode(
+            0, QHeaderView.ResizeMode.Fixed)
+        self._http_interface_tree.setExpandsOnDoubleClick(False)
         self._http_interface_tree.setEditTriggers(
             QTreeWidget.EditTrigger.NoEditTriggers)
         self._http_interface_tree.setUniformRowHeights(True)
         self._http_interface_tree.setAlternatingRowColors(False)
         self._http_interface_tree.setMouseTracking(True)
+        self._http_interface_tree.setVerticalScrollMode(
+            QAbstractItemView.ScrollMode.ScrollPerPixel)
         self._http_interface_tree.setFrameShape(QFrame.Shape.NoFrame)
         self._http_interface_tree.setToolTip(
-            "双击接口或文件夹名称可重命名；右键可新建或重命名")
+            "单击接口在标签页打开；双击文件夹展开或折叠；右键可重命名")
         self._http_interface_tree.setItemDelegate(
             HttpLibraryDelegate(self._http_interface_tree))
         self._http_interface_tree.setContextMenuPolicy(
             Qt.ContextMenuPolicy.CustomContextMenu)
-        self._http_interface_tree.setStyleSheet(
+        tree_style = (
             "QTreeWidget{background:transparent;border:none;"
-            "outline:0;font-size:12px;}"
+            "outline:0;font-size:12px;selection-background-color:transparent;"
+            "selection-color:#30343B;}"
             "QTreeWidget::branch{background:transparent;}"
+            "QTreeWidget::branch:has-children:!has-siblings:closed,"
+            "QTreeWidget::branch:closed:has-children:has-siblings"
+            "{image:url(__BRANCH_RIGHT__);}"
+            "QTreeWidget::branch:has-children:!has-siblings:open,"
+            "QTreeWidget::branch:open:has-children:has-siblings"
+            "{image:url(__BRANCH_DOWN__);}"
+            "QTreeWidget::branch:!has-children{image:none;}"
+            "QTreeWidget::branch:selected,"
+            "QTreeWidget::branch:selected:active{background:transparent;}"
             "QTreeWidget::item{border:none;padding:0;}"
+        ).replace(
+            "__BRANCH_RIGHT__", _BRANCH_RIGHT_ICON
+        ).replace(
+            "__BRANCH_DOWN__", _BRANCH_DOWN_ICON
         )
+        self._http_interface_tree.setStyleSheet(tree_style)
         self._http_interface_tree.itemClicked.connect(
             self._on_http_interface_clicked)
         self._http_interface_tree.itemActivated.connect(
             self._on_http_interface_clicked)
         self._http_interface_tree.itemDoubleClicked.connect(
-            self._start_http_item_edit)
+            self._on_http_item_double_clicked)
         self._http_interface_tree.itemChanged.connect(
             self._on_http_item_changed)
+        self._http_interface_tree.itemExpanded.connect(
+            self._on_http_folder_expanded)
+        self._http_interface_tree.itemCollapsed.connect(
+            self._on_http_folder_collapsed)
         self._http_interface_tree.customContextMenuRequested.connect(
             self._show_http_library_menu)
+        self._http_interface_tree.menu_requested.connect(
+            self._show_http_library_menu)
+        self._http_interface_tree.viewport().installEventFilter(self)
         outer.addWidget(self._http_interface_tree, 1)
-
-        footer = QHBoxLayout()
-        footer.setSpacing(6)
-        footer_button_style = (
-            "QPushButton{background:#F7F8FA;color:#4B5563;"
-            "border:none;border-top:1px dashed #D3D8DF;"
-            "font-size:13px;font-weight:500;padding:7px 8px;}"
-            "QPushButton:hover{background:#EEF2F6;color:#1A1A1A;}"
-        )
-        self._btn_http_new = QPushButton("+ 新建接口")
-        self._btn_http_new.setFixedHeight(36)
-        self._btn_http_new.setStyleSheet(footer_button_style)
-        self._btn_http_new.clicked.connect(
-            self.http_new_requested.emit)
-        footer.addWidget(self._btn_http_new, 1)
-        self._btn_http_new_folder = QPushButton("+ 新建文件夹")
-        self._btn_http_new_folder.setFixedHeight(36)
-        self._btn_http_new_folder.setStyleSheet(footer_button_style)
-        self._btn_http_new_folder.clicked.connect(
-            self._create_http_folder)
-        footer.addWidget(self._btn_http_new_folder, 1)
-        outer.addLayout(footer)
         self._refresh_http_interfaces()
         return w
 
@@ -1006,24 +1168,85 @@ class Sidebar(QWidget):
         ]
         self._refresh_http_interfaces()
 
-    def _create_http_folder(self):
-        current = self._http_interface_tree.currentItem()
-        parent_id = None
-        if current is not None:
-            kind = current.data(0, _HTTP_KIND_ROLE)
-            if kind == "folder":
-                parent_id = current.data(0, _HTTP_ID_ROLE)
-            else:
-                parent_id = current.data(0, _HTTP_FOLDER_ROLE)
+    def _http_current_folder_id(self):
+        folder_id = str(
+            self._http_expanded_target_folder_id or "") or None
+        if folder_id and any(
+                str(item.get("id")) == folder_id
+                for item in self._http_folders):
+            return folder_id
+        return None
+
+    def _http_folder_ancestors(self, folder_id):
+        parents = {
+            str(item.get("id")): item.get("parent_id")
+            for item in self._http_folders
+            if item.get("id")
+        }
+        expanded = set()
+        current = str(folder_id or "") or None
+        while current and current not in expanded:
+            expanded.add(current)
+            current = parents.get(current)
+            current = str(current) if current else None
+        return expanded
+
+    def _create_http_interface_in(self, parent_id):
+        parent_id = str(parent_id or "") or None
+        self._http_pending_expand_ids.update(
+            self._http_folder_ancestors(parent_id))
+        self.http_folder_selected.emit(parent_id)
+        self.http_new_requested.emit()
+
+    def _create_http_interface(self):
+        self._create_http_interface_in(
+            self._http_current_folder_id())
+
+    def _create_http_folder_in(self, parent_id):
+        parent_id = str(parent_id or "") or None
         name, ok = get_text(
-            self, "新建文件夹", "请输入文件夹名称", "新建文件夹")
+            self, "新建目录", "请输入目录名称", "新建目录")
         name = (name or "").strip()
         if ok and name:
+            self._http_pending_expand_ids.update(
+                self._http_folder_ancestors(parent_id))
+            self.http_folder_selected.emit(parent_id)
             self.http_new_folder_requested.emit(name, parent_id)
+
+    def _create_http_folder(self):
+        self._create_http_folder_in(
+            self._http_current_folder_id())
+
+    def _on_http_folder_expanded(self, item):
+        if item.data(0, _HTTP_KIND_ROLE) != "folder":
+            return
+        folder_id = str(item.data(0, _HTTP_ID_ROLE) or "") or None
+        self._http_expanded_target_folder_id = folder_id
+        self.http_folder_selected.emit(folder_id)
+        QTimer.singleShot(0, self._update_http_tree_width)
+
+    def _on_http_folder_collapsed(self, item):
+        if item.data(0, _HTTP_KIND_ROLE) != "folder":
+            return
+        folder_id = str(item.data(0, _HTTP_ID_ROLE) or "") or None
+        if self._http_expanded_target_folder_id == folder_id:
+            parent = item.parent()
+            self._http_expanded_target_folder_id = (
+                str(parent.data(0, _HTTP_ID_ROLE) or "") or None
+                if parent is not None and parent.isExpanded() else None
+            )
+            self.http_folder_selected.emit(
+                self._http_expanded_target_folder_id)
+        QTimer.singleShot(0, self._update_http_tree_width)
 
     def _start_http_item_edit(self, item, _column=0):
         if item is not None and item.flags() & Qt.ItemFlag.ItemIsEditable:
             self._http_interface_tree.editItem(item, 0)
+
+    def _on_http_item_double_clicked(self, item, _column=0):
+        kind = item.data(0, _HTTP_KIND_ROLE)
+        if kind == "folder":
+            item.setExpanded(not item.isExpanded())
 
     def _begin_http_rename(self):
         self._start_http_item_edit(
@@ -1031,30 +1254,40 @@ class Sidebar(QWidget):
 
     def _show_http_library_menu(self, position):
         item = self._http_interface_tree.itemAt(position)
+        context_folder_id = None
         if item is not None:
-            self._http_interface_tree.setCurrentItem(item)
             kind = item.data(0, _HTTP_KIND_ROLE)
-            folder_id = (
+            context_folder_id = (
                 item.data(0, _HTTP_ID_ROLE)
                 if kind == "folder"
                 else item.data(0, _HTTP_FOLDER_ROLE)
             )
-            self.http_folder_selected.emit(folder_id)
-        menu, new_api, new_folder, move_targets, rename = (
-            self._build_http_library_menu(item))
+            if kind == "interface":
+                self._http_interface_tree.setCurrentItem(item)
+                self.http_folder_selected.emit(context_folder_id)
+        menu, actions = self._build_http_library_menu(item)
         action = menu.exec(
             self._http_interface_tree.viewport().mapToGlobal(position))
-        if action == new_api:
-            self.http_new_requested.emit()
-        elif action == new_folder:
-            self._create_http_folder()
-        elif action in move_targets and item is not None:
+        if action == actions["new_api"]:
+            self._create_http_interface_in(context_folder_id)
+        elif action == actions["new_folder"]:
+            self._create_http_folder_in(context_folder_id)
+        elif action in actions["move_targets"] and item is not None:
             self.http_move_requested.emit(
                 str(item.data(0, _HTTP_ID_ROLE)),
-                move_targets[action],
+                actions["move_targets"][action],
             )
-        elif action == rename:
-            self._begin_http_rename()
+        elif action == actions["rename"]:
+            self._start_http_item_edit(item)
+        elif action == actions["duplicate"] and item is not None:
+            self.http_duplicate_requested.emit(
+                str(item.data(0, _HTTP_ID_ROLE)))
+        elif action == actions["expand_all"]:
+            self._http_interface_tree.expandAll()
+        elif action == actions["collapse_all"]:
+            self._http_interface_tree.collapseAll()
+        elif action == actions["delete"] and item is not None:
+            self._delete_http_item(item)
 
     def _build_http_library_menu(self, item):
         kind = (
@@ -1067,8 +1300,14 @@ class Sidebar(QWidget):
         )
         menu = prepare_menu(QMenu(self))
         new_api = menu.addAction("新建接口")
-        new_folder = menu.addAction("新建文件夹")
+        new_folder = menu.addAction("新建目录")
         menu.addSeparator()
+        rename = menu.addAction("重命名")
+        rename.setEnabled(item is not None)
+        duplicate = menu.addAction("复制接口")
+        duplicate.setEnabled(
+            kind == "interface"
+            and not bool(item.data(0, _HTTP_DRAFT_ROLE)))
         move_targets = {}
         move_menu = menu.addMenu("移动至...")
         move_menu.setEnabled(kind == "interface")
@@ -1089,7 +1328,7 @@ class Sidebar(QWidget):
             seen = set()
             while current is not None and current.get("id") not in seen:
                 seen.add(current.get("id"))
-                names.append(str(current.get("name") or "新建文件夹"))
+                names.append(str(current.get("name") or "新建目录"))
                 parent_id = str(current.get("parent_id") or "")
                 current = folder_by_id.get(parent_id)
             return " / ".join(reversed(names))
@@ -1103,9 +1342,58 @@ class Sidebar(QWidget):
             action.setChecked(folder_id == str(current_folder or ""))
             move_targets[action] = folder_id
         menu.addSeparator()
-        rename = menu.addAction("重命名")
-        rename.setEnabled(item is not None)
-        return menu, new_api, new_folder, move_targets, rename
+        expand_all = menu.addAction("全部展开")
+        collapse_all = menu.addAction("全部折叠")
+        menu.addSeparator()
+        delete = menu.addAction(
+            "删除接口" if kind == "interface"
+            else "删除文件夹" if kind == "folder"
+            else "删除")
+        delete.setEnabled(item is not None)
+        return menu, {
+            "new_api": new_api,
+            "new_folder": new_folder,
+            "rename": rename,
+            "duplicate": duplicate,
+            "move_targets": move_targets,
+            "expand_all": expand_all,
+            "collapse_all": collapse_all,
+            "delete": delete,
+        }
+
+    @staticmethod
+    def _http_interface_count(item):
+        if item.data(0, _HTTP_KIND_ROLE) == "interface":
+            return 1
+        return sum(
+            Sidebar._http_interface_count(item.child(index))
+            for index in range(item.childCount())
+        )
+
+    def _delete_http_item(self, item):
+        kind = item.data(0, _HTTP_KIND_ROLE)
+        item_id = str(item.data(0, _HTTP_ID_ROLE) or "")
+        name = item.text(0)
+        if not item_id:
+            return
+        if kind == "interface":
+            confirmed = ask_yes_no(
+                self, "删除接口",
+                "确定删除接口「{}」吗？\n删除后无法恢复。".format(name),
+                confirm_text="删除", danger=True,
+            )
+            if confirmed:
+                self.http_delete_interface_requested.emit(item_id)
+        elif kind == "folder":
+            count = self._http_interface_count(item)
+            confirmed = ask_yes_no(
+                self, "删除文件夹",
+                "确定删除文件夹「{}」及其中的 {} 个接口吗？\n"
+                "子文件夹也会一并删除，且无法恢复。".format(name, count),
+                confirm_text="删除", danger=True,
+            )
+            if confirmed:
+                self.http_delete_folder_requested.emit(item_id)
 
     def _on_http_item_changed(self, item, column):
         if column != 0:
@@ -1132,6 +1420,22 @@ class Sidebar(QWidget):
     def _refresh_http_interfaces(self, *_args):
         if not hasattr(self, "_http_interface_tree"):
             return
+        expanded_ids = {
+            folder_id for folder_id, item
+            in getattr(self, "_http_folder_items", {}).items()
+            if item.isExpanded()
+        }
+        current = self._http_interface_tree.currentItem()
+        current_id = (
+            str(current.data(0, _HTTP_ID_ROLE) or "")
+            if current is not None else "")
+        current_kind = (
+            current.data(0, _HTTP_KIND_ROLE)
+            if current is not None else None)
+        if current_kind != "interface":
+            current_id = ""
+        vertical_scroll = (
+            self._http_interface_tree.verticalScrollBar().value())
         query = self._http_api_search.text().strip().lower()
         self._http_interface_tree.blockSignals(True)
         self._http_interface_tree.clear()
@@ -1165,6 +1469,10 @@ class Sidebar(QWidget):
             row.setData(0, _HTTP_NAME_ROLE, name)
             row.setData(0, _HTTP_FOLDER_ROLE, item.get("folder_id"))
             row.setData(0, _HTTP_URL_ROLE, url)
+            row.setData(
+                0, _HTTP_DIRTY_ROLE, bool(item.get("dirty")))
+            row.setData(
+                0, _HTTP_DRAFT_ROLE, bool(item.get("draft")))
             row.setFlags(
                 Qt.ItemFlag.ItemIsEnabled
                 | Qt.ItemFlag.ItemIsSelectable
@@ -1182,7 +1490,7 @@ class Sidebar(QWidget):
                 return
             visited = set(visited)
             visited.add(folder_id)
-            name = str(folder.get("name") or "新建文件夹")
+            name = str(folder.get("name") or "新建目录")
             row = QTreeWidgetItem([name])
             row.setData(0, _HTTP_ID_ROLE, folder_id)
             row.setData(0, _HTTP_KIND_ROLE, "folder")
@@ -1192,7 +1500,6 @@ class Sidebar(QWidget):
                 count_folder_interfaces(folder_id, set()))
             row.setFlags(
                 Qt.ItemFlag.ItemIsEnabled
-                | Qt.ItemFlag.ItemIsSelectable
                 | Qt.ItemFlag.ItemIsEditable)
             if parent is None:
                 self._http_interface_tree.addTopLevelItem(row)
@@ -1241,27 +1548,65 @@ class Sidebar(QWidget):
                 visible = True
             return visible
 
-        visible_count = 0
         for index in range(self._http_interface_tree.topLevelItemCount()):
-            if filter_item(
-                    self._http_interface_tree.topLevelItem(index)):
-                visible_count += 1
-        if visible_count == 0:
-            empty = QTreeWidgetItem([
-                "暂无接口或文件夹"
-                if not self._http_interfaces and not self._http_folders
-                else "没有匹配接口",
-            ])
-            empty.setFlags(Qt.ItemFlag.NoItemFlags)
-            self._http_interface_tree.addTopLevelItem(empty)
+            filter_item(self._http_interface_tree.topLevelItem(index))
+
+        expand_ids = expanded_ids | self._http_pending_expand_ids
+        for folder_id, item in self._http_folder_items.items():
+            if folder_id in expand_ids:
+                item.setExpanded(True)
+        self._http_pending_expand_ids.clear()
+
+        target_id = self._http_expanded_target_folder_id
+        target_item = (
+            self._http_folder_items.get(target_id)
+            if target_id else None)
+        if target_item is not None and target_item.isExpanded():
+            self._http_expanded_target_folder_id = target_id
+        else:
+            self._http_expanded_target_folder_id = None
+            self.http_folder_selected.emit(None)
+
+        if current_id:
+            restored = (
+                self._http_folder_items.get(current_id)
+                if current_kind == "folder"
+                else self._http_interface_items.get(current_id)
+            )
+            if restored is not None:
+                self._http_interface_tree.setCurrentItem(restored)
+                self._expand_http_item_parents(restored)
+        QTimer.singleShot(
+            0,
+            lambda value=vertical_scroll:
+            self._http_interface_tree.verticalScrollBar().setValue(value),
+        )
+        QTimer.singleShot(0, self._update_http_tree_width)
         self._http_interface_tree.blockSignals(False)
+
+    def _expand_http_item_parents(self, item):
+        parent = item.parent() if item is not None else None
+        while parent is not None:
+            parent.setExpanded(True)
+            parent = parent.parent()
+
+    def _update_http_tree_width(self):
+        if not hasattr(self, "_http_interface_tree"):
+            return
+        tree = self._http_interface_tree
+        content_width = tree.sizeHintForColumn(0) + 72
+        viewport_width = tree.viewport().width()
+        tree.setColumnWidth(0, max(viewport_width, content_width))
+        tree.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOn
+            if content_width > viewport_width
+            else Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
 
     def _on_http_interface_clicked(self, item, _column):
         kind = item.data(0, _HTTP_KIND_ROLE)
         api_id = item.data(0, _HTTP_ID_ROLE)
-        if kind == "folder" and api_id:
-            self.http_folder_selected.emit(str(api_id))
-        elif kind == "interface" and api_id:
+        if kind == "interface" and api_id:
             self.http_folder_selected.emit(
                 item.data(0, _HTTP_FOLDER_ROLE))
             self.http_interface_selected.emit(str(api_id))
@@ -1270,9 +1615,22 @@ class Sidebar(QWidget):
         api_id = str(api_id or "")
         item = self._http_interface_items.get(api_id)
         if item is not None:
+            self._expand_http_item_parents(item)
             self._http_interface_tree.setCurrentItem(item)
             return
         self._http_interface_tree.clearSelection()
+
+    def _show_http_transfer_menu(self):
+        menu = prepare_menu(QMenu(self))
+        import_action = menu.addAction("导入项目...")
+        export_action = menu.addAction("导出项目...")
+        selected = menu.exec(
+            self._btn_http_transfer_menu.mapToGlobal(
+                self._btn_http_transfer_menu.rect().bottomLeft()))
+        if selected == import_action:
+            self.http_import_requested.emit()
+        elif selected == export_action:
+            self.http_export_requested.emit()
 
     def _on_mode_changed(self, idx: int):
         modes = [
@@ -1281,11 +1639,26 @@ class Sidebar(QWidget):
         ]
         self._current_mode = modes[idx]
         self._settings_stack.setCurrentIndex(idx)
+        fill_settings = self._current_mode in (
+            "mqtt", "websocket", "http")
+        self._settings_inner_layout.setStretch(
+            0, 1 if fill_settings else 0)
+        self._settings_inner_layout.setStretch(
+            1, 0 if fill_settings else 1)
+        self._settings_stack.setSizePolicy(
+            QSizePolicy.Policy.Preferred,
+            (
+                QSizePolicy.Policy.Expanding
+                if fill_settings else QSizePolicy.Policy.Preferred
+            ),
+        )
         self._settings_stack.updateGeometry()
         self._settings_scroll.widget().updateGeometry()
         self._wheel_active_control = None
         self._settings_label.setText(
             "全部接口" if self._current_mode == "http" else "参数配置")
+        self._btn_http_transfer_menu.setVisible(
+            self._current_mode == "http")
 
         is_serial = (self._current_mode == "serial")
         self._btn_refresh.setVisible(is_serial)

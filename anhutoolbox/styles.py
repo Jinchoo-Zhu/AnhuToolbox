@@ -481,6 +481,12 @@ QScrollBar::handle:horizontal {{
 QScrollBar::handle:horizontal:hover {{
     background: {TEXT_MUTED};
 }}
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
+    width: 0;
+    height: 0;
+    border: none;
+    background: transparent;
+}}
 
 QTableWidget {{
     background-color: {BG_INPUT};

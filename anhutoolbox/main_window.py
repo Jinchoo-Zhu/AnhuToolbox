@@ -5,17 +5,18 @@ import os, json, shutil, socket, time
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QTabWidget, QStackedWidget,
-    QSplitter, QStatusBar, QLabel, QFrame, QPushButton,
+    QSplitter, QStatusBar, QLabel, QFrame,
     QMenu, QFileDialog
 )
 from PySide6.QtCore import Qt, QTimer, Signal, Slot
 import serial, serial.tools.list_ports
 
 from .sidebar import Sidebar
-from .panels import LogPanel, SendBar, PresetPanel
+from .panels import PresetPanel
 from .workers import SerialReadWorker, TCPServerWorker, TCPClientWorker
 from .protocol_workers import MQTTWorker, WebSocketWorker
 from .protocol_pages import HTTPPage, MQTTPage, WebSocketPage
+from .process_metrics import ProcessMetrics
 from .stream_views import StreamPage
 from .tools import TimestampTool, QRTool, JsonTool, BaseTool, RegexTool, DiffTool, SortTool, EncodeTool, ChecksumTool, AmountTool, HardwareInfoPage, NetworkTool
 from .styles import (GLOBAL_STYLE, STATUS_BAR_STYLE, BG_SIDEBAR, BORDER,
@@ -113,6 +114,11 @@ class MainWindow(QMainWindow):
         self._base_dir = base_dir or os.path.dirname(os.path.dirname(__file__))
         self._data_root = choose_data_root(self._base_dir)
         self._data_dir = os.path.join(self._data_root, "data")
+        self._log_dir = os.path.join(self._data_root, "log")
+        try:
+            os.makedirs(self._log_dir, exist_ok=True)
+        except Exception as e:
+            print("[AnhuToolbox] 创建日志目录失败:", e)
         # 数据文件放 EXE 目录 (可写), 而非临时解压目录
         self.setWindowTitle("Anhu 百宝箱")
         self.setMinimumSize(1100, 720)
@@ -188,6 +194,12 @@ class MainWindow(QMainWindow):
         self._port_timer.timeout.connect(self._refresh_ports)
         self._port_timer.start(1500)
 
+        self._process_metrics = ProcessMetrics()
+        self._resource_timer = QTimer(self)
+        self._resource_timer.timeout.connect(self._update_resource_usage)
+        self._resource_timer.start(1000)
+        self._update_resource_usage()
+
     def _stream_page(self, mode=None):
         key = mode or self._active_stream_key
         return self._stream_pages.get(key, self._stream_pages["serial"])
@@ -231,6 +243,16 @@ class MainWindow(QMainWindow):
         self._mqtt_page = MQTTPage()
         self._websocket_page = WebSocketPage()
         self._http_page = HTTPPage()
+        for key, page in self._stream_pages.items():
+            prefix = {
+                "serial": "serial",
+                "tcpserver": "tcp_server",
+                "tcpclient": "tcp_client",
+            }[key]
+            page.log_panel.set_log_directory(self._log_dir, prefix)
+        self._mqtt_page.set_log_directory(self._log_dir, "mqtt")
+        self._websocket_page.set_log_directory(
+            self._log_dir, "websocket")
         self._comm_stack = QStackedWidget()
         self._comm_stack.addWidget(self._main_area)
         self._comm_stack.addWidget(self._stream_pages["tcpserver"])
@@ -241,6 +263,9 @@ class MainWindow(QMainWindow):
 
         # --- Tab 控件: 通信调试 + 工具集 ---
         self._tab_widget = QTabWidget()
+        # QTabWidget 的 minimumSizeHint 会取所有子页的最大值，导致预设分隔器
+        # 在小窗口中几乎没有可拖动范围。显式设置可收缩宽度，由分屏自行分配。
+        self._tab_widget.setMinimumWidth(360)
         self._tab_widget.setStyleSheet(
             "QTabWidget::pane{border:1px solid #D0D0D0;border-top:none}"
             "QTabBar::tab{background:#F5F5F5;color:#666;padding:8px 18px;border:1px solid #D0D0D0;"
@@ -265,7 +290,16 @@ class MainWindow(QMainWindow):
         self.preset_panel.setMinimumWidth(200)
 
         self._preset_splitter = QSplitter(Qt.Horizontal)
-        self._preset_splitter.setHandleWidth(2)
+        self._preset_splitter.setObjectName("presetSplitter")
+        self._preset_splitter.setHandleWidth(8)
+        self._preset_splitter.setChildrenCollapsible(False)
+        self._preset_splitter.setOpaqueResize(True)
+        self._preset_splitter.setStyleSheet(
+            "QSplitter#presetSplitter::handle{background:#D8E0E8;"
+            "border-left:1px solid #C6D0DA;"
+            "border-right:1px solid #F4F7FA;}"
+            "QSplitter#presetSplitter::handle:hover{background:#9CC7EA;}"
+        )
         self._preset_splitter.addWidget(self._tab_widget)
         self._preset_splitter.addWidget(self.preset_panel)
         self._preset_splitter.setStretchFactor(0, 3)
@@ -393,10 +427,51 @@ class MainWindow(QMainWindow):
         self._lbl_stats.setStyleSheet("color:{};font-size:12px".format(TEXT_SECONDARY))
         lo.addWidget(self._lbl_stats)
         lo.addStretch()
+        self._lbl_resource_usage = QLabel("内存 --  |  CPU --")
+        self._lbl_resource_usage.setObjectName("processResourceUsage")
+        self._lbl_resource_usage.setMinimumWidth(200)
+        self._lbl_resource_usage.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self._lbl_resource_usage.setStyleSheet(
+            "color:{};font-size:12px".format(TEXT_SECONDARY))
+        self._lbl_resource_usage.setToolTip(
+            "当前 AnhuToolbox 进程占用的工作集内存和 CPU，按秒刷新")
+        lo.addWidget(self._lbl_resource_usage)
+        self._comm_info_widgets = [
+            self._lbl_conn_type,
+            self._lbl_dot,
+            self._lbl_status_text,
+            sep1,
+            self._lbl_local,
+            self._lbl_arrow,
+            self._lbl_remote,
+            self._lbl_stats,
+        ]
+        self._info_bar = bar
         return bar
 
+    @staticmethod
+    def _format_memory_size(size_bytes):
+        size = max(0, int(size_bytes))
+        if size >= 1024 ** 3:
+            return "{:.2f} GB".format(size / (1024 ** 3))
+        return "{:.1f} MB".format(size / (1024 ** 2))
+
+    def _update_resource_usage(self):
+        try:
+            usage = self._process_metrics.sample()
+        except Exception:
+            self._lbl_resource_usage.setText("内存 --  |  CPU --")
+            return
+        self._lbl_resource_usage.setText(
+            "内存 {}  |  CPU {:.1f}%".format(
+                self._format_memory_size(usage.memory_bytes),
+                usage.cpu_percent,
+            )
+        )
+
     def _on_tab_changed(self, index):
-        """切换主 tab 时同步左侧导航区 + 隐藏预设/底部信息栏"""
+        """切换主 tab 时同步导航、连接状态和全局资源栏。"""
         # 按页面对象判断, 避免依赖 tab 的先后顺序
         page = self._tab_widget.widget(index)
         if page is getattr(self, "_toolbox_stack", None):
@@ -412,7 +487,9 @@ class MainWindow(QMainWindow):
             mode = "serial"
         self.sidebar.set_nav_mode(mode)
         is_comm = (mode == "serial")
-        self._info_bar.setVisible(is_comm)
+        self._info_bar.setVisible(True)
+        for widget in self._comm_info_widgets:
+            widget.setVisible(is_comm)
         if is_comm:
             stream_mode = self.sidebar.current_mode in (
                 "serial", "tcpserver", "tcpclient")
@@ -444,7 +521,8 @@ class MainWindow(QMainWindow):
         if checked:
             # 展开时给预设面板合理的初始宽度
             tw = self._preset_splitter.width()
-            self._preset_splitter.setSizes([tw * 3 // 5, tw * 2 // 5])
+            left = tw // 2
+            self._preset_splitter.setSizes([left, tw - left])
         cfg.set("preset_visible", checked)
         cfg.save()
 
@@ -561,10 +639,18 @@ class MainWindow(QMainWindow):
             self.sidebar.set_http_folders)
         self._http_page.active_interface_changed.connect(
             self.sidebar.select_http_interface)
+        self._http_page.new_project_import_requested.connect(
+            self._on_http_import_as_new_project)
         self.sidebar.http_interface_selected.connect(
             self._http_page.open_interface)
         self.sidebar.http_new_requested.connect(
             self._http_page.new_document)
+        self.sidebar.http_import_requested.connect(
+            lambda: self._http_page.import_interfaces(
+                self._current_project))
+        self.sidebar.http_export_requested.connect(
+            lambda: self._http_page.export_interfaces(
+                self._current_project))
         self.sidebar.http_folder_selected.connect(
             self._http_page.set_current_folder)
         self.sidebar.http_new_folder_requested.connect(
@@ -573,6 +659,12 @@ class MainWindow(QMainWindow):
             self._rename_http_item)
         self.sidebar.http_move_requested.connect(
             self._http_page.move_interface)
+        self.sidebar.http_duplicate_requested.connect(
+            self._http_page.duplicate_interface)
+        self.sidebar.http_delete_interface_requested.connect(
+            self._http_page.delete_interface)
+        self.sidebar.http_delete_folder_requested.connect(
+            self._http_page.delete_folder)
         for page in self._stream_pages.values():
             page.send_bar.send_data.connect(self._on_send_data)
             page.send_bar.repeat_tick.connect(self._on_repeat_tick)
@@ -591,6 +683,24 @@ class MainWindow(QMainWindow):
             self._http_page.rename_folder(item_id, name)
         elif kind == "interface":
             self._http_page.rename_interface(item_id, name)
+
+    @Slot(str, object, str)
+    def _on_http_import_as_new_project(
+            self, project_name, transfer_result, conflict_policy):
+        base_name = str(project_name or "导入项目").strip()
+        actual_name = self._pm.create(
+            base_name, self._default_profile())
+        self._reload_project_list(actual_name)
+        self.sidebar._mode_group.button(5).click()
+        imported, skipped = self._http_page._apply_transfer(
+            transfer_result, None, conflict_policy)
+        self._save_current_project()
+        self._http_page._show_http_toast("导入成功")
+        self.status_bar.showMessage(
+            "已创建项目「{}」：导入 {} 个接口，跳过 {} 个".format(
+                actual_name, imported, skipped),
+            8000,
+        )
 
     def _sync_preset_text(self):
         self.preset_panel.set_current_text(
@@ -916,6 +1026,7 @@ class MainWindow(QMainWindow):
             page.send_bar.stop_repeat()
             page.log_panel.reset_runtime_state()
         self._mqtt_page.reset_runtime_state()
+        self._websocket_page.reset_runtime_state()
         self.preset_panel.stop_loops()
         if self._active_worker:
             self._on_disconnect(self.sidebar.current_mode)
@@ -1024,6 +1135,8 @@ class MainWindow(QMainWindow):
                 page.send_bar.chk_repeat.setChecked(False)
             page.send_bar.stop_repeat()
             page.log_panel.reset_runtime_state()
+        self._mqtt_page.reset_runtime_state()
+        self._websocket_page.reset_runtime_state()
         self.preset_panel.stop_loops()
         if self._active_worker:
             self._on_disconnect(self.sidebar.current_mode)
@@ -1119,7 +1232,8 @@ class MainWindow(QMainWindow):
                 port=port, baudrate=int(self.sidebar.cb_baud.currentText()),
                 bytesize=int(self.sidebar.cb_data.currentText()),
                 stopbits={"1":serial.STOPBITS_ONE,"1.5":serial.STOPBITS_ONE_POINT_FIVE,"2":serial.STOPBITS_TWO}[self.sidebar.cb_stop.currentText()],
-                parity=parity_map[self.sidebar.cb_parity.currentText()], timeout=0.1,
+                parity=parity_map[self.sidebar.cb_parity.currentText()],
+                timeout=0.1, write_timeout=0.5,
                 rtscts=(self.sidebar.cb_flow.currentText()=="RTS/CTS"),
                 xonxoff=(self.sidebar.cb_flow.currentText()=="XON/XOFF")
             )
@@ -1206,7 +1320,7 @@ class MainWindow(QMainWindow):
         self._mqtt_worker.configure(config)
         self._mqtt_auto_reconnect = bool(config["auto_reconnect"])
         self._mqtt_worker.set_subscriptions(
-            self._mqtt_page.subscriptions())
+            self._mqtt_page.enabled_subscriptions())
         self._mqtt_worker.start()
         self._active_worker = self._mqtt_worker
         self.sidebar.set_connected(True)
@@ -1702,10 +1816,13 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         self._sync_timer.stop(); self._port_timer.stop()
+        self._resource_timer.stop()
         self._extra_tabs_timer.stop()
         for page in self._stream_pages.values():
             page.send_bar.stop_repeat()
             page.log_panel.cleanup()
+        self._mqtt_page.cleanup()
+        self._websocket_page.cleanup()
         self.preset_panel.stop_timer()
         if self._active_worker:
             self._on_disconnect(self.sidebar.current_mode)

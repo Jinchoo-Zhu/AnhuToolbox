@@ -23,7 +23,9 @@ from anhutoolbox.app_paths import choose_data_root
 from anhutoolbox import dialogs
 from anhutoolbox.dialogs import AnhuInputDialog
 from anhutoolbox.panels import LogPanel, PresetPanel, SendBar, parse_hex_bytes
+from anhutoolbox.log_writer import AsyncLogWriter
 from anhutoolbox.projects import ProjectManager
+from anhutoolbox.process_metrics import ProcessMetrics, ProcessUsage
 from anhutoolbox.tools import (
     AmountTool, BaseTool, DiffTool, NetworkTool, QRTool, TimestampTool,
 )
@@ -51,6 +53,25 @@ def close_window(window):
 
 
 class ToolTests(unittest.TestCase):
+    def test_process_metrics_report_memory_and_cpu(self):
+        usage = ProcessMetrics().sample()
+        self.assertGreater(usage.memory_bytes, 0)
+        self.assertGreaterEqual(usage.cpu_percent, 0.0)
+        self.assertLessEqual(usage.cpu_percent, 100.0)
+
+    def test_async_log_writer_flushes_before_close(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = os.path.join(temp, "save.log")
+            writer = AsyncLogWriter(path)
+            self.assertTrue(writer.write_text("第一条\n"))
+            self.assertTrue(writer.write_text("第二条\n"))
+            self.assertTrue(writer.flush())
+            writer.close()
+            self.assertEqual(
+                Path(path).read_text(encoding="utf-8"),
+                "第一条\n第二条\n",
+            )
+
     def test_timestamp_seconds_milliseconds_and_formats(self):
         tool = TimestampTool()
         try:
@@ -186,6 +207,57 @@ class HexTests(unittest.TestCase):
             bar._build_data(silent=True),
             b"\x01\x02\x03\x61\x61")
 
+    def test_send_controls_scroll_without_covering_rows(self):
+        with tempfile.TemporaryDirectory() as temp:
+            window = MainWindow(temp)
+            try:
+                window.resize(1100, 720)
+                window.show()
+                APP.processEvents()
+                text_height = window.send_bar.text.height()
+                text_y = window.send_bar.sp_start.mapTo(
+                    window.send_bar,
+                    window.send_bar.sp_start.rect().topLeft(),
+                ).y()
+                switches_y = window.send_bar.chk_hex.mapTo(
+                    window.send_bar,
+                    window.send_bar.chk_hex.rect().topLeft(),
+                ).y()
+
+                # 展开预设后中间通信区变窄，底部在校验值等控件之外
+                # 应出现独立横向滚动条，不能压住两行控制控件。
+                window._btn_toggle_preset.setChecked(True)
+                APP.processEvents()
+
+                bar = window.send_bar
+                scroll = bar._controls_scroll
+                scrollbar = scroll.horizontalScrollBar()
+                controls_layout = bar._controls_content.layout()
+                self.assertTrue(scrollbar.isVisible())
+                self.assertGreater(scrollbar.maximum(), 0)
+                self.assertEqual(scrollbar.height(), 8)
+                self.assertGreaterEqual(
+                    scroll.viewport().height(),
+                    controls_layout.minimumSize().height(),
+                )
+                self.assertLessEqual(
+                    controls_layout.itemAt(1).geometry().bottom() + 1,
+                    scroll.viewport().height(),
+                )
+                self.assertEqual(bar.text.height(), text_height)
+                self.assertEqual(
+                    bar.sp_start.mapTo(
+                        bar, bar.sp_start.rect().topLeft()).y(),
+                    text_y,
+                )
+                self.assertEqual(
+                    bar.chk_hex.mapTo(
+                        bar, bar.chk_hex.rect().topLeft()).y(),
+                    switches_y,
+                )
+            finally:
+                close_window(window)
+
 
 class CommunicationTests(unittest.TestCase):
     def test_serial_framing_scales_with_baud(self):
@@ -312,6 +384,30 @@ class CommunicationTests(unittest.TestCase):
                 window._active_worker = None
                 close_window(window)
 
+    def test_serial_connection_has_finite_write_timeout(self):
+        fake_serial = mock.Mock()
+        fake_serial.dtr = False
+        fake_serial.rts = False
+        with tempfile.TemporaryDirectory() as temp:
+            window = MainWindow(temp)
+            try:
+                window.sidebar.cb_port.addItem("COM4")
+                window.sidebar.cb_port.setCurrentText("COM4")
+                with mock.patch(
+                        "anhutoolbox.main_window.serial.Serial",
+                        return_value=fake_serial) as serial_class, \
+                        mock.patch.object(
+                            window._serial_worker, "start"), \
+                        mock.patch.object(
+                            window._serial_worker, "set_serial"):
+                    window._connect_serial()
+                kwargs = serial_class.call_args.kwargs
+                self.assertEqual(kwargs["timeout"], 0.1)
+                self.assertEqual(kwargs["write_timeout"], 0.5)
+            finally:
+                window._active_worker = None
+                close_window(window)
+
 
 class StreamWorkspaceTests(unittest.TestCase):
     def test_serial_tcp_server_and_client_keep_independent_content(self):
@@ -383,6 +479,39 @@ class StreamWorkspaceTests(unittest.TestCase):
 
 
 class PersistenceTests(unittest.TestCase):
+    def test_global_resource_bar_stays_visible_on_all_tabs(self):
+        with tempfile.TemporaryDirectory() as temp:
+            window = MainWindow(temp)
+            try:
+                window.resize(1100, 720)
+                window.show()
+                APP.processEvents()
+                window._build_extra_tabs()
+                with mock.patch.object(
+                        window._process_metrics,
+                        "sample",
+                        return_value=ProcessUsage(
+                            512 * 1024 * 1024, 12.34)):
+                    window._update_resource_usage()
+                self.assertEqual(
+                    window._lbl_resource_usage.text(),
+                    "内存 512.0 MB  |  CPU 12.3%",
+                )
+                self.assertTrue(window._info_bar.isVisible())
+                self.assertTrue(
+                    window._lbl_resource_usage.isVisible())
+                self.assertTrue(window._lbl_conn_type.isVisible())
+
+                window._tab_widget.setCurrentWidget(
+                    window._library_stack)
+                APP.processEvents()
+                self.assertTrue(window._info_bar.isVisible())
+                self.assertTrue(
+                    window._lbl_resource_usage.isVisible())
+                self.assertFalse(window._lbl_conn_type.isVisible())
+            finally:
+                close_window(window)
+
     def test_profile_fields_are_tolerant(self):
         self.assertEqual(_profile_int("bad", 30, 0, 3600), 30)
         self.assertEqual(_profile_int("99999", 30, 0, 3600), 3600)
@@ -515,20 +644,154 @@ class PersistenceTests(unittest.TestCase):
         self.assertEqual(panel._rx_total, 0)
         self.assertEqual(panel.text.toPlainText(), "")
 
+    def test_log_toolbar_uses_horizontal_scroll_without_shrinking_log(self):
+        panel = LogPanel()
+        panel.resize(900, 500)
+        panel.show()
+        APP.processEvents()
+        wide_text_height = panel.text.height()
+        wide_scroll_height = panel._toolbar_scroll.height()
+        wide_timeout_y = panel.sp_timeout.mapTo(
+            panel, panel.sp_timeout.rect().topLeft()).y()
+        wide_clear_y = panel.btn_clear.mapTo(
+            panel, panel.btn_clear.rect().topLeft()).y()
+        panel.resize(320, 500)
+        APP.processEvents()
+        self.assertGreater(
+            panel._toolbar_scroll.horizontalScrollBar().maximum(), 0)
+        self.assertTrue(
+            panel._toolbar_scroll.horizontalScrollBar().isVisible())
+        self.assertEqual(panel.text.height(), wide_text_height)
+        self.assertEqual(panel._toolbar_scroll.height(), wide_scroll_height)
+        self.assertEqual(
+            panel.sp_timeout.mapTo(
+                panel, panel.sp_timeout.rect().topLeft()).y(),
+            wide_timeout_y,
+        )
+        self.assertEqual(
+            panel.btn_clear.mapTo(
+                panel, panel.btn_clear.rect().topLeft()).y(),
+            wide_clear_y,
+        )
+        toolbar_viewport = panel._toolbar_scroll.viewport()
+        self.assertLessEqual(
+            panel.sp_timeout.geometry().bottom() + 1,
+            toolbar_viewport.height(),
+        )
+        self.assertLessEqual(
+            panel.btn_clear.geometry().bottom() + 1,
+            toolbar_viewport.height(),
+        )
+        panel.close()
+        panel.deleteLater()
+
     def test_log_file_error_disables_saving(self):
         panel = LogPanel()
-        bad_file = mock.Mock()
-        bad_file.write.side_effect = OSError("disk full")
-        panel._save_file = bad_file
+        bad_writer = mock.Mock()
+        bad_writer.write_text.return_value = False
+        panel._save_writer = bad_writer
         panel.chk_save_file.blockSignals(True)
         panel.chk_save_file.setChecked(True)
         panel.chk_save_file.blockSignals(False)
         errors = []
         panel.file_error.connect(errors.append)
         panel.append_data("rx", b"ABC")
-        panel._flush_display()
         self.assertTrue(errors)
         self.assertFalse(panel.chk_save_file.isChecked())
+        bad_writer.close.assert_called()
+
+    def test_stream_save_keeps_writing_while_page_is_paused(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = os.path.join(temp, "serial.log")
+            panel = LogPanel()
+            try:
+                panel.set_log_directory(temp, "serial")
+                default_paths = []
+
+                def choose_path(parent, title, default, filters):
+                    default_paths.append(default)
+                    return path, ""
+
+                with mock.patch(
+                        "anhutoolbox.panels.QFileDialog.getSaveFileName",
+                        side_effect=choose_path):
+                    panel.chk_save_file.setChecked(True)
+                self.assertEqual(
+                    Path(default_paths[0]).parent, Path(temp))
+                self.assertTrue(
+                    Path(default_paths[0]).name.startswith("serial_"))
+                panel.chk_pause.setChecked(True)
+                panel.append_data("rx", b"ABC")
+                self.assertTrue(panel._save_writer.flush())
+                saved = Path(path).read_text(encoding="utf-8")
+                self.assertIn("41 42 43", saved)
+                self.assertTrue(saved.endswith("\n"))
+                self.assertEqual(panel.text.toPlainText(), "")
+            finally:
+                panel.cleanup()
+
+    def test_stream_page_keeps_all_rows_when_save_is_off(self):
+        panel = LogPanel()
+        for index in range(40):
+            panel.append_data("rx", str(index).encode("ascii"))
+        panel._flush_display()
+        self.assertEqual(panel.text.maximumBlockCount(), 0)
+        self.assertEqual(panel._display_records, 40)
+        self.assertIn("0", panel.text.toPlainText())
+        self.assertIn("39", panel.text.toPlainText())
+        self.assertLess(
+            panel.chk_pause.x(), panel.chk_save_file.x())
+        self.assertIn("未开启保存不清屏", panel.lbl_save_rule.text())
+        self.assertIn("300MB清屏", panel.lbl_save_rule.text())
+        self.assertNotIn("\n", panel.lbl_save_rule.text())
+        panel.cleanup()
+
+    def test_stream_save_clears_page_after_writer_flushes(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = os.path.join(temp, "serial.log")
+            panel = LogPanel()
+            try:
+                panel.set_log_directory(temp, "serial")
+                with mock.patch(
+                        "anhutoolbox.panels.AUTO_CLEAR_RECORDS", 2), \
+                        mock.patch(
+                            "anhutoolbox.panels.AUTO_CLEAR_BYTES",
+                            1024 * 1024), \
+                        mock.patch(
+                            "anhutoolbox.panels.QFileDialog."
+                            "getSaveFileName",
+                            return_value=(path, "")):
+                    panel.chk_save_file.setChecked(True)
+                    for char in (b"A", b"B", b"C"):
+                        panel.append_data("rx", char)
+                        panel._flush_display()
+                    self.assertTrue(
+                        panel.text.toPlainText().strip().endswith("43"))
+                    self.assertEqual(panel._display_records, 1)
+                    self.assertTrue(panel.chk_save_file.isChecked())
+                    self.assertTrue(panel._save_writer.flush())
+                lines = Path(path).read_text(
+                    encoding="utf-8").splitlines()
+                self.assertEqual(len(lines), 3)
+                self.assertTrue(all("41" in line or "42" in line
+                                    or "43" in line for line in lines))
+            finally:
+                panel.cleanup()
+
+    def test_main_window_creates_empty_log_directory(self):
+        with tempfile.TemporaryDirectory() as temp:
+            window = MainWindow(temp)
+            try:
+                log_dir = Path(temp, "log")
+                self.assertTrue(log_dir.is_dir())
+                self.assertEqual(list(log_dir.iterdir()), [])
+                self.assertEqual(
+                    window._stream_pages["serial"]
+                    .log_panel._save_directory,
+                    str(log_dir),
+                )
+            finally:
+                close_window(window)
 
     def test_corrupt_project_is_not_overwritten(self):
         with tempfile.TemporaryDirectory() as temp:

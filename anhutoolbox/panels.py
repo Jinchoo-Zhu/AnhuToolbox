@@ -2,19 +2,27 @@
 """AnhuToolbox 面板组件 -- 校验函数库 + 统一日志面板"""
 
 import json, re, time
+import os
 from datetime import datetime
 from typing import Optional
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame,
     QCheckBox, QSpinBox, QPlainTextEdit, QFileDialog,
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
-    QMenu, QComboBox
+    QMenu, QComboBox, QScrollArea,
 )
-from PySide6.QtCore import Qt, Signal, Slot, QTimer
-from PySide6.QtGui import QFont, QTextCursor
+from PySide6.QtCore import QEvent, QSize, Qt, Signal, Slot, QTimer
+from PySide6.QtGui import QFont, QFontMetrics, QIcon, QTextCursor
 
-from .styles import prepare_menu
+from .styles import _find_assets_dir, prepare_menu
 from .dialogs import show_error, show_success, show_warning
+from .log_writer import (
+    AUTO_CLEAR_BYTES, AUTO_CLEAR_RECORDS, AsyncLogWriter,
+)
+from .ui_tokens import (
+    FONT_UI, HTTP_TABLE_STYLE, ICON_SIZE, PRESET_PANEL_STYLE,
+    TABLE_ROW_HEIGHT,
+)
 
 
 CHECKSUM_TYPES = ["None","ModbusCRC16","CCITT-CRC16","CRC32","OADD8","ADD8","XOR8","ADD16"]
@@ -22,6 +30,37 @@ CHECKSUM_TYPES = ["None","ModbusCRC16","CCITT-CRC16","CRC32","OADD8","ADD8","XOR
 
 _HEX_SEPARATORS = re.compile(r"[\s,;:_-]+")
 _HEX_PREFIX = re.compile(r"(?i)0x")
+SCROLLBAR_SLOT_HEIGHT = 8
+SAVE_RULE_TEXT = (
+    "未开启保存不清屏，"
+    "开启保存后页面数据达到1万条/页面数据内存达到300MB清屏"
+)
+SAVE_RULE_TIP = (
+    "未开启“保存到文件”时，页面不会自动清空。\n"
+    "开启后数据持续写入所选文件；页面达到 1 万条或"
+    "页面数据估算达到 300 MB 时，等待当前数据写入完成后"
+    "自动清空页面。\n"
+    "300 MB 指当前页面保留的数据，不是整个程序进程内存。"
+)
+
+
+def _save_rule_label():
+    label = QLabel(SAVE_RULE_TEXT)
+    label.setObjectName("saveRuleHint")
+    label.setStyleSheet("color:#7A8088;font-size:11px")
+    label.setToolTip(SAVE_RULE_TIP)
+    return label
+
+
+def _preset_icon(filename):
+    return QIcon(os.path.join(_find_assets_dir(), filename))
+
+
+def _set_preset_icon(button, filename):
+    icon = _preset_icon(filename)
+    if not icon.isNull():
+        button.setIcon(icon)
+        button.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
 
 
 def parse_hex_bytes(text: str) -> bytes:
@@ -140,8 +179,12 @@ class LogPanel(QWidget):
         self._pause_dropped_bytes = 0
         self._rx_total = 0
         self._tx_total = 0
-        self._save_file = None
+        self._save_writer = None
         self._save_path = None
+        self._save_directory = os.getcwd()
+        self._save_prefix = "serial"
+        self._display_records = 0
+        self._display_bytes = 0
         self._packet_buf = b""
         self._last_packet_ts = 0.0
         self._packet_start_dt = None
@@ -155,7 +198,9 @@ class LogPanel(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(6,6,6,2)
         layout.setSpacing(3)
-        tb = QHBoxLayout()
+        self._toolbar_content = QWidget()
+        tb = QHBoxLayout(self._toolbar_content)
+        tb.setContentsMargins(0, 0, 0, 0)
         tb.setSpacing(4)
         self.chk_hex = QCheckBox("HEX显示")
         self.chk_hex.setChecked(True)
@@ -176,30 +221,70 @@ class LogPanel(QWidget):
         self.sp_timeout.valueChanged.connect(self._on_timeout_changed)
         tb.addWidget(self.sp_timeout)
         tb.addSpacing(12)
-        self.chk_save_file = QCheckBox("保存到文件")
-        self.chk_save_file.toggled.connect(self._on_save_file_toggle)
-        tb.addWidget(self.chk_save_file)
-        tb.addSpacing(10)
         self.chk_pause = QCheckBox("页面暂停")
         self.chk_pause.toggled.connect(self._on_pause)
         tb.addWidget(self.chk_pause)
+        tb.addSpacing(10)
+        self.chk_save_file = QCheckBox("保存到文件")
+        self.chk_save_file.toggled.connect(self._on_save_file_toggle)
+        tb.addWidget(self.chk_save_file)
+        self.lbl_save_rule = _save_rule_label()
+        tb.addWidget(self.lbl_save_rule)
         tb.addStretch()
         self.btn_clear = QPushButton("清空")
         self.btn_clear.setFixedHeight(24)
         self.btn_clear.setStyleSheet("QPushButton{padding:2px 10px;font-size:12px;border-radius:4px;min-height:20px;max-height:24px}")
         self.btn_clear.clicked.connect(self.clear)
         tb.addWidget(self.btn_clear)
-        layout.addLayout(tb)
+        self._toolbar_layout = tb
+        self._toolbar_scroll = QScrollArea()
+        self._toolbar_scroll.setObjectName("logToolbarScroll")
+        self._toolbar_scroll.setWidgetResizable(True)
+        self._toolbar_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._toolbar_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self._toolbar_scroll.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._toolbar_scroll.setAlignment(
+            Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        self._toolbar_scroll.horizontalScrollBar().setFixedHeight(
+            SCROLLBAR_SLOT_HEIGHT)
+        self._toolbar_scroll.setStyleSheet(
+            "QScrollArea#logToolbarScroll{background:transparent;border:none;}"
+            "QScrollArea#logToolbarScroll>QWidget>QWidget"
+            "{background:transparent;}"
+        )
+        self._toolbar_scroll.setWidget(self._toolbar_content)
+        self._fit_toolbar_width()
+        layout.addWidget(self._toolbar_scroll)
         self.text = QPlainTextEdit()
         self.text.setReadOnly(True)
         self.text.setFont(QFont("Consolas",10))
         self.text.setStyleSheet("QPlainTextEdit{background-color:#FFF;color:#1A1A1A;border:1px solid #D0D0D0;border-radius:4px;padding:8px}")
-        self.text.setMaximumBlockCount(50000)
         self._pending_lines = []
         self._display_timer = QTimer()
         self._display_timer.setSingleShot(True)
         self._display_timer.timeout.connect(self._flush_display)
         layout.addWidget(self.text, stretch=1)
+
+    def _fit_toolbar_width(self):
+        self._toolbar_layout.activate()
+        content_height = max(
+            24, self._toolbar_layout.minimumSize().height())
+        self._toolbar_content.setMinimumWidth(
+            self._toolbar_layout.sizeHint().width())
+        self._toolbar_content.setFixedHeight(content_height)
+        scrollbar_height = max(
+            SCROLLBAR_SLOT_HEIGHT,
+            self._toolbar_scroll.horizontalScrollBar().sizeHint().height(),
+        )
+        self._toolbar_scroll.setFixedHeight(
+            content_height + scrollbar_height)
+
+    def showEvent(self, event):
+        # 全局样式生效后重新测量，内容区始终固定在滚动条上方。
+        super().showEvent(event)
+        QTimer.singleShot(0, self._fit_toolbar_width)
 
     def _on_timestamp_toggled(self, checked):
         """勾选“时间戳和分包显示”后, 超时时间才可修改; 否则标签与输入框置灰禁用"""
@@ -233,14 +318,7 @@ class LogPanel(QWidget):
         cursor.insertText(text)
         sb = self.text.verticalScrollBar()
         sb.setValue(sb.maximum())
-        # 实时写入文件(格式化文本, 与显示一致)
-        if self._save_file:
-            try:
-                self._save_file.write(text)
-                self._save_file.flush()
-            except Exception as e:
-                self._close_save_file()
-                self.file_error.emit("日志文件写入失败: {}".format(e))
+        self._clear_display_if_saving_limit_reached()
 
     def _on_pause(self, checked):
         self._paused = checked
@@ -266,18 +344,40 @@ class LogPanel(QWidget):
 
     def _on_save_file_toggle(self, checked):
         if checked:
+            self._flush_display()
+            try:
+                os.makedirs(self._save_directory, exist_ok=True)
+            except Exception:
+                pass
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            default_name = "AnhuToolbox_{}_log.txt".format(ts)
+            default_name = os.path.join(
+                self._save_directory,
+                "{}_{}.log".format(self._save_prefix, ts),
+            )
             path, _ = QFileDialog.getSaveFileName(
                 self, "保存日志", default_name,
-                "文本文件 (*.txt);;所有文件 (*.*)"
+                "日志文件 (*.log);;文本文件 (*.txt);;所有文件 (*.*)"
             )
             if path:
                 self._save_path = path
                 try:
-                    with open(path, "w", encoding="utf-8") as f:
-                        f.write(self.text.toPlainText())
-                    self._save_file = open(path, "a", encoding="utf-8")
+                    self._save_writer = AsyncLogWriter(path, self)
+                    self._save_writer.error.connect(
+                        self._on_save_writer_error)
+                    current = self.text.toPlainText()
+                    if current:
+                        self._save_writer.write_text(current)
+                    for direction, data in self._pending_data:
+                        self._save_writer.write_text(
+                            self._format_raw_line(direction, data))
+                    if self._packet_buf:
+                        self._save_writer.write_text(
+                            self._format_raw_line(
+                                "rx",
+                                self._packet_buf,
+                                self._packet_start_dt,
+                            )
+                        )
                 except Exception as e:
                     self._close_save_file()
                     show_error(self, "保存失败", str(e))
@@ -287,20 +387,34 @@ class LogPanel(QWidget):
             self._close_save_file()
 
     def _close_save_file(self):
-        if self._save_file:
+        writer, self._save_writer = self._save_writer, None
+        if writer is not None:
             try:
-                self._save_file.close()
+                writer.close()
             except Exception:
                 pass
-            self._save_file = None
+            writer.deleteLater()
         if self.chk_save_file.isChecked():
             self.chk_save_file.blockSignals(True)
             self.chk_save_file.setChecked(False)
             self.chk_save_file.blockSignals(False)
 
+    def _on_save_writer_error(self, message):
+        if self._save_writer is None and not self.chk_save_file.isChecked():
+            return
+        self._close_save_file()
+        self.file_error.emit(message)
+
+    def set_log_directory(self, directory, prefix=None):
+        self._save_directory = str(directory or "")
+        if prefix:
+            self._save_prefix = str(prefix)
+
     @Slot(str, bytes)
     def append_data(self, direction: str, data: bytes):
         """统一入口: 计数 + 写文件 + 路由(分包缓冲 或 直接显示)"""
+        if self._save_writer is not None:
+            self._write_saved_data(direction, data)
         if self._paused:
             if self._pending_bytes + len(data) > self.MAX_PAUSED_BYTES:
                 self._pause_dropped_bytes += len(data)
@@ -344,11 +458,19 @@ class LogPanel(QWidget):
             self._packet_timer.start(self._packet_timeout)
 
     def _append_raw(self, direction: str, data: bytes, ts_dt=None):
-        """纯显示格式化 -- 不碰计数器, 不写文件
+        """纯显示格式化 -- 不碰计数器, 文件在数据入口单独写入
 
         ts_dt: 时间戳对应的时刻; 分包模式下传入"包首字节到达时刻",
                未传入(未分包)时取当前时刻。每条数据独立成行。
         """
+        line = self._format_raw_line(direction, data, ts_dt)
+        self._display_records += 1
+        self._display_bytes += len(line.encode("utf-8"))
+        self._pending_lines.append(line)
+        if not self._display_timer.isActive():
+            self._display_timer.start(5)
+
+    def _format_raw_line(self, direction: str, data: bytes, ts_dt=None):
         ts = ""
         if self.chk_timestamp.isChecked():
             ts = "[{}] ".format((ts_dt or datetime.now()).strftime("%H:%M:%S.%f")[:-3])
@@ -363,17 +485,48 @@ class LogPanel(QWidget):
                 txt = data.decode("latin-1", errors="replace")
             # 每条数据独立成行; 若勾选“加回车换行”则数据自带 \r\n, 显示上会多出一个空行
             line = ts + arrow + txt + "\n"
-        self._pending_lines.append(line)
-        if not self._display_timer.isActive():
-            self._display_timer.start(5)
+        return line
+
+    def _write_saved_data(self, direction, data):
+        writer = self._save_writer
+        if writer is None:
+            return
+        if not writer.write_text(
+                self._format_raw_line(direction, data)):
+            self._on_save_writer_error(
+                "日志写入失败，保存已停止")
+
+    def _clear_display_if_saving_limit_reached(self):
+        if self._save_writer is None:
+            return
+        if (
+            self._display_records < AUTO_CLEAR_RECORDS
+            and self._display_bytes < AUTO_CLEAR_BYTES
+        ):
+            return
+        if not self._save_writer.flush():
+            self._on_save_writer_error(
+                "日志写入未完成，页面未清空，保存已停止")
+            return
+        self._pending_lines.clear()
+        self._display_timer.stop()
+        self.text.clear()
+        self._display_records = 0
+        self._display_bytes = 0
 
     def _add_widget(self, widget):
         """供外部在工具栏末尾插入控件"""
-        tb = self.layout().itemAt(0).layout()
-        if tb:
-            tb.addWidget(widget)
+        self._toolbar_layout.addWidget(widget)
+        self._fit_toolbar_width()
 
     def clear(self):
+        if (
+            self._save_writer is not None
+            and not self._save_writer.flush()
+        ):
+            self._on_save_writer_error(
+                "日志写入未完成，页面未清空，保存已停止")
+            return
         self._pending_lines.clear()
         self._display_timer.stop()
         # 丢弃未输出的残包, 避免清空后缓冲又被刷出来
@@ -383,6 +536,8 @@ class LogPanel(QWidget):
         self._pending_data.clear()
         self._pending_bytes = 0
         self._pause_dropped_bytes = 0
+        self._display_records = 0
+        self._display_bytes = 0
         self.text.clear()
         self._rx_total = 0
         self._tx_total = 0
@@ -563,6 +718,13 @@ class SendBar(QWidget):
         r1.addWidget(self.btn_send)
         layout.addLayout(r1)
 
+        # Rows 2/3 share one horizontal scroll region so wide checksum and
+        # timing controls never get compressed or cover the input above.
+        self._controls_content = QWidget()
+        controls_layout = QVBoxLayout(self._controls_content)
+        controls_layout.setContentsMargins(0, 0, 0, 0)
+        controls_layout.setSpacing(4)
+
         # Row 2: checksum controls + icon buttons
         r2 = QHBoxLayout(); r2.setSpacing(5)
         r2.addWidget(QLabel("第"))
@@ -594,7 +756,7 @@ class SendBar(QWidget):
         self.lbl_crc_val.setStyleSheet("color:#0078D4;font-weight:700;font-family:Consolas;font-size:15px;padding:3px 8px;background:#E8F0FE;border-radius:4px;border:1px solid #B3D4FC")
         r2.addWidget(self.lbl_crc_val)
         r2.addStretch()
-        layout.addLayout(r2)
+        controls_layout.addLayout(r2)
 
         # Row 3: switches
         r3 = QHBoxLayout(); r3.setSpacing(10)
@@ -635,7 +797,35 @@ class SendBar(QWidget):
         self.lbl_tx_count = QLabel("Tx: 0")
         self.lbl_tx_count.setStyleSheet("color:#666;font-size:12px")
         r3.addWidget(self.lbl_tx_count)
-        layout.addLayout(r3)
+        controls_layout.addLayout(r3)
+        controls_layout.activate()
+        controls_width = max(
+            r2.sizeHint().width(), r3.sizeHint().width())
+        controls_height = controls_layout.sizeHint().height()
+        self._controls_content.setMinimumSize(
+            controls_width, controls_height)
+
+        self._controls_scroll = QScrollArea()
+        self._controls_scroll.setObjectName("sendControlsScroll")
+        self._controls_scroll.setWidgetResizable(True)
+        self._controls_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._controls_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self._controls_scroll.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._controls_scroll.setAlignment(
+            Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        self._controls_scroll.horizontalScrollBar().setFixedHeight(
+            SCROLLBAR_SLOT_HEIGHT)
+        self._controls_scroll.setStyleSheet(
+            "QScrollArea#sendControlsScroll{background:transparent;"
+            "border:none;}"
+            "QScrollArea#sendControlsScroll>QWidget>QWidget"
+            "{background:transparent;}"
+        )
+        self._controls_scroll.setWidget(self._controls_content)
+        self._fit_controls_scroll()
+        layout.addWidget(self._controls_scroll)
 
         self.text.textChanged.connect(self._calc_checksum)
         self.sp_start.valueChanged.connect(self._calc_checksum)
@@ -643,6 +833,29 @@ class SendBar(QWidget):
         self.cb_end.currentIndexChanged.connect(self._calc_checksum)
         self.chk_hex.toggled.connect(self._calc_checksum)
         self.chk_hex.toggled.connect(self._on_hex_toggled)
+
+    def _fit_controls_scroll(self):
+        """按控件真实最小高度预留横向滚动条槽位，避免底部被裁切。"""
+        controls_layout = self._controls_content.layout()
+        if controls_layout is None:
+            return
+        controls_layout.activate()
+        controls_height = max(
+            1, controls_layout.minimumSize().height())
+        self._controls_content.setMinimumWidth(
+            controls_layout.minimumSize().width())
+        self._controls_content.setFixedHeight(controls_height)
+        scrollbar_height = max(
+            SCROLLBAR_SLOT_HEIGHT,
+            self._controls_scroll.horizontalScrollBar().sizeHint().height(),
+        )
+        self._controls_scroll.setFixedHeight(
+            controls_height + scrollbar_height)
+
+    def showEvent(self, event):
+        # 主窗口会在 SendBar 创建后应用全局样式，控件高度此时才最终确定。
+        super().showEvent(event)
+        QTimer.singleShot(0, self._fit_controls_scroll)
 
     def _parse_end_byte(self, data_len):
         t = self.cb_end.currentText().strip()
@@ -873,6 +1086,7 @@ class PresetPanel(QWidget):
         # 预设内容由「项目」持有: 外部通过回调写盘, 面板自己不再落文件
         self._on_change = None
         self._suspend_save = False
+        self._resizing_preset_columns = False
         self._st = QTimer()
         self._st.setSingleShot(True)
         self._st.setTimerType(Qt.TimerType.PreciseTimer)
@@ -885,22 +1099,82 @@ class PresetPanel(QWidget):
         self._arm_loop()
 
     def _build(self):
+        self.setObjectName("presetPanel")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet(PRESET_PANEL_STYLE)
         lo = QVBoxLayout(self)
-        lo.setContentsMargins(4, 6, 6, 4)
-        lo.setSpacing(4)
+        lo.setContentsMargins(10, 9, 10, 8)
+        lo.setSpacing(8)
+
+        header_content = QWidget()
+        header_content_lo = QVBoxLayout(header_content)
+        header_content_lo.setContentsMargins(0, 0, 0, 0)
+        header_content_lo.setSpacing(6)
         tb = QHBoxLayout()
-        tb.addWidget(QLabel("命令预设（勾选“循环”即参与循环, 勾选多条则按列表顺序逐条循环。拖动序号可上下移动顺序！）"))
+        tb.setSpacing(6)
+        title = QLabel("命令预设")
+        title.setObjectName("presetTitle")
+        tb.addWidget(title)
         tb.addStretch()
-        self.btn_add = QPushButton("+ 添加")
+        self.btn_add = QPushButton("添加")
+        _set_preset_icon(self.btn_add, "http_add.svg")
+        self.btn_add.setFixedHeight(30)
         self.btn_add.clicked.connect(self._add)
         tb.addWidget(self.btn_add)
         self.btn_imp = QPushButton("导入")
+        _set_preset_icon(self.btn_imp, "http_upload.svg")
+        self.btn_imp.setFixedHeight(30)
         self.btn_imp.clicked.connect(self._import)
         tb.addWidget(self.btn_imp)
         self.btn_exp = QPushButton("导出")
+        _set_preset_icon(self.btn_exp, "http_save.svg")
+        self.btn_exp.setFixedHeight(30)
         self.btn_exp.clicked.connect(self._export)
         tb.addWidget(self.btn_exp)
-        lo.addLayout(tb)
+        header_content_lo.addLayout(tb)
+
+        hint = QLabel(
+            "勾选“循环”参与循环发送；勾选多条时按列表顺序发送，拖动序号可调整顺序。")
+        hint.setObjectName("presetHint")
+        hint.setWordWrap(False)
+        hint.setToolTip(
+            "勾选“循环”即参与循环发送。\n"
+            "勾选多条时，按当前列表顺序逐条循环；拖动左侧序号可调整顺序。")
+        header_content_lo.addWidget(hint)
+        header_content_lo.activate()
+        content_width = max(
+            tb.sizeHint().width(), hint.sizeHint().width())
+        content_height = max(
+            1, header_content_lo.minimumSize().height())
+        header_content.setMinimumWidth(content_width)
+        header_content.setFixedHeight(content_height)
+
+        self._header_scroll = QScrollArea()
+        self._header_scroll.setObjectName("presetHeaderScroll")
+        self._header_scroll.setWidgetResizable(True)
+        self._header_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._header_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self._header_scroll.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._header_scroll.setAlignment(
+            Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        self._header_scroll.horizontalScrollBar().setFixedHeight(
+            SCROLLBAR_SLOT_HEIGHT)
+        self._header_scroll.setStyleSheet(
+            "QScrollArea#presetHeaderScroll{background:transparent;"
+            "border:none;}"
+            "QScrollArea#presetHeaderScroll>QWidget>QWidget"
+            "{background:transparent;}"
+        )
+        self._header_scroll.setWidget(header_content)
+        scrollbar_height = max(
+            SCROLLBAR_SLOT_HEIGHT,
+            self._header_scroll.horizontalScrollBar().sizeHint().height(),
+        )
+        self._header_scroll.setFixedHeight(
+            content_height + scrollbar_height)
+        lo.addWidget(self._header_scroll)
 
         # 列顺序: 名称 | 数据(自动拉伸) | HEX | 间隔(ms) | 循环 | 发送
         self.table = QTableWidget(0, 6)
@@ -912,22 +1186,43 @@ class PresetPanel(QWidget):
             "填得比 {}ms 小会提示并自动改回 {}ms".format(
                 LOOP_MIN_INTERVAL, LOOP_MIN_INTERVAL))
         self.table.horizontalHeader().setStretchLastSection(False)
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
-        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)   # 数据列自动填满
+        self.table.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.Interactive)
+        self.table.horizontalHeader().setSectionResizeMode(
+            1, QHeaderView.Interactive)
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Fixed)
         self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Fixed)
         self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.Fixed)
         self.table.horizontalHeader().setSectionResizeMode(5, QHeaderView.Fixed)
-        self.table.setColumnWidth(0, 150)
-        self.table.setColumnWidth(2, 42)
-        self.table.setColumnWidth(3, 70)
-        self.table.setColumnWidth(4, 48)
-        self.table.setColumnWidth(5, 52)
+        self.table.setColumnWidth(1, 200)
+        self.table.setColumnWidth(2, 64)
+        self.table.setColumnWidth(3, 100)
+        self.table.setColumnWidth(4, 54)
+        self.table.setColumnWidth(5, 58)
+        self.table.setHorizontalScrollMode(
+            QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.table.horizontalHeader().setMinimumSectionSize(40)
+        self.table.horizontalHeader().sectionResized.connect(
+            self._on_preset_column_resized)
+        self.table.viewport().installEventFilter(self)
+        QTimer.singleShot(0, self._fit_preset_table_width)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setAlternatingRowColors(False)
+        self.table.setFont(QFont(FONT_UI, 9))
+        self.table.horizontalHeader().setFont(
+            QFont(FONT_UI, 9, QFont.Weight.DemiBold))
         self.table.setStyleSheet(
-            "QTableWidget{selection-background-color:#D0E4FC;selection-color:#1A1A1A}"
+            HTTP_TABLE_STYLE
+            + "QTableWidget::item:selected{background-color:#FFFFFF;"
+            "color:#1F2937;}"
+            "QTableWidget::item:focus{border:none;background-color:#FFFFFF;}"
         )
+        self.table.horizontalHeader().setHighlightSections(False)
+        self.table.setColumnWidth(0, self._preset_name_column_width())
+        self.table.verticalHeader().setDefaultSectionSize(TABLE_ROW_HEIGHT)
+        self.table.verticalHeader().setMinimumSectionSize(
+            TABLE_ROW_HEIGHT)
+        self.table.horizontalHeader().setMinimumHeight(TABLE_ROW_HEIGHT)
         # 允许直接点击编辑 (双击/按任意键/F2)
         self.table.setEditTriggers(
             QAbstractItemView.DoubleClicked |
@@ -948,6 +1243,79 @@ class PresetPanel(QWidget):
         vh.setDefaultAlignment(Qt.AlignCenter)
         vh.setToolTip("按住序号拖动可以重新排序")
         vh.sectionMoved.connect(self._on_section_moved)
+
+    def _preset_name_column_width(self):
+        """名称列默认宽度：完整容纳 12 个中文字符及单元格内边距。"""
+        font = QFont(FONT_UI)
+        font.setPixelSize(13)
+        text_width = QFontMetrics(font).horizontalAdvance("中" * 12)
+        return text_width + 28
+
+    def eventFilter(self, watched, event):
+        if (
+            watched is self.table.viewport()
+            and event.type() == QEvent.Type.Resize
+        ):
+            QTimer.singleShot(0, self._fit_preset_table_width)
+        return super().eventFilter(watched, event)
+
+    def _on_preset_column_resized(
+            self, logical_index, _old_size, new_size):
+        if self._resizing_preset_columns or logical_index not in (0, 1):
+            return
+        if logical_index == 0:
+            QTimer.singleShot(
+                0,
+                lambda width=new_size:
+                self._fit_preset_table_width(
+                    preferred_name_width=width),
+            )
+        else:
+            QTimer.singleShot(
+                0,
+                lambda width=new_size:
+                self._fit_preset_table_width(
+                    preferred_data_width=width),
+            )
+
+    def _fit_preset_table_width(
+            self, preferred_data_width=None, preferred_name_width=None):
+        if self._resizing_preset_columns:
+            return
+        available = self.table.viewport().width()
+        if available <= 0:
+            return
+        header = self.table.horizontalHeader()
+        fixed_width = sum(header.sectionSize(column) for column in range(2, 6))
+        capacity = available - fixed_width
+        min_name = 40
+        min_data = 60
+
+        self._resizing_preset_columns = True
+        try:
+            if preferred_name_width is not None:
+                name_width = max(min_name, int(preferred_name_width))
+                data_width = capacity - name_width
+                if data_width < min_data:
+                    data_width = min_data
+            elif preferred_data_width is not None:
+                data_width = max(
+                    min_data, int(preferred_data_width))
+                name_width = capacity - data_width
+                if name_width < min_name:
+                    name_width = min_name
+            else:
+                name_width = max(
+                    min_name, header.sectionSize(0))
+                data_width = capacity - name_width
+                if data_width < min_data:
+                    data_width = min_data
+            header.resizeSection(0, name_width)
+            header.resizeSection(1, data_width)
+        finally:
+            self._resizing_preset_columns = False
+        self.table.scheduleDelayedItemsLayout()
+        self.table.viewport().update()
 
     def set_current_text(self, hm, txt):
         self._cur_hex = hm
@@ -1029,6 +1397,7 @@ class PresetPanel(QWidget):
             cb_hex.setChecked(p.get("hex_mode", False))
             cb_hex.toggled.connect(lambda c, idx=i: self._toggle_hex(idx, c))
             cw_hex = QWidget()
+            cw_hex.setStyleSheet("background:transparent;")
             cl_hex = QHBoxLayout(cw_hex)
             cl_hex.addWidget(cb_hex)
             cl_hex.setAlignment(Qt.AlignCenter)
@@ -1042,16 +1411,18 @@ class PresetPanel(QWidget):
             cb_loop.setChecked(p.get("enabled", False))
             cb_loop.toggled.connect(lambda c, idx=i: self._toggle_loop(idx, c))
             cw_loop = QWidget()
+            cw_loop.setStyleSheet("background:transparent;")
             cl_loop = QHBoxLayout(cw_loop)
             cl_loop.addWidget(cb_loop)
             cl_loop.setAlignment(Qt.AlignCenter)
             cl_loop.setContentsMargins(0, 0, 0, 0)
             self.table.setCellWidget(i, 4, cw_loop)
             # Col 5: 发送按钮
-            btn = QPushButton("发送")
-            btn.setStyleSheet(
-                "QPushButton{padding:1px 5px;font-size:11px;min-height:18px;border-radius:3px}"
-            )
+            btn = QPushButton()
+            btn.setObjectName("presetRowSend")
+            btn.setToolTip("发送这条预设")
+            _set_preset_icon(btn, "http_send.svg")
+            btn.setFixedSize(40, 28)
             btn.clicked.connect(lambda c, idx=i: self._send_one(idx))
             self.table.setCellWidget(i, 5, btn)
         self.table.blockSignals(False)
