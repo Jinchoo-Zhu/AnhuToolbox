@@ -1,6 +1,6 @@
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(1, 0, 0, 0),
+    filevers=(1, 0, 1, 0),
     prodvers=(1, 0, 0, 0),
     mask=0x3f,
     flags=0x0,
@@ -16,12 +16,12 @@ VSVersionInfo(
         [
           StringStruct(u'CompanyName', u'Anhu'),
           StringStruct(u'FileDescription', u'Anhu 百宝箱'),
-          StringStruct(u'FileVersion', u'1.0.0'),
+          StringStruct(u'FileVersion', u'1.0.1'),
           StringStruct(u'InternalName', u'AnhuToolbox'),
           StringStruct(u'LegalCopyright', u'Copyright (C) Anhu'),
           StringStruct(u'OriginalFilename', u'Anhu百宝箱.exe'),
           StringStruct(u'ProductName', u'Anhu 百宝箱'),
-          StringStruct(u'ProductVersion', u'1.0.0')
+          StringStruct(u'ProductVersion', u'1.0.1')
         ]
       )
     ]),
