@@ -8,19 +8,194 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QScrollArea, QLayout,
     QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox,
-    QGroupBox, QGridLayout, QFileDialog, QApplication,
+    QGridLayout, QFileDialog, QApplication,
     QGraphicsOpacityEffect,
-    QFrame, QStackedWidget, QButtonGroup
+    QFrame, QStackedWidget, QButtonGroup, QSplitter, QTabWidget,
+    QSizePolicy,
 )
 from PySide6.QtCore import (
-    Qt, QTimer, QRect, QSize, QPropertyAnimation, QAbstractAnimation
+    Qt, QTimer, QRect, QSize, QPropertyAnimation, QAbstractAnimation, Signal,
 )
-from PySide6.QtGui import QFont, QPixmap, QImage, QColor, QTextCharFormat
+from PySide6.QtGui import (
+    QColor, QFont, QIcon, QImage, QKeySequence, QPixmap, QShortcut,
+    QTextCharFormat,
+)
 
 from . import hardware
 from . import toolbox
-from .styles import COMBO_STYLE
 from .dialogs import show_error, show_information, show_success, show_warning
+from .styles import _find_assets_dir
+from .ui_tokens import (
+    CONTROL_HEIGHT, ICON_SIZE, SPACE_LG, SPACE_MD, SPACE_SM,
+    TOOL_PAGE_STYLE,
+)
+
+
+def _tool_page(widget, title, subtitle):
+    """为工具页建立统一的蓝白工作区与页头。"""
+    widget.setObjectName("toolPage")
+    widget.setStyleSheet(TOOL_PAGE_STYLE)
+
+    root = QVBoxLayout(widget)
+    root.setContentsMargins(
+        SPACE_LG + 4, SPACE_LG + 2, SPACE_LG + 4, SPACE_LG)
+    root.setSpacing(SPACE_MD)
+
+    header = QWidget()
+    header.setObjectName("toolPageHeader")
+    header_lo = QHBoxLayout(header)
+    header_lo.setContentsMargins(0, 0, 0, 0)
+    header_lo.setSpacing(10)
+    accent = QFrame()
+    accent.setObjectName("toolAccent")
+    accent.setFixedSize(3, 38)
+    header_lo.addWidget(accent)
+
+    texts = QVBoxLayout()
+    texts.setSpacing(2)
+    title_label = QLabel(title)
+    title_label.setObjectName("toolPageTitle")
+    texts.addWidget(title_label)
+    subtitle_label = QLabel(subtitle)
+    subtitle_label.setObjectName("toolPageSubtitle")
+    subtitle_label.setWordWrap(False)
+    texts.addWidget(subtitle_label)
+    header_lo.addLayout(texts)
+    header_lo.addStretch()
+    root.addWidget(header)
+
+    body = QVBoxLayout()
+    body.setContentsMargins(0, 0, 0, 0)
+    body.setSpacing(SPACE_MD)
+    root.addLayout(body, stretch=1)
+    return body
+
+
+class ToolCard(QFrame):
+    """带统一标题和操作区的白色工具卡片。"""
+
+    def __init__(self, title=None, subtitle=None, parent=None):
+        super().__init__(parent)
+        self.setObjectName("toolCard")
+        self._layout = QVBoxLayout(self)
+        self._layout.setContentsMargins(
+            SPACE_MD + 2, SPACE_MD, SPACE_MD + 2, SPACE_MD)
+        self._layout.setSpacing(SPACE_SM + 2)
+        self.header = QHBoxLayout()
+        self.header.setContentsMargins(0, 0, 0, 0)
+        self.header.setSpacing(SPACE_SM)
+        if title:
+            heading = QVBoxLayout()
+            heading.setSpacing(1)
+            title_label = QLabel(title)
+            title_label.setObjectName("toolCardTitle")
+            heading.addWidget(title_label)
+            if subtitle:
+                subtitle_label = QLabel(subtitle)
+                subtitle_label.setObjectName("toolCardSubtitle")
+                subtitle_label.setWordWrap(False)
+                heading.addWidget(subtitle_label)
+            self.header.addLayout(heading)
+            self.header.addStretch()
+            self._layout.addLayout(self.header)
+        self.body = QVBoxLayout()
+        self.body.setContentsMargins(0, 0, 0, 0)
+        self.body.setSpacing(SPACE_SM)
+        self._layout.addLayout(self.body, stretch=1)
+
+    def add_header_widget(self, widget, alignment=None):
+        if alignment is None:
+            self.header.addWidget(widget)
+        else:
+            self.header.addWidget(widget, 0, alignment)
+        return widget
+
+
+def _field_label(text):
+    label = QLabel(text)
+    label.setObjectName("toolFieldLabel")
+    return label
+
+
+def _hint_label(text=""):
+    label = QLabel(text)
+    label.setObjectName("toolHint")
+    label.setWordWrap(True)
+    return label
+
+
+def _badge(text="", tone="default"):
+    label = QLabel(text)
+    label.setProperty("toolBadge", True)
+    label.setProperty("tone", tone)
+    label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    return label
+
+
+def _set_tone(label, tone):
+    label.setProperty("tone", tone)
+    label.style().unpolish(label)
+    label.style().polish(label)
+    label.update()
+
+
+def _set_button_icon(button, filename):
+    icon = QIcon(os.path.join(_find_assets_dir(), filename))
+    if not icon.isNull():
+        button.setIcon(icon)
+        button.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
+    return button
+
+
+def _primary_button(text):
+    button = QPushButton(text)
+    button.setProperty("toolPrimary", True)
+    button.setCursor(Qt.CursorShape.PointingHandCursor)
+    button.setMinimumHeight(CONTROL_HEIGHT)
+    return _set_button_icon(button, "http_send.svg")
+
+
+def _secondary_button(text, icon_name=None):
+    button = QPushButton(text)
+    button.setCursor(Qt.CursorShape.PointingHandCursor)
+    button.setMinimumHeight(CONTROL_HEIGHT)
+    if icon_name:
+        _set_button_icon(button, icon_name)
+    return button
+
+
+def _segment_button(text):
+    button = QPushButton(text)
+    button.setCheckable(True)
+    button.setProperty("toolSegment", True)
+    button.setCursor(Qt.CursorShape.PointingHandCursor)
+    button.setMinimumHeight(CONTROL_HEIGHT)
+    return button
+
+
+def _code_editor(editor, readonly=False):
+    editor.setReadOnly(bool(readonly))
+    editor.setProperty("toolReadonly", bool(readonly))
+    editor.setFont(QFont("Consolas", 10))
+    editor.setTabStopDistance(28)
+    return editor
+
+
+def _result_field(field, accent=False):
+    field.setReadOnly(True)
+    field.setProperty(
+        "toolAccentResult" if accent else "toolResult", True)
+    field.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
+    field.setMinimumHeight(CONTROL_HEIGHT)
+    return field
+
+
+def _editor_card(title, editor, badge=None):
+    card = ToolCard(title)
+    if badge is not None:
+        card.add_header_widget(badge)
+    card.body.addWidget(editor, stretch=1)
+    return card
 
 
 # ============================================================
@@ -32,50 +207,82 @@ class TimestampTool(QWidget):
         self._build()
 
     def _build(self):
-        lo = QVBoxLayout(self)
-        lo.setContentsMargins(16, 16, 16, 16)
-        lo.setSpacing(12)
+        body = _tool_page(
+            self,
+            "时间戳转换",
+            "在日期时间、Unix 秒和毫秒时间戳之间快速转换。",
+        )
 
-        title = QLabel("时间戳转换工具")
-        title.setFont(QFont("Microsoft YaHei", 14, QFont.Weight.Bold))
-        lo.addWidget(title)
+        now_card = ToolCard("当前时间", "本机时间每秒自动刷新")
+        now_card.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        now_card.add_header_widget(_badge("实时", "primary"))
+        now_metrics = QHBoxLayout()
+        now_metrics.setSpacing(SPACE_SM)
 
-        # 当前时间
-        g1 = QGroupBox("当前时间")
-        g1lo = QGridLayout(g1)
-        self._lbl_now_dt = QLineEdit(); self._lbl_now_dt.setReadOnly(True)
-        self._lbl_now_ts = QLineEdit(); self._lbl_now_ts.setReadOnly(True)
-        self._lbl_now_ms = QLineEdit(); self._lbl_now_ms.setReadOnly(True)
-        g1lo.addWidget(QLabel("日期时间:"), 0, 0); g1lo.addWidget(self._lbl_now_dt, 0, 1)
-        g1lo.addWidget(QLabel("时间戳(秒):"), 1, 0); g1lo.addWidget(self._lbl_now_ts, 1, 1)
-        g1lo.addWidget(QLabel("时间戳(毫秒):"), 2, 0); g1lo.addWidget(self._lbl_now_ms, 2, 1)
-        lo.addWidget(g1)
+        def add_metric(label, value):
+            metric = QFrame()
+            metric.setObjectName("toolMetric")
+            metric_lo = QVBoxLayout(metric)
+            metric_lo.setContentsMargins(12, 9, 12, 10)
+            metric_lo.setSpacing(4)
+            metric_lo.addWidget(_field_label(label))
+            field = QLineEdit(value)
+            field.setReadOnly(True)
+            field.setFont(QFont("Consolas", 11))
+            field.setMinimumHeight(CONTROL_HEIGHT)
+            metric_lo.addWidget(field)
+            now_metrics.addWidget(metric, stretch=1)
+            return field
 
-        # 时间戳 → 日期
-        g2 = QGroupBox("时间戳 → 日期时间")
-        g2lo = QGridLayout(g2)
+        self._lbl_now_dt = add_metric("日期时间", "")
+        self._lbl_now_ts = add_metric("Unix 秒", "")
+        self._lbl_now_ms = add_metric("Unix 毫秒", "")
+        now_card.body.addLayout(now_metrics)
+        body.addWidget(now_card)
+
+        converters = QHBoxLayout()
+        converters.setSpacing(SPACE_MD)
+
+        ts_card = ToolCard(
+            "时间戳转日期时间", "自动识别 10 位秒、13 位毫秒和 16 位微秒")
+        ts_card.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         self._ts_input = QLineEdit()
-        self._ts_input.setPlaceholderText("输入时间戳(秒或毫秒)")
+        self._ts_input.setPlaceholderText("例如 1700000000")
         self._ts_input.textChanged.connect(self._on_ts_input)
-        self._ts_result = QLineEdit(); self._ts_result.setReadOnly(True)
-        g2lo.addWidget(QLabel("时间戳:"), 0, 0); g2lo.addWidget(self._ts_input, 0, 1)
-        g2lo.addWidget(QLabel("结果:"), 1, 0); g2lo.addWidget(self._ts_result, 1, 1)
-        lo.addWidget(g2)
+        ts_card.body.addWidget(_field_label("时间戳"))
+        ts_card.body.addWidget(self._ts_input)
+        ts_card.body.addWidget(_field_label("转换结果"))
+        self._ts_result = _result_field(QLineEdit(), accent=True)
+        ts_card.body.addWidget(self._ts_result)
+        ts_card.body.addStretch()
+        converters.addWidget(ts_card, stretch=1)
 
-        # 日期 → 时间戳
-        g3 = QGroupBox("日期时间 → 时间戳")
-        g3lo = QGridLayout(g3)
+        dt_card = ToolCard(
+            "日期时间转时间戳", "支持 2026-08-03 / 2026/08/03 格式")
+        dt_card.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         self._dt_input = QLineEdit()
-        self._dt_input.setPlaceholderText("例如: 2026-08-03 14:30:00")
+        self._dt_input.setPlaceholderText("例如 2026-08-03 14:30:00")
         self._dt_input.textChanged.connect(self._on_dt_input)
-        self._dt_ts = QLineEdit(); self._dt_ts.setReadOnly(True)
-        self._dt_ms = QLineEdit(); self._dt_ms.setReadOnly(True)
-        g3lo.addWidget(QLabel("日期时间:"), 0, 0); g3lo.addWidget(self._dt_input, 0, 1)
-        g3lo.addWidget(QLabel("时间戳(秒):"), 1, 0); g3lo.addWidget(self._dt_ts, 1, 1)
-        g3lo.addWidget(QLabel("时间戳(毫秒):"), 2, 0); g3lo.addWidget(self._dt_ms, 2, 1)
-        lo.addWidget(g3)
+        dt_card.body.addWidget(_field_label("日期时间"))
+        dt_card.body.addWidget(self._dt_input)
 
-        lo.addStretch()
+        dt_results = QGridLayout()
+        dt_results.setHorizontalSpacing(SPACE_SM)
+        dt_results.setVerticalSpacing(4)
+        dt_results.addWidget(_field_label("Unix 秒"), 0, 0)
+        dt_results.addWidget(_field_label("Unix 毫秒"), 0, 1)
+        self._dt_ts = _result_field(QLineEdit(), accent=True)
+        self._dt_ms = _result_field(QLineEdit(), accent=True)
+        dt_results.addWidget(self._dt_ts, 1, 0)
+        dt_results.addWidget(self._dt_ms, 1, 1)
+        dt_card.body.addLayout(dt_results)
+        dt_card.body.addStretch()
+        converters.addWidget(dt_card, stretch=1)
+        body.addLayout(converters)
+        body.addStretch()
 
         self._tick_timer = QTimer()
         self._tick_timer.timeout.connect(self._update_now)
@@ -195,6 +402,71 @@ class FlowLayout(QLayout):
         return y + line_h - rect.y()
 
 
+class ScaledPixmapLabel(QLabel):
+    """在可用宽度内按正方形等比显示图片，供二维码预览自适应缩放。"""
+
+    def __init__(self, pixmap=None, preferred_side=180, parent=None):
+        super().__init__(parent)
+        self.setObjectName("qrImage")
+        self._source_pixmap = None
+        self._preferred_side = preferred_side
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setMinimumWidth(96)
+        self.setFixedHeight(preferred_side)
+        self.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        if pixmap is not None:
+            self.set_source_pixmap(pixmap)
+
+    def set_source_pixmap(self, pixmap):
+        self._source_pixmap = pixmap
+        self._refresh_pixmap()
+
+    def sizeHint(self):
+        return QSize(self._preferred_side, self._preferred_side)
+
+    def minimumSizeHint(self):
+        return QSize(96, self._preferred_side)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._refresh_pixmap()
+
+    def _refresh_pixmap(self):
+        if self._source_pixmap is None or self._source_pixmap.isNull():
+            return
+        side = max(1, min(self.width(), self._preferred_side))
+        self.setPixmap(self._source_pixmap.scaled(
+            side, side,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        ))
+
+
+class QRCellFrame(QFrame):
+    """二维码卡片；有图片时双击可请求放大预览。"""
+
+    double_clicked = Signal()
+
+    def __init__(self, text, pixmap=None, parent=None):
+        super().__init__(parent)
+        self.setObjectName("qrCell")
+        self._text = text
+        self._pixmap = pixmap
+        if pixmap is not None and not pixmap.isNull():
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.setToolTip("双击放大二维码")
+
+    def mouseDoubleClickEvent(self, event):
+        if (self._pixmap is not None
+                and not self._pixmap.isNull()
+                and event.button() == Qt.MouseButton.LeftButton):
+            self.double_clicked.emit()
+            event.accept()
+            return
+        super().mouseDoubleClickEvent(event)
+
+
 class QRTool(QWidget):
     """二维码批量生成：固定2行6列隐框网格，二维码填入对应格子"""
     ROWS, COLS = 2, 5
@@ -206,56 +478,47 @@ class QRTool(QWidget):
         self._build()
 
     def _build(self):
-        lo = QVBoxLayout(self)
-        lo.setContentsMargins(0, 0, 0, 0)
-        lo.setSpacing(0)
+        body = _tool_page(
+            self,
+            "二维码生成",
+            "每行输入一条内容，批量生成、预览并以 ZIP 保存二维码。",
+        )
 
-        top = QWidget()
-        top.setStyleSheet("QWidget{background:#FFF;border-bottom:1px solid #E0E0E0}")
-        top_lo = QVBoxLayout(top)
-        top_lo.setContentsMargins(20, 16, 20, 12)
-        top_lo.setSpacing(8)
-
-        title = QLabel("二维码生成工具")
-        title.setFont(QFont("Microsoft YaHei", 14, QFont.Weight.Bold))
-        top_lo.addWidget(title)
+        input_card = ToolCard(
+            "二维码内容", "空行会被忽略；修改内容后点击生成即可刷新预览")
+        self._lbl_qr_count = _badge("尚未生成")
+        input_card.add_header_widget(self._lbl_qr_count)
 
         self._qr_input = QPlainTextEdit()
         self._qr_input.setPlaceholderText("每行一个文本，对应一个二维码...")
-        self._qr_input.setMaximumHeight(70)
-        self._qr_input.setStyleSheet(
-            "QPlainTextEdit{background:#FFF;border:1px solid #D0D0D0;border-radius:4px;padding:6px}"
-        )
-        top_lo.addWidget(self._qr_input)
+        _code_editor(self._qr_input)
+        self._qr_input.setMinimumHeight(112)
+        self._qr_input.setMaximumHeight(150)
+        input_card.body.addWidget(self._qr_input)
 
         btns = QHBoxLayout()
-        self._btn_gen = QPushButton("生成预览")
+        self._btn_gen = _primary_button("生成预览")
         self._btn_gen.clicked.connect(self._generate)
-        self._btn_gen.setStyleSheet(
-            "QPushButton{background:#0078D4;color:#FFF;border:none;border-radius:4px;"
-            "padding:6px 20px;font-weight:600}QPushButton:hover{background:#106EBE}"
-        )
         btns.addWidget(self._btn_gen)
-        self._btn_save = QPushButton("批量保存")
+        self._btn_save = _secondary_button("批量保存", "http_save.svg")
         self._btn_save.clicked.connect(self._batch_save)
         btns.addWidget(self._btn_save)
         btns.addStretch()
-        self._lbl_qr_count = QLabel("")
-        self._lbl_qr_count.setStyleSheet("color:#666;font-size:12px")
-        btns.addWidget(self._lbl_qr_count)
-        top_lo.addLayout(btns)
-        lo.addWidget(top)
+        input_card.body.addLayout(btns)
+        body.addWidget(input_card)
 
         # 计算单元格基准尺寸：基于 box_size 估算单格宽度
         # 短文本版本1二维码：21模块, border=2 -> (21+4)*box_size
-        self._cell_img_size = (21 + 4) * 12
+        self._cell_img_size = 180
 
         # 网格容器，行数按需动态创建
         self._grid_widget = QWidget()
-        self._grid_widget.setStyleSheet("QWidget{background:#FFF}")
+        self._grid_widget.setObjectName("qrGrid")
+        self._grid_widget.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self._grid = QGridLayout(self._grid_widget)
-        self._grid.setContentsMargins(12, 12, 12, 12)
-        self._grid.setSpacing(0)
+        self._grid.setContentsMargins(2, 2, 2, 2)
+        self._grid.setSpacing(SPACE_SM)
         # 5 列均分
         for c in range(self.COLS):
             self._grid.setColumnStretch(c, 1)
@@ -263,29 +526,137 @@ class QRTool(QWidget):
         # 初始绘制 2 行空格子
         self._rebuild_grid(2)
 
-        # 外层居中包裹
-        wrapper = QWidget()
-        wrapper.setStyleSheet("QWidget{background:#FFF}")
-        wl = QHBoxLayout(wrapper)
-        wl.setContentsMargins(0, 0, 0, 0)
-        wl.addStretch()
-        wl.addWidget(self._grid_widget)
-        wl.addStretch()
+        self._qr_scroll = QScrollArea()
+        self._qr_scroll.setWidget(self._grid_widget)
+        self._qr_scroll.setWidgetResizable(True)
+        # 始终预留纵向滚动槽，避免第 11 条出现滚动条时重新分配宽度，
+        # 导致整组二维码突然向左跳。
+        self._qr_scroll.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+        self._qr_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        qr_scrollbar = self._qr_scroll.verticalScrollBar()
+        qr_scrollbar.setObjectName("qrPreviewScrollBar")
+        qr_scrollbar.rangeChanged.connect(
+            self._update_qr_scrollbar_state)
+        self._update_qr_scrollbar_state()
+        preview_card = ToolCard(
+            "二维码预览", "预览按单元格等比缩放，保存的 PNG 保持原始分辨率，双击可放大预览二维码")
+        preview_card.body.addWidget(self._qr_scroll, stretch=1)
+        body.addWidget(preview_card, stretch=1)
 
-        scroll = QScrollArea()
-        scroll.setWidget(wrapper)
-        scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("QScrollArea{background:#FFF;border:none}")
-        lo.addWidget(scroll, stretch=1)
+        self._qr_preview_overlay = QFrame(self)
+        self._qr_preview_overlay.setObjectName("qrPreviewOverlay")
+        self._qr_preview_overlay.setVisible(False)
+        overlay_lo = QVBoxLayout(self._qr_preview_overlay)
+        overlay_lo.setContentsMargins(24, 24, 24, 24)
+        overlay_lo.addStretch()
+        overlay_row = QHBoxLayout()
+        overlay_row.addStretch()
+
+        enlarged_card = QFrame()
+        enlarged_card.setObjectName("qrEnlargedCard")
+        enlarged_card.setMinimumWidth(460)
+        enlarged_card.setMaximumWidth(700)
+        enlarged_card.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        enlarged_lo = QVBoxLayout(enlarged_card)
+        enlarged_lo.setContentsMargins(16, 12, 16, 16)
+        enlarged_lo.setSpacing(SPACE_SM)
+
+        enlarged_header = QHBoxLayout()
+        enlarged_header.setSpacing(SPACE_SM)
+        enlarged_header.addStretch()
+        self._btn_close_qr_preview = QPushButton()
+        self._btn_close_qr_preview.setObjectName("qrPreviewClose")
+        self._btn_close_qr_preview.setFixedSize(32, 32)
+        self._btn_close_qr_preview.setCursor(
+            Qt.CursorShape.PointingHandCursor)
+        self._btn_close_qr_preview.setFocusPolicy(
+            Qt.FocusPolicy.NoFocus)
+        self._btn_close_qr_preview.setToolTip("关闭预览并恢复二维码列表")
+        self._btn_close_qr_preview.setAccessibleName("关闭预览")
+        _set_button_icon(self._btn_close_qr_preview, "http_close.svg")
+        if self._btn_close_qr_preview.icon().isNull():
+            self._btn_close_qr_preview.setText("×")
+        self._btn_close_qr_preview.clicked.connect(self._hide_qr_preview)
+        enlarged_header.addWidget(self._btn_close_qr_preview)
+        enlarged_lo.addLayout(enlarged_header)
+
+        self._qr_preview_content = QLabel("")
+        self._qr_preview_content.setObjectName("qrPreviewText")
+        preview_font = QFont("Microsoft YaHei UI")
+        preview_font.setPixelSize(16)
+        preview_font.setWeight(QFont.Weight.DemiBold)
+        self._qr_preview_content.setFont(preview_font)
+        self._qr_preview_content.setAlignment(
+            Qt.AlignmentFlag.AlignHCenter)
+        self._qr_preview_content.setWordWrap(False)
+        self._qr_preview_content.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse)
+        enlarged_lo.addWidget(self._qr_preview_content)
+
+        self._qr_preview_image = ScaledPixmapLabel(preferred_side=480)
+        enlarged_lo.addWidget(self._qr_preview_image, 0, Qt.AlignCenter)
+        overlay_row.addWidget(enlarged_card)
+        overlay_row.addStretch()
+        overlay_lo.addLayout(overlay_row)
+        overlay_lo.addStretch()
+
+        self._esc_close_qr_preview = QShortcut(
+            QKeySequence(Qt.Key.Key_Escape), self)
+        self._esc_close_qr_preview.setContext(
+            Qt.ShortcutContext.WindowShortcut)
+        self._esc_close_qr_preview.setAutoRepeat(False)
+        self._esc_close_qr_preview.activated.connect(
+            self._hide_qr_preview)
+
+    def _update_qr_scrollbar_state(self, *_):
+        bar = self._qr_scroll.verticalScrollBar()
+        bar.setEnabled(bar.maximum() > bar.minimum())
+
+    def _show_qr_preview(self, text, pixmap):
+        if pixmap is None or pixmap.isNull():
+            return
+        self._qr_preview_image.set_source_pixmap(pixmap)
+        compact = " ".join(str(text).split())
+        if len(compact) > 72:
+            compact = compact[:69] + "..."
+        self._qr_preview_content.setText(compact)
+        self._qr_preview_content.setToolTip(str(text))
+        self._qr_preview_overlay.setGeometry(self.rect())
+        self._qr_preview_overlay.raise_()
+        self._qr_preview_overlay.show()
+
+    def _hide_qr_preview(self):
+        self._qr_preview_overlay.hide()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, "_qr_preview_overlay"):
+            self._qr_preview_overlay.setGeometry(self.rect())
+
+    def hideEvent(self, event):
+        if hasattr(self, "_qr_preview_overlay"):
+            self._qr_preview_overlay.hide()
+        super().hideEvent(event)
 
     def _rebuild_grid(self, rows):
         """清空网格并按指定行数重建单元格"""
         # 清除旧格子
+        old_rows = self._grid.rowCount()
         while self._grid.count():
             item = self._grid.takeAt(0)
             w = item.widget()
             if w:
+                w.hide()
                 w.deleteLater()
+        # QGridLayout 会保留行最小高度；从多行缩回少行时必须清零，
+        # 否则旧的末尾行会把可见行强行压缩。
+        for row in range(old_rows):
+            self._grid.setRowMinimumHeight(row, 0)
+            self._grid.setRowStretch(row, 0)
+        self._grid.invalidate()
         self._cells = []
         for r in range(rows):
             row_cells = []
@@ -294,65 +665,71 @@ class QRTool(QWidget):
                 self._grid.addWidget(cell, r, c)
                 row_cells.append(cell)
             self._cells.append(row_cells)
+        cell_height = max(
+            cell.sizeHint().height() for row in self._cells for cell in row)
+        for row in range(rows):
+            self._grid.setRowMinimumHeight(row, cell_height)
+        self._sync_grid_height(rows, cell_height)
+
+    def _sync_grid_height(self, rows, cell_height):
+        """固定每行高度，超出预览区域时由滚动区滚动而不压缩内容。"""
+        margins = self._grid.contentsMargins()
+        spacing = self._grid.verticalSpacing()
+        height = (
+            margins.top() + margins.bottom()
+            + rows * cell_height
+            + max(0, rows - 1) * spacing
+        )
+        self._grid_widget.setFixedHeight(height)
 
     def _make_empty_cell(self):
         """空白格子：结构与 QR 格子一致，用同尺寸占位图保证等宽"""
-        cell = QWidget()
-        cell.setStyleSheet(
-            "QWidget{background:#FFF;border:1px solid #D0D0D0}"
-        )
+        cell = QFrame()
+        cell.setObjectName("qrCell")
         cl = QVBoxLayout(cell)
-        cl.setContentsMargins(6, 4, 6, 6)
-        cl.setSpacing(2)
+        cl.setContentsMargins(8, 6, 8, 8)
+        cl.setSpacing(4)
         placeholder = QLabel()
-        placeholder.setFixedHeight(34)
-        placeholder.setStyleSheet("border:none;background:transparent")
+        placeholder.setFixedHeight(28)
         cl.addWidget(placeholder)
-        # 生成与 QR 同尺寸的透明占位图
-        dummy = QPixmap(self._cell_img_size, self._cell_img_size)
-        dummy.fill(Qt.transparent)
-        spacer = QLabel()
-        spacer.setPixmap(dummy)
-        spacer.setAlignment(Qt.AlignCenter)
-        spacer.setStyleSheet("border:none;background:transparent")
+        spacer = ScaledPixmapLabel(preferred_side=self._cell_img_size)
         cl.addWidget(spacer, 0, Qt.AlignCenter)
         cl.addStretch()
         return cell
 
     def _make_qr_cell(self, text, pixmap, error=None):
         """带二维码的格子：QR 图自适应缩放居中；生成失败时显示错误原因"""
-        cell = QWidget()
-        cell.setStyleSheet(
-            "QWidget{background:#FFF;border:1px solid #D0D0D0}"
-        )
+        cell = QRCellFrame(text, pixmap)
+        if pixmap is not None and not pixmap.isNull():
+            cell.double_clicked.connect(
+                lambda t=text, p=pixmap: self._show_qr_preview(t, p))
         cl = QVBoxLayout(cell)
-        cl.setContentsMargins(6, 4, 6, 6)
-        cl.setSpacing(2)
+        cl.setContentsMargins(8, 6, 8, 8)
+        cl.setSpacing(4)
 
         lbl = QLabel(text)
+        lbl.setObjectName("qrText")
         lbl.setAlignment(Qt.AlignCenter)
-        lbl.setStyleSheet("color:#333;font-size:14px;font-weight:600;border:none;background:transparent")
         lbl.setWordWrap(True)
-        lbl.setFixedHeight(34)
+        lbl.setFixedHeight(28)
+        lbl.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         cl.addWidget(lbl)
 
         if pixmap:
-            ql = QLabel()
-            # 二维码内容较长时模块数会明显增加，预览统一缩放到基准格，
-            # 避免单张图片撑宽整行。批量保存的 PNG 仍保持原始分辨率。
-            ql.setPixmap(pixmap.scaled(
-                self._cell_img_size, self._cell_img_size,
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
-            ))
-            ql.setAlignment(Qt.AlignCenter)
-            ql.setStyleSheet("border:none;background:transparent")
+            # 预览随单元格宽度等比放大/缩小，批量保存的 PNG 仍保持原始分辨率。
+            ql = ScaledPixmapLabel(
+                pixmap, preferred_side=self._cell_img_size)
+            ql.setAttribute(
+                Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
             cl.addWidget(ql, 0, Qt.AlignCenter)
         elif error:
             el = QLabel("生成失败\n" + error)
+            el.setObjectName("qrError")
             el.setAlignment(Qt.AlignCenter)
             el.setWordWrap(True)
-            el.setStyleSheet("color:#C0392B;font-size:12px;border:none;background:transparent")
+            el.setAttribute(
+                Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
             cl.addWidget(el, 0, Qt.AlignCenter)
         cl.addStretch()
 
@@ -365,7 +742,8 @@ class QRTool(QWidget):
         n = len(self._lines)
         if n == 0:
             self._rebuild_grid(2)
-            self._lbl_qr_count.setText("")
+            self._lbl_qr_count.setText("尚未生成")
+            _set_tone(self._lbl_qr_count, "default")
             return
 
         # 动态行数：至少 2 行，多出的向上取整
@@ -385,14 +763,16 @@ class QRTool(QWidget):
                 w = old_w.widget()
                 self._grid.removeItem(old_w)
                 if w:
-                    w.setParent(None)
+                    w.hide()
                     w.deleteLater()
             self._grid.addWidget(cell, r, c)
 
         if fail:
             self._lbl_qr_count.setText(f"共 {n} 条，失败 {fail} 条")
+            _set_tone(self._lbl_qr_count, "error")
         else:
             self._lbl_qr_count.setText(f"共 {n} 条")
+            _set_tone(self._lbl_qr_count, "success")
 
 
     def _make_qr_pixmap(self, text):
@@ -413,7 +793,7 @@ class QRTool(QWidget):
         text = self._qr_input.toPlainText().strip()
         self._lines = [l.strip() for l in text.split("\n") if l.strip()]
         if not self._lines:
-            show_information(self, "提示", "请先生成预览")
+            show_information(self, "提示", "请输入二维码内容")
             return
         path_, _ = QFileDialog.getSaveFileName(
             self, "保存二维码 ZIP", "QR码.zip", "ZIP 文件 (*.zip)"
@@ -473,68 +853,96 @@ class JsonTool(QWidget):
         self._build()
 
     def _build(self):
-        lo = QVBoxLayout(self)
-        lo.setContentsMargins(16, 16, 16, 16)
-        lo.setSpacing(10)
+        body = _tool_page(
+            self,
+            "JSON 格式化",
+            "校验、格式化或压缩 JSON 文本，左右对照查看处理结果。",
+        )
 
-        title = QLabel("JSON 格式化工具")
-        title.setFont(QFont("Microsoft YaHei", 14, QFont.Weight.Bold))
-        lo.addWidget(title)
-
-        btns = QHBoxLayout()
-        self._btn_format = QPushButton("格式化")
+        toolbar = ToolCard()
+        actions = QHBoxLayout()
+        actions.setSpacing(SPACE_SM)
+        self._btn_format = _primary_button("格式化")
         self._btn_format.clicked.connect(self._format)
-        btns.addWidget(self._btn_format)
-        self._btn_compress = QPushButton("压缩")
+        actions.addWidget(self._btn_format)
+        self._btn_compress = _secondary_button("压缩", "http_raw.svg")
         self._btn_compress.clicked.connect(self._compress)
-        btns.addWidget(self._btn_compress)
-        btns.addStretch()
-        self._json_status = QLabel("")
-        btns.addWidget(self._json_status)
-        lo.addLayout(btns)
+        actions.addWidget(self._btn_compress)
+        actions.addStretch()
+        self._json_status = _badge("等待输入")
+        actions.addWidget(self._json_status)
+        toolbar.body.addLayout(actions)
+        body.addWidget(toolbar)
 
-        body = QHBoxLayout()
-        # 输入
+        workspace = QSplitter(Qt.Orientation.Horizontal)
+        workspace.setObjectName("toolSplit")
+        workspace.setChildrenCollapsible(False)
+        workspace.setHandleWidth(8)
+
         self._json_input = QPlainTextEdit()
         self._json_input.setPlaceholderText("粘贴 JSON 文本...")
-        self._json_input.setFont(QFont("Consolas", 10))
-        body.addWidget(self._json_input)
-        # 输出
+        _code_editor(self._json_input)
+
         self._json_output = QPlainTextEdit()
-        self._json_output.setReadOnly(True)
-        self._json_output.setFont(QFont("Consolas", 10))
-        body.addWidget(self._json_output)
-        lo.addLayout(body, stretch=1)
+        _code_editor(self._json_output, readonly=True)
+        self._json_output.setPlaceholderText("格式化结果会显示在这里")
+        self._json_output.textChanged.connect(self._update_json_copy_button)
+        workspace.addWidget(_editor_card("输入", self._json_input))
+        result_card = _editor_card("结果", self._json_output)
+        self._btn_copy_output = _secondary_button("复制", "http_copy.svg")
+        self._btn_copy_output.setToolTip("复制完整结果")
+        self._btn_copy_output.setEnabled(False)
+        self._btn_copy_output.clicked.connect(self._copy_json_output)
+        result_card.add_header_widget(self._btn_copy_output)
+        workspace.addWidget(result_card)
+        workspace.setSizes([1, 1])
+        body.addWidget(workspace, stretch=1)
+
+    def _update_json_copy_button(self):
+        self._btn_copy_output.setEnabled(
+            bool(self._json_output.toPlainText()))
+
+    def _copy_json_output(self):
+        text = self._json_output.toPlainText()
+        if not text:
+            return
+        QApplication.clipboard().setText(text)
+        self._json_status.setText("已复制结果")
+        _set_tone(self._json_status, "success")
 
     def _format(self):
         raw = self._json_input.toPlainText().strip()
         if not raw:
+            self._json_status.setText("等待输入")
+            _set_tone(self._json_status, "default")
             return
         try:
             obj = json.loads(raw)
             formatted = json.dumps(obj, ensure_ascii=False, indent=2)
             self._json_output.setPlainText(formatted)
-            self._json_status.setText("✓ 格式化成功")
-            self._json_status.setStyleSheet("color:#107C10")
+            self._json_status.setText("格式化成功")
+            _set_tone(self._json_status, "success")
         except json.JSONDecodeError as e:
             self._json_output.setPlainText(f"JSON 解析错误:\n{e}")
-            self._json_status.setText("✗ 格式错误")
-            self._json_status.setStyleSheet("color:#D13438")
+            self._json_status.setText("格式错误")
+            _set_tone(self._json_status, "error")
 
     def _compress(self):
         raw = self._json_input.toPlainText().strip()
         if not raw:
+            self._json_status.setText("等待输入")
+            _set_tone(self._json_status, "default")
             return
         try:
             obj = json.loads(raw)
             compressed = json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
             self._json_output.setPlainText(compressed)
-            self._json_status.setText("✓ 压缩成功")
-            self._json_status.setStyleSheet("color:#107C10")
+            self._json_status.setText("压缩成功")
+            _set_tone(self._json_status, "success")
         except json.JSONDecodeError as e:
             self._json_output.setPlainText(f"JSON 解析错误:\n{e}")
-            self._json_status.setText("✗ 格式错误")
-            self._json_status.setStyleSheet("color:#D13438")
+            self._json_status.setText("格式错误")
+            _set_tone(self._json_status, "error")
 
 
 # ============================================================
@@ -546,44 +954,60 @@ class BaseTool(QWidget):
         self._build()
 
     def _build(self):
-        lo = QVBoxLayout(self)
-        lo.setContentsMargins(16, 16, 16, 16)
-        lo.setSpacing(12)
+        body = _tool_page(
+            self,
+            "进制转换",
+            "在二进制、八进制、十进制和十六进制之间即时转换。",
+        )
 
-        title = QLabel("进制转换工具")
-        title.setFont(QFont("Microsoft YaHei", 14, QFont.Weight.Bold))
-        lo.addWidget(title)
-
-        # 输入
-        inp = QHBoxLayout()
-        inp.addWidget(QLabel("输入:"))
+        input_card = ToolCard("输入数值", "支持负数；十六进制使用 A-F 表示")
+        input_row = QHBoxLayout()
+        input_row.setSpacing(SPACE_SM)
+        input_row.addWidget(_field_label("输入数值"))
         self._base_input = QLineEdit()
         self._base_input.setPlaceholderText("输入数值...")
         self._base_input.textChanged.connect(self._convert)
-        inp.addWidget(self._base_input, stretch=1)
-        inp.addWidget(QLabel("进制:"))
+        input_row.addWidget(self._base_input, stretch=1)
+        input_row.addSpacing(4)
+        input_row.addWidget(_field_label("输入进制"))
         self._base_from = QComboBox()
         for b in [2, 8, 10, 16]:
             self._base_from.addItem(str(b), b)
         self._base_from.setCurrentText("10")
         self._base_from.currentIndexChanged.connect(self._convert)
-        inp.addWidget(self._base_from)
-        lo.addLayout(inp)
+        self._base_from.setFixedWidth(110)
+        input_row.addWidget(self._base_from)
+        input_card.body.addLayout(input_row)
+        input_card.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        body.addWidget(input_card)
 
-        # 结果
-        g = QGroupBox("转换结果")
-        glo = QGridLayout(g)
+        result_card = ToolCard(
+            "转换结果", "任一结果均可选中后复制使用")
+        result_card.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        result_grid = QGridLayout()
+        result_grid.setHorizontalSpacing(SPACE_SM)
+        result_grid.setVerticalSpacing(SPACE_SM)
         self._results = {}
         bases = [("BIN (2)", 2), ("OCT (8)", 8), ("DEC (10)", 10), ("HEX (16)", 16)]
         for r, (label, base) in enumerate(bases):
-            glo.addWidget(QLabel(label + ":"), r, 0)
-            le = QLineEdit(); le.setReadOnly(True)
-            le.setFont(QFont("Consolas", 11))
-            glo.addWidget(le, r, 1)
+            metric = QFrame()
+            metric.setObjectName("toolMetric")
+            metric_lo = QVBoxLayout(metric)
+            metric_lo.setContentsMargins(12, 9, 12, 10)
+            metric_lo.setSpacing(4)
+            metric_lo.addWidget(_field_label(label))
+            le = _result_field(QLineEdit())
+            le.setFont(QFont("Consolas", 12))
+            metric_lo.addWidget(le)
+            result_grid.addWidget(
+                metric, r // 2, r % 2)
             self._results[base] = le
-        lo.addWidget(g)
-
-        lo.addStretch()
+        result_card.body.addLayout(result_grid)
+        result_card.body.addStretch()
+        body.addWidget(result_card)
+        body.addStretch()
 
     def _convert(self):
         raw = self._base_input.text().strip()
@@ -617,77 +1041,65 @@ class RegexTool(QWidget):
         self._build()
 
     def _build(self):
-        lo = QVBoxLayout(self)
-        lo.setContentsMargins(16, 16, 16, 16)
-        lo.setSpacing(10)
+        body = _tool_page(
+            self,
+            "正则表达式测试",
+            "实时检查匹配结果、位置和捕获分组。",
+        )
 
-        title = QLabel("正则表达式测试工具")
-        title.setFont(QFont("Microsoft YaHei", 14, QFont.Weight.Bold))
-        lo.addWidget(title)
-
-        # 正则输入
-        lo.addWidget(QLabel("正则表达式:"))
+        config = ToolCard("匹配规则", "输入表达式后自动执行，不需要额外提交")
         self._re_input = QLineEdit()
         self._re_input.setPlaceholderText("输入正则表达式，如 \\d+")
         self._re_input.setFont(QFont("Consolas", 12))
-        self._re_input.setStyleSheet("QLineEdit{background:#FFF;border:1px solid #D0D0D0;border-radius:4px;padding:6px}")
         self._re_input.textChanged.connect(self._run_regex)
-        lo.addWidget(self._re_input)
+        config.body.addWidget(_field_label("正则表达式"))
+        config.body.addWidget(self._re_input)
 
-        # 选项行
         opts_row = QHBoxLayout()
-
-        btn_style = (
-            "QPushButton{background:#FFF;border:1px solid #D0D0D0;border-radius:4px;padding:4px 12px}"
-            "QPushButton:checked{background:#0078D4;color:#FFF;border-color:#0078D4}"
-        )
-
-        self._chk_ignorecase = QPushButton("忽略大小写")
-        self._chk_ignorecase.setCheckable(True)
-        self._chk_ignorecase.setStyleSheet(btn_style)
+        opts_row.setSpacing(SPACE_SM)
+        opts_row.addWidget(_field_label("匹配选项"))
+        self._chk_ignorecase = _segment_button("忽略大小写")
         self._chk_ignorecase.clicked.connect(self._run_regex)
         opts_row.addWidget(self._chk_ignorecase)
 
-        self._chk_multiline = QPushButton("多行模式")
-        self._chk_multiline.setCheckable(True)
-        self._chk_multiline.setStyleSheet(btn_style)
+        self._chk_multiline = _segment_button("多行模式")
         self._chk_multiline.clicked.connect(self._run_regex)
         opts_row.addWidget(self._chk_multiline)
 
-        self._chk_dotall = QPushButton("点匹配换行")
-        self._chk_dotall.setCheckable(True)
-        self._chk_dotall.setStyleSheet(btn_style)
+        self._chk_dotall = _segment_button("点匹配换行")
         self._chk_dotall.clicked.connect(self._run_regex)
         opts_row.addWidget(self._chk_dotall)
         opts_row.addStretch()
-        lo.addLayout(opts_row)
+        config.body.addLayout(opts_row)
+        body.addWidget(config)
 
-        # 测试文本
-        lo.addWidget(QLabel("测试文本:"))
+        workspace = QSplitter(Qt.Orientation.Vertical)
+        workspace.setObjectName("toolSplit")
+        workspace.setChildrenCollapsible(False)
+        workspace.setHandleWidth(8)
+
         self._text_input = QPlainTextEdit()
         self._text_input.setPlaceholderText("输入要匹配的文本...")
-        self._text_input.setFont(QFont("Consolas", 11))
-        self._text_input.setStyleSheet(
-            "QPlainTextEdit{background:#FFF;border:1px solid #D0D0D0;border-radius:4px;padding:6px}"
-        )
+        _code_editor(self._text_input)
         self._text_input.textChanged.connect(self._run_regex)
-        lo.addWidget(self._text_input, stretch=2)
 
-        # 匹配结果 - 使用 QTextEdit 支持 HTML 美化显示
-        lo.addWidget(QLabel("匹配结果:"))
         self._result_output = QTextEdit()
-        self._result_output.setReadOnly(True)
-        self._result_output.setFont(QFont("Consolas", 11))
-        self._result_output.setStyleSheet(
-            "QTextEdit{background:#FAFAFA;border:1px solid #D0D0D0;border-radius:4px;padding:6px}"
-        )
-        lo.addWidget(self._result_output, stretch=2)
+        _code_editor(self._result_output, readonly=True)
+        self._result_output.setPlaceholderText("匹配结果会显示在这里")
+        self._regex_count = _badge("尚未匹配")
+        workspace.addWidget(_editor_card("测试文本", self._text_input))
+        workspace.addWidget(_editor_card(
+            "匹配结果", self._result_output, self._regex_count))
+        workspace.setSizes([300, 360])
+        body.addWidget(workspace, stretch=1)
 
     def _run_regex(self):
         pattern = self._re_input.text()
         text = self._text_input.toPlainText()
         if not pattern:
             self._result_output.setHtml("")
+            self._regex_count.setText("尚未匹配")
+            _set_tone(self._regex_count, "default")
             return
 
         flags = 0
@@ -704,6 +1116,8 @@ class RegexTool(QWidget):
             matches = list(regex.finditer(text))
 
             if not matches:
+                self._regex_count.setText("0 个匹配")
+                _set_tone(self._regex_count, "default")
                 hint = ""
                 if "^" in pattern or "$" in pattern:
                     hint = (
@@ -718,6 +1132,8 @@ class RegexTool(QWidget):
                 return
 
             # 构建美观的 HTML 结果
+            self._regex_count.setText(f"{len(matches)} 个匹配")
+            _set_tone(self._regex_count, "primary")
             parts = []
             parts.append(
                 "<div style='font-family:Consolas;font-size:14px'>"
@@ -728,7 +1144,7 @@ class RegexTool(QWidget):
             for i, m in enumerate(matches):
                 # 匹配卡片
                 parts.append(
-                    "<div style='background:#FFF;border:1px solid #E0E0E0;"
+                    "<div style='background:#F8FAFC;border:1px solid #E9EEF3;"
                     "border-radius:4px;padding:6px 10px;margin-bottom:6px'>"
                 )
                 # 标题行
@@ -740,7 +1156,8 @@ class RegexTool(QWidget):
                 # 匹配内容高亮
                 parts.append(
                     f"<p style='margin:0;font-size:15px;font-weight:600;color:#333'>"
-                    f"<span style='background:#FFEB3B;padding:1px 4px;border-radius:2px'>"
+                    f"<span style='background:#EAF4FF;color:#005A9E;"
+                    f"padding:2px 5px;border-radius:3px'>"
                     f"{self._escape_html(m.group())}</span>"
                     f"</p>"
                 )
@@ -753,16 +1170,18 @@ class RegexTool(QWidget):
                         for gi, g in enumerate(m.groups(), 1):
                             if g is not None:
                                 parts.append(
-                                    f"<span style='background:#E8F5E9;padding:1px 4px;"
-                                    f"border-radius:2px;margin:2px;font-size:11px'>"
+                                    f"<span style='background:#EFFAF2;color:#107C10;"
+                                    f"padding:2px 5px;border-radius:3px;margin:2px;"
+                                    f"font-size:11px'>"
                                     f"{gi}: {self._escape_html(g)}</span> "
                                 )
                     if m.groupdict():
                         for k, v in m.groupdict().items():
                             if v is not None:
                                 parts.append(
-                                    f"<span style='background:#E3F2FD;padding:1px 4px;"
-                                    f"border-radius:2px;margin:2px;font-size:11px'>"
+                                    f"<span style='background:#EAF4FF;color:#005A9E;"
+                                    f"padding:2px 5px;border-radius:3px;margin:2px;"
+                                    f"font-size:11px'>"
                                     f"{k}: {self._escape_html(v)}</span> "
                                 )
                     parts.append("<br>")
@@ -772,6 +1191,8 @@ class RegexTool(QWidget):
             self._result_output.setHtml("".join(parts))
 
         except Exception as e:
+            self._regex_count.setText("表达式错误")
+            _set_tone(self._regex_count, "error")
             self._result_output.setHtml(
                 f"<div style='color:#E53935;font-family:Consolas;font-size:14px'>"
                 f"正则错误: {self._escape_html(str(e))}</div>"
@@ -787,42 +1208,45 @@ class DiffTool(QWidget):
         self._build()
 
     def _build(self):
-        lo = QVBoxLayout(self)
-        lo.setContentsMargins(16, 16, 16, 16)
-        lo.setSpacing(10)
+        body = _tool_page(
+            self,
+            "文本对比",
+            "逐行比较两份文本，差异会直接在左右编辑器中标记。",
+        )
 
-        title = QLabel("文本对比工具")
-        title.setFont(QFont("Microsoft YaHei", 14, QFont.Weight.Bold))
-        lo.addWidget(title)
+        toolbar = ToolCard()
+        actions = QHBoxLayout()
+        actions.setSpacing(SPACE_SM)
+        self._btn_compare = _primary_button("开始对比")
+        self._btn_compare.clicked.connect(self._compare)
+        actions.addWidget(self._btn_compare)
+        self._btn_clear = _secondary_button("清空", "http_delete.svg")
+        self._btn_clear.clicked.connect(self._clear)
+        actions.addWidget(self._btn_clear)
+        actions.addStretch()
+        actions.addWidget(_badge("左侧删除 / 替换", "error"))
+        actions.addWidget(_badge("右侧新增 / 替换", "success"))
+        toolbar.body.addLayout(actions)
+        body.addWidget(toolbar)
 
-        # 双栏输入
-        panels = QHBoxLayout()
-        panels.setSpacing(12)
+        workspace = QSplitter(Qt.Orientation.Horizontal)
+        workspace.setObjectName("toolSplit")
+        workspace.setChildrenCollapsible(False)
+        workspace.setHandleWidth(8)
 
-        left_box = QVBoxLayout()
-        left_box.addWidget(QLabel("原始文本:"))
         self._left_text = QPlainTextEdit()
         self._left_text.setPlaceholderText("粘贴原始文本...")
-        self._left_text.setFont(QFont("Consolas", 11))
-        self._left_text.setStyleSheet(
-            "QPlainTextEdit{background:#FFF;border:1px solid #D0D0D0;border-radius:4px;padding:6px}"
-        )
+        _code_editor(self._left_text)
         self._left_text.setLineWrapMode(QPlainTextEdit.NoWrap)
-        left_box.addWidget(self._left_text)
-        panels.addLayout(left_box)
 
-        right_box = QVBoxLayout()
-        right_box.addWidget(QLabel("对比文本:"))
         self._right_text = QPlainTextEdit()
         self._right_text.setPlaceholderText("粘贴对比文本...")
-        self._right_text.setFont(QFont("Consolas", 11))
-        self._right_text.setStyleSheet(
-            "QPlainTextEdit{background:#FFF;border:1px solid #D0D0D0;border-radius:4px;padding:6px}"
-        )
+        _code_editor(self._right_text)
         self._right_text.setLineWrapMode(QPlainTextEdit.NoWrap)
-        right_box.addWidget(self._right_text)
-        panels.addLayout(right_box)
-        lo.addLayout(panels, stretch=1)
+        workspace.addWidget(_editor_card("原始文本", self._left_text))
+        workspace.addWidget(_editor_card("对比文本", self._right_text))
+        workspace.setSizes([1, 1])
+        body.addWidget(workspace, stretch=1)
 
         # 同步滚动
         self._left_text.verticalScrollBar().valueChanged.connect(
@@ -831,21 +1255,6 @@ class DiffTool(QWidget):
         self._right_text.verticalScrollBar().valueChanged.connect(
             self._left_text.verticalScrollBar().setValue
         )
-
-        # 按钮行
-        btn_row = QHBoxLayout()
-        self._btn_compare = QPushButton("开始对比")
-        self._btn_compare.clicked.connect(self._compare)
-        self._btn_compare.setStyleSheet(
-            "QPushButton{background:#0078D4;color:#FFF;border:none;border-radius:4px;"
-            "padding:6px 20px;font-weight:600}QPushButton:hover{background:#106EBE}"
-        )
-        btn_row.addWidget(self._btn_compare)
-        self._btn_clear = QPushButton("清空")
-        self._btn_clear.clicked.connect(self._clear)
-        btn_row.addWidget(self._btn_clear)
-        btn_row.addStretch()
-        lo.addLayout(btn_row)
 
     def _compare(self):
         import difflib
@@ -914,88 +1323,70 @@ class SortTool(QWidget):
         self._build()
 
     def _build(self):
-        lo = QVBoxLayout(self)
-        lo.setContentsMargins(16, 16, 16, 16)
-        lo.setSpacing(10)
+        body = _tool_page(
+            self,
+            "文本列表排序",
+            "按名称、数值或长度排序，可同时去重和反转结果。",
+        )
 
-        title = QLabel("文本列表排序工具")
-        title.setFont(QFont("Microsoft YaHei", 14, QFont.Weight.Bold))
-        lo.addWidget(title)
-
-        # 排序选项行
+        options_card = ToolCard("排序选项", "每行一条文本，输入变化时自动处理")
         opts_row = QHBoxLayout()
-        opts_row.addWidget(QLabel("排序方式:"))
+        opts_row.setSpacing(SPACE_SM)
+        opts_row.addWidget(_field_label("排序方式"))
 
         self._sort_mode = QComboBox()
         self._sort_mode.addItems(["名称", "数值", "长度"])
-        self._sort_mode.setStyleSheet(COMBO_STYLE)   # 与侧边栏下拉框同一套样式
         self._sort_mode.currentIndexChanged.connect(self._run_sort)
+        self._sort_mode.setFixedWidth(120)
         opts_row.addWidget(self._sort_mode)
 
-        opts_row.addSpacing(8)
+        opts_row.addSpacing(10)
 
-        self._btn_asc = QPushButton("升序")
-        self._btn_asc.setCheckable(True)
+        self._btn_asc = _segment_button("升序")
         self._btn_asc.setChecked(True)
-        self._btn_asc.setStyleSheet(
-            "QPushButton{background:#FFF;border:1px solid #D0D0D0;border-radius:4px;padding:4px 12px}"
-            "QPushButton:checked{background:#0078D4;color:#FFF;border-color:#0078D4}"
-        )
-        self._btn_asc.clicked.connect(lambda: (self._btn_desc.setChecked(False), self._run_sort()))
+        self._btn_asc.clicked.connect(self._run_sort)
         opts_row.addWidget(self._btn_asc)
 
-        self._btn_desc = QPushButton("降序")
-        self._btn_desc.setCheckable(True)
-        self._btn_desc.setStyleSheet(
-            "QPushButton{background:#FFF;border:1px solid #D0D0D0;border-radius:4px;padding:4px 12px}"
-            "QPushButton:checked{background:#0078D4;color:#FFF;border-color:#0078D4}"
-        )
-        self._btn_desc.clicked.connect(lambda: (self._btn_asc.setChecked(False), self._run_sort()))
+        self._btn_desc = _segment_button("降序")
+        self._btn_desc.clicked.connect(self._run_sort)
         opts_row.addWidget(self._btn_desc)
 
-        opts_row.addSpacing(16)
+        self._sort_order_group = QButtonGroup(self)
+        self._sort_order_group.setExclusive(True)
+        self._sort_order_group.addButton(self._btn_asc)
+        self._sort_order_group.addButton(self._btn_desc)
 
-        self._chk_unique = QPushButton("去重")
-        self._chk_unique.setCheckable(True)
-        self._chk_unique.setStyleSheet(
-            "QPushButton{background:#FFF;border:1px solid #D0D0D0;border-radius:4px;padding:4px 12px}"
-            "QPushButton:checked{background:#0078D4;color:#FFF;border-color:#0078D4}"
-        )
+        opts_row.addSpacing(14)
+        opts_row.addWidget(_field_label("附加处理"))
+        self._chk_unique = _segment_button("去重")
         self._chk_unique.clicked.connect(self._run_sort)
         opts_row.addWidget(self._chk_unique)
 
-        self._chk_reverse = QPushButton("反转")
-        self._chk_reverse.setCheckable(True)
-        self._chk_reverse.setStyleSheet(
-            "QPushButton{background:#FFF;border:1px solid #D0D0D0;border-radius:4px;padding:4px 12px}"
-            "QPushButton:checked{background:#0078D4;color:#FFF;border-color:#0078D4}"
-        )
+        self._chk_reverse = _segment_button("反转")
         self._chk_reverse.clicked.connect(self._run_sort)
         opts_row.addWidget(self._chk_reverse)
 
         opts_row.addStretch()
-        lo.addLayout(opts_row)
+        options_card.body.addLayout(opts_row)
+        body.addWidget(options_card)
 
-        # 输入
-        lo.addWidget(QLabel("输入文本 (每行一条):"))
+        workspace = QSplitter(Qt.Orientation.Horizontal)
+        workspace.setObjectName("toolSplit")
+        workspace.setChildrenCollapsible(False)
+        workspace.setHandleWidth(8)
+
         self._sort_input = QPlainTextEdit()
         self._sort_input.setPlaceholderText("每行一条文本...")
-        self._sort_input.setFont(QFont("Consolas", 11))
-        self._sort_input.setStyleSheet(
-            "QPlainTextEdit{background:#FFF;border:1px solid #D0D0D0;border-radius:4px;padding:6px}"
-        )
+        _code_editor(self._sort_input)
         self._sort_input.textChanged.connect(self._run_sort)
-        lo.addWidget(self._sort_input, stretch=2)
 
-        # 结果
-        lo.addWidget(QLabel("排序结果:"))
         self._sort_output = QPlainTextEdit()
-        self._sort_output.setReadOnly(True)
-        self._sort_output.setFont(QFont("Consolas", 11))
-        self._sort_output.setStyleSheet(
-            "QPlainTextEdit{background:#FAFAFA;border:1px solid #D0D0D0;border-radius:4px;padding:6px}"
-        )
-        lo.addWidget(self._sort_output, stretch=2)
+        _code_editor(self._sort_output, readonly=True)
+        self._sort_output.setPlaceholderText("排序结果会显示在这里")
+        workspace.addWidget(_editor_card("输入文本", self._sort_input))
+        workspace.addWidget(_editor_card("排序结果", self._sort_output))
+        workspace.setSizes([1, 1])
+        body.addWidget(workspace, stretch=1)
 
     def _run_sort(self):
         text = self._sort_input.toPlainText().strip()
@@ -1043,24 +1434,24 @@ class EncodeTool(QWidget):
         self._build()
 
     def _build(self):
-        lo = QVBoxLayout(self)
-        lo.setContentsMargins(16, 16, 16, 16)
-        lo.setSpacing(10)
+        body = _tool_page(
+            self,
+            "编码转换",
+            "同时生成 HEX、Base64 和 URL 编码结果，便于对照使用。",
+        )
 
-        title = QLabel("编码转换工具")
-        title.setFont(QFont("Microsoft YaHei", 14, QFont.Weight.Bold))
-        lo.addWidget(title)
-
-        # 输入区
-        lo.addWidget(QLabel("输入:"))
+        input_card = ToolCard(
+            "输入内容", "可输入普通文本或 HEX 字符串，结果会实时刷新")
         self._enc_input = QPlainTextEdit()
         self._enc_input.setPlaceholderText("输入文本或 HEX 字符串...")
-        self._enc_input.setFont(QFont("Consolas", 11))
-        self._enc_input.setStyleSheet(
-            "QPlainTextEdit{background:#FFF;border:1px solid #D0D0D0;border-radius:4px;padding:6px}"
-        )
+        _code_editor(self._enc_input)
+        self._enc_input.setMinimumHeight(96)
+        self._enc_input.setMaximumHeight(132)
         self._enc_input.textChanged.connect(self._convert_all)
-        lo.addWidget(self._enc_input, stretch=1)
+        input_card.body.addWidget(self._enc_input)
+        input_card.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        body.addWidget(input_card)
 
         # 转换结果网格: 2x3
         import base64, urllib.parse, binascii
@@ -1068,8 +1459,13 @@ class EncodeTool(QWidget):
         self._urlparse = urllib.parse
         self._binascii = binascii
 
+        result_card = ToolCard(
+            "转换结果", "结果框只读；双击或拖动可选择并复制内容")
+        result_card.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         grid = QGridLayout()
-        grid.setSpacing(8)
+        grid.setHorizontalSpacing(SPACE_SM)
+        grid.setVerticalSpacing(SPACE_SM)
 
         items = [
             ("HEX → 字节", 0, 0),
@@ -1082,22 +1478,25 @@ class EncodeTool(QWidget):
 
         self._enc_results = {}
         for label, r, c in items:
-            gb = QGroupBox(label)
-            gbl = QVBoxLayout(gb)
-            gbl.setContentsMargins(6, 4, 6, 6)
-            le = QLineEdit()
-            le.setReadOnly(True)
-            le.setFont(QFont("Consolas", 10))
-            le.setStyleSheet(
-                "QLineEdit{background:#FAFAFA;border:1px solid #D0D0D0;border-radius:3px;padding:4px}"
-            )
+            metric = QFrame()
+            metric.setObjectName("toolMetric")
+            metric_lo = QVBoxLayout(metric)
+            metric_lo.setContentsMargins(12, 9, 12, 10)
+            metric_lo.setSpacing(4)
+            metric_lo.addWidget(_field_label(label))
+            le = _result_field(QLineEdit())
+            le.setFont(QFont("Consolas", 11))
             le.setPlaceholderText("—")
-            gbl.addWidget(le)
-            grid.addWidget(gb, r, c)
+            metric_lo.addWidget(le)
+            grid.addWidget(metric, r, c)
             self._enc_results[label] = le
 
-        lo.addLayout(grid)
-        lo.addStretch()
+        for column in range(3):
+            grid.setColumnStretch(column, 1)
+        result_card.body.addLayout(grid)
+        result_card.body.addStretch()
+        body.addWidget(result_card)
+        body.addStretch()
 
     def _convert_all(self):
         text = self._enc_input.toPlainText()
@@ -1376,9 +1775,11 @@ class AmountTool(QWidget):
         self._build()
 
     def _build(self):
-        lo = QVBoxLayout(self)
-        lo.setContentsMargins(16, 16, 16, 16)
-        lo.setSpacing(12)
+        body = _tool_page(
+            self,
+            "金额转换",
+            "人民币小写金额与财务中文大写双向转换，结果可一键复制。",
+        )
 
         # 应用内 Toast 不占布局，放在页面中上方，隐藏时不挤压下方内容。
         self._copy_toast = QLabel(self)
@@ -1393,89 +1794,77 @@ class AmountTool(QWidget):
         self._copy_toast.setVisible(False)
         self._copy_toast_tick = None
 
-        title = QLabel("金额转换")
-        title.setFont(QFont("Microsoft YaHei", 14, QFont.Weight.Bold))
-        title.setObjectName("heading")
-        lo.addWidget(title)
+        cards = QHBoxLayout()
+        cards.setSpacing(SPACE_MD)
 
-        hint = QLabel("在白色输入框填写，蓝色结果框只用于显示。")
-        hint.setObjectName("subtitle")
-        lo.addWidget(hint)
-
-        g1 = QGroupBox("小写金额 → 中文大写")
-        g1lo = QGridLayout(g1)
-        g1lo.setHorizontalSpacing(10)
-        g1lo.setVerticalSpacing(8)
+        lower_card = ToolCard(
+            "小写金额转中文大写", "结果按财务规范精确到分并四舍五入")
+        lower_card.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        lower_form = QVBoxLayout()
+        lower_form.setSpacing(SPACE_SM)
+        lower_form.addWidget(_field_label("小写金额"))
         self._amount_input = QLineEdit()
         self._amount_input.setPlaceholderText("例如：10020.05")
         self._amount_input.setFont(QFont("Microsoft YaHei", 13))
-        self._amount_input.setMinimumHeight(42)
-        self._amount_input.setStyleSheet(
-            "QLineEdit{background:#FFFFFF;color:#1A1A1A;border:1px solid #D0D0D0;"
-            "border-radius:4px;padding:7px 9px}"
-            "QLineEdit:focus{border-color:#0078D4}"
-        )
+        self._amount_input.setMinimumHeight(CONTROL_HEIGHT + 4)
         self._amount_input.textChanged.connect(self._on_amount_changed)
-        g1lo.addWidget(QLabel("金额:"), 0, 0)
-        g1lo.addWidget(self._amount_input, 0, 1)
+        lower_form.addWidget(self._amount_input)
 
-        self._upper_output = QLineEdit()
-        self._upper_output.setReadOnly(True)
-        self._upper_output.setEnabled(False)
-        self._upper_output.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self._upper_output.setMinimumHeight(42)
+        lower_form.addWidget(_field_label("中文大写"))
+        upper_result_row = QHBoxLayout()
+        upper_result_row.setSpacing(SPACE_SM)
+        self._upper_output = _result_field(QLineEdit(), accent=True)
+        self._upper_output.setMinimumHeight(CONTROL_HEIGHT + 4)
         self._upper_output.setFont(QFont("Microsoft YaHei", 13, QFont.Weight.Bold))
-        self._upper_output.setStyleSheet(
-            "QLineEdit{background:#E8F0FE;color:#005A9E;border:1px solid #B3D4FC;"
-            "border-radius:4px;padding:7px 9px}"
-        )
-        g1lo.addWidget(QLabel("大写:"), 1, 0)
-        g1lo.addWidget(self._upper_output, 1, 1)
-        self._btn_copy_upper = QPushButton("复制")
-        self._btn_copy_upper.setMinimumWidth(58)
+        upper_result_row.addWidget(self._upper_output, stretch=1)
+        self._btn_copy_upper = _secondary_button("复制", "http_copy.svg")
+        self._btn_copy_upper.setFixedWidth(76)
         self._btn_copy_upper.clicked.connect(self._copy_upper)
-        g1lo.addWidget(self._btn_copy_upper, 1, 2)
+        upper_result_row.addWidget(self._btn_copy_upper)
+        lower_form.addLayout(upper_result_row)
         self._amount_status = QLabel("")
-        g1lo.addWidget(self._amount_status, 2, 1)
-        g1lo.setColumnStretch(1, 1)
-        lo.addWidget(g1)
+        self._amount_status.setMinimumHeight(16)
+        lower_form.addWidget(self._amount_status)
+        lower_card.body.addLayout(lower_form)
+        lower_card.body.addStretch()
+        cards.addWidget(lower_card, stretch=1)
 
-        g2 = QGroupBox("中文大写 → 小写金额")
-        g2lo = QGridLayout(g2)
-        g2lo.setHorizontalSpacing(10)
-        g2lo.setVerticalSpacing(8)
+        upper_card = ToolCard(
+            "中文大写转小写金额", "支持元、角、分、整以及万 / 亿级金额")
+        upper_card.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        upper_form = QVBoxLayout()
+        upper_form.setSpacing(SPACE_SM)
+        upper_form.addWidget(_field_label("中文大写"))
         self._upper_input = QLineEdit()
         self._upper_input.setPlaceholderText("例如：壹万零贰拾元零伍分")
         self._upper_input.setFont(QFont("Microsoft YaHei", 13))
-        self._upper_input.setMinimumHeight(42)
-        self._upper_input.setStyleSheet(
-            "QLineEdit{background:#FFFFFF;color:#1A1A1A;border:1px solid #D0D0D0;"
-            "border-radius:4px;padding:7px 9px}"
-            "QLineEdit:focus{border-color:#0078D4}"
-        )
+        self._upper_input.setMinimumHeight(CONTROL_HEIGHT + 4)
         self._upper_input.textChanged.connect(self._on_upper_changed)
-        self._lower_output = QLineEdit()
-        self._lower_output.setReadOnly(True)
-        self._lower_output.setEnabled(False)
-        self._lower_output.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self._lower_output.setMinimumHeight(42)
-        self._lower_output.setFont(QFont("Consolas", 13, QFont.Weight.Bold))
-        self._lower_output.setStyleSheet(
-            "QLineEdit{background:#E8F0FE;color:#005A9E;border:1px solid #B3D4FC;"
-            "border-radius:4px;padding:7px 9px}"
-        )
-        g2lo.addWidget(QLabel("大写:"), 0, 0); g2lo.addWidget(self._upper_input, 0, 1)
-        g2lo.addWidget(QLabel("小写:"), 1, 0); g2lo.addWidget(self._lower_output, 1, 1)
-        self._btn_copy_lower = QPushButton("复制")
-        self._btn_copy_lower.setMinimumWidth(58)
-        self._btn_copy_lower.clicked.connect(self._copy_lower)
-        g2lo.addWidget(self._btn_copy_lower, 1, 2)
-        self._reverse_status = QLabel("")
-        g2lo.addWidget(self._reverse_status, 2, 1)
-        g2lo.setColumnStretch(1, 1)
-        lo.addWidget(g2)
+        upper_form.addWidget(self._upper_input)
 
-        lo.addStretch()
+        upper_form.addWidget(_field_label("小写金额"))
+        lower_result_row = QHBoxLayout()
+        lower_result_row.setSpacing(SPACE_SM)
+        self._lower_output = _result_field(QLineEdit(), accent=True)
+        self._lower_output.setMinimumHeight(CONTROL_HEIGHT + 4)
+        self._lower_output.setFont(QFont("Consolas", 13, QFont.Weight.Bold))
+        lower_result_row.addWidget(self._lower_output, stretch=1)
+        self._btn_copy_lower = _secondary_button("复制", "http_copy.svg")
+        self._btn_copy_lower.setFixedWidth(76)
+        self._btn_copy_lower.clicked.connect(self._copy_lower)
+        lower_result_row.addWidget(self._btn_copy_lower)
+        upper_form.addLayout(lower_result_row)
+        self._reverse_status = QLabel("")
+        self._reverse_status.setMinimumHeight(16)
+        upper_form.addWidget(self._reverse_status)
+        upper_card.body.addLayout(upper_form)
+        upper_card.body.addStretch()
+        cards.addWidget(upper_card, stretch=1)
+
+        body.addLayout(cards)
+        body.addStretch()
         self._on_amount_changed()
 
     def _on_amount_changed(self):
@@ -1586,7 +1975,10 @@ class AmountTool(QWidget):
     @staticmethod
     def _set_status(label, message):
         label.setText(message)
-        label.setStyleSheet("color:#D13438;font-size:12px")
+        label.setProperty("toolTone", "error" if message else "")
+        label.style().unpolish(label)
+        label.style().polish(label)
+        label.update()
 
 
 # ============================================================
@@ -1599,38 +1991,47 @@ class ChecksumTool(QWidget):
         import hashlib
         self._hashlib = hashlib
 
-        lo = QVBoxLayout(self)
-        lo.setContentsMargins(16, 16, 16, 16)
-        lo.setSpacing(10)
-
-        title = QLabel("校验计算器")
-        title.setFont(QFont("Microsoft YaHei", 14, QFont.Weight.Bold))
-        lo.addWidget(title)
+        body = _tool_page(
+            self,
+            "校验计算",
+            "一次计算 CRC、XOR、累加和以及常用摘要校验值。",
+        )
 
         # 输入模式: 文本 / HEX
+        input_card = ToolCard(
+            "输入数据", "切换文本 / HEX 模式后会重新计算全部结果")
         mode_row = QHBoxLayout()
-        mode_row.addWidget(QLabel("输入模式:"))
+        mode_row.setSpacing(SPACE_SM)
+        mode_row.addWidget(_field_label("输入模式"))
         self._cs_mode = QComboBox()
         self._cs_mode.addItems(["文本", "HEX"])
-        self._cs_mode.setStyleSheet(COMBO_STYLE)   # 与侧边栏下拉框同一套样式
         self._cs_mode.currentIndexChanged.connect(self._calc_all)
+        self._cs_mode.setFixedWidth(110)
         mode_row.addWidget(self._cs_mode)
         mode_row.addStretch()
-        lo.addLayout(mode_row)
+        mode_row.addWidget(_hint_label("HEX 示例：01 02 0A FF"))
+        input_card.body.addLayout(mode_row)
 
         # 输入
         self._cs_input = QPlainTextEdit()
         self._cs_input.setPlaceholderText("输入要计算校验值的数据...")
-        self._cs_input.setFont(QFont("Consolas", 11))
-        self._cs_input.setStyleSheet(
-            "QPlainTextEdit{background:#FFF;border:1px solid #D0D0D0;border-radius:4px;padding:6px}"
-        )
+        _code_editor(self._cs_input)
+        self._cs_input.setMinimumHeight(116)
+        self._cs_input.setMaximumHeight(160)
         self._cs_input.textChanged.connect(self._calc_all)
-        lo.addWidget(self._cs_input, stretch=1)
+        input_card.body.addWidget(self._cs_input)
+        input_card.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        body.addWidget(input_card)
 
         # 结果网格
+        result_card = ToolCard(
+            "校验结果", "结果统一使用大写十六进制；哈希值可横向滚动查看")
+        result_card.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         grid = QGridLayout()
-        grid.setSpacing(8)
+        grid.setHorizontalSpacing(SPACE_SM)
+        grid.setVerticalSpacing(SPACE_SM)
 
         checks = [
             ("CRC16 (Modbus)", self._crc16_modbus, 0, 0),
@@ -1646,23 +2047,25 @@ class ChecksumTool(QWidget):
 
         self._cs_results = {}
         for label, func, r, c in checks:
-            gb = QGroupBox(label)
-            gbl = QVBoxLayout(gb)
-            gbl.setContentsMargins(6, 4, 6, 6)
-            le = QLineEdit()
-            le.setReadOnly(True)
+            metric = QFrame()
+            metric.setObjectName("toolMetric")
+            metric_lo = QVBoxLayout(metric)
+            metric_lo.setContentsMargins(12, 8, 12, 9)
+            metric_lo.setSpacing(3)
+            metric_lo.addWidget(_field_label(label))
+            le = _result_field(QLineEdit())
             le.setFont(QFont("Consolas", 12))
-            le.setAlignment(Qt.AlignCenter)
-            le.setStyleSheet(
-                "QLineEdit{background:#FAFAFA;border:1px solid #D0D0D0;border-radius:3px;padding:4px}"
-            )
             le.setPlaceholderText("—")
-            gbl.addWidget(le)
-            grid.addWidget(gb, r, c)
+            metric_lo.addWidget(le)
+            grid.addWidget(metric, r, c)
             self._cs_results[label] = le
 
-        lo.addLayout(grid)
-        lo.addStretch()
+        for column in range(3):
+            grid.setColumnStretch(column, 1)
+        result_card.body.addLayout(grid)
+        result_card.body.addStretch()
+        body.addWidget(result_card)
+        body.addStretch()
 
     def _get_bytes(self):
         text = self._cs_input.toPlainText().strip()
@@ -1868,41 +2271,38 @@ class HardwareInfoPage(QWidget):
         self._build()
 
     def _build(self):
-        root = QVBoxLayout(self)
-        root.setContentsMargins(20, 16, 20, 16)
-        root.setSpacing(12)
+        body = _tool_page(
+            self,
+            "硬件信息",
+            "查看本机型号、操作系统、运行时间和主要硬件配置。",
+        )
 
         # 顶部三卡片
         cards = QHBoxLayout()
-        cards.setSpacing(12)
+        cards.setSpacing(SPACE_MD)
         self._card_model, self._val_model = self._make_card("🖥️", "型号信息", "正在读取...")
         self._card_os, self._val_os = self._make_card("🪟", "系统信息", "正在读取...")
         self._card_uptime, self._val_uptime = self._make_card("⏱️", "运行时间", "正在读取...")
         cards.addWidget(self._card_model, stretch=1)
         cards.addWidget(self._card_os, stretch=1)
         cards.addWidget(self._card_uptime, stretch=1)
-        root.addLayout(cards)
+        body.addLayout(cards)
 
-        det_title = QLabel("详细信息")
-        det_title.setStyleSheet(
-            "color:#111827;font-size:18px;font-weight:700;"
-            "padding-left:10px;border-left:4px solid #0078D4;"
-        )
-        root.addWidget(det_title)
+        detail_card = ToolCard(
+            "设备详情", "处理器、主板、内存、显卡、磁盘和网络设备")
+        self._hardware_state = _badge("读取中", "primary")
+        detail_card.add_header_widget(self._hardware_state)
 
         detail_frame = QFrame()
-        detail_frame.setStyleSheet(
-            "QFrame{background:transparent;border:none;}"
-        )
         self._detail_lo = QVBoxLayout(detail_frame)
-        self._detail_lo.setContentsMargins(16, 12, 16, 12)
-        self._detail_lo.setSpacing(10)
+        self._detail_lo.setContentsMargins(2, 2, 8, 2)
+        self._detail_lo.setSpacing(0)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setWidget(detail_frame)
-        scroll.setStyleSheet("QScrollArea{background:transparent;border:none;}")
-        root.addWidget(scroll, stretch=1)
+        detail_card.body.addWidget(scroll, stretch=1)
+        body.addWidget(detail_card, stretch=1)
 
         self._load_timer = QTimer(self)
         self._load_timer.setSingleShot(True)
@@ -1910,20 +2310,17 @@ class HardwareInfoPage(QWidget):
         self._load_timer.start(0)
 
     def _make_card(self, icon, title, value):
-        card = QFrame()
-        card.setStyleSheet(
-            "QFrame{background:#F5F7FA;border:none;border-radius:8px;}"
-        )
-        lo = QVBoxLayout(card)
-        lo.setContentsMargins(14, 12, 14, 12)
-        lo.setSpacing(6)
+        card = ToolCard()
+        lo = card.body
+        lo.setSpacing(5)
 
         head = QHBoxLayout()
-        head.setSpacing(6)
+        head.setSpacing(7)
         ic = QLabel(icon)
-        ic.setStyleSheet("font-size:22px;background:transparent;")
+        ic.setFixedWidth(26)
+        ic.setAlignment(Qt.AlignmentFlag.AlignCenter)
         t = QLabel(title)
-        t.setStyleSheet("color:#4B5563;font-size:13px;font-weight:600;background:transparent;")
+        t.setObjectName("toolFieldLabel")
         head.addWidget(ic)
         head.addWidget(t)
         head.addStretch()
@@ -1931,27 +2328,37 @@ class HardwareInfoPage(QWidget):
 
         val = QLabel(value)
         val.setWordWrap(True)
-        val.setStyleSheet("color:#111827;font-size:14px;font-weight:600;background:transparent;")
+        val.setObjectName("toolCardTitle")
+        val.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse)
         lo.addWidget(val)
         return card, val
 
     def _add_detail(self, name, value):
-        row = QHBoxLayout()
-        row.setSpacing(12)
-        row.setAlignment(Qt.AlignTop)
-        n = QLabel(name + ":")
+        row_widget = QWidget()
+        row = QHBoxLayout(row_widget)
+        row.setContentsMargins(8, 9, 8, 9)
+        row.setSpacing(SPACE_MD)
+        row.setAlignment(Qt.AlignmentFlag.AlignTop)
+        n = QLabel(name)
+        n.setObjectName("toolFieldLabel")
         n.setFixedWidth(72)
         n.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        n.setStyleSheet("color:#374151;font-size:14px;font-weight:600;background:transparent;")
         row.addWidget(n)
 
         text = self._join(value)
         v = QLabel(text)
+        v.setObjectName("toolCardTitle")
         v.setWordWrap(True)
         v.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-        v.setStyleSheet("color:#111827;font-size:15px;background:transparent;")
+        v.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse)
         row.addWidget(v, stretch=1)
-        self._detail_lo.addLayout(row)
+        self._detail_lo.addWidget(row_widget)
+        divider = QFrame()
+        divider.setObjectName("toolDivider")
+        divider.setFixedHeight(1)
+        self._detail_lo.addWidget(divider)
 
     @staticmethod
     def _join(value):
@@ -1997,12 +2404,16 @@ class HardwareInfoPage(QWidget):
         self._val_model.setText("—")
         self._val_os.setText("—")
         self._val_uptime.setText("—")
+        self._hardware_state.setText("读取失败")
+        _set_tone(self._hardware_state, "error")
         self._add_detail("错误", message)
         self._detail_lo.addStretch()
 
     def _on_collected(self, info):
         self._val_model.setText(str(info.get("model") or "未检测到"))
         self._val_os.setText(str(info.get("os") or "未检测到"))
+        self._hardware_state.setText("已读取")
+        _set_tone(self._hardware_state, "success")
 
         # 运行时间基于开机时刻实时刷新
         up_secs = info.get("uptime_seconds")
@@ -2100,62 +2511,51 @@ class NetworkTool(QWidget):
         self._timer.start(100)
 
     def _build(self):
-        from PySide6.QtWidgets import QTabWidget
-        lo = QVBoxLayout(self)
-        lo.setContentsMargins(16, 16, 16, 16)
-        lo.setSpacing(10)
-
-        title = QLabel("Ping/端口扫描/网段扫描工具")
-        title.setFont(QFont("Microsoft YaHei", 14, QFont.Weight.Bold))
-        lo.addWidget(title)
-
-        # 标题与标签栏之间的横向贯穿分隔线
-        sep = QFrame()
-        sep.setFixedHeight(1)
-        sep.setStyleSheet("QFrame{background:#D0D0D0;border:none;}")
-        lo.addWidget(sep)
-
-        tabs = QTabWidget()
-        # 父级(主窗口)样式表把 QTabWidget::pane 的 border-top 设成了 none,
-        # 内层 Tab 会继承该规则而导致缺少上框线; 这里显式补回完整边框,
-        # 并用 top:-1px 让上框线与标签栏底边贴合, 形成一条贯通的分隔线
-        tabs.setStyleSheet(
-            "QTabWidget::pane{border:1px solid #D0D0D0;background:#FFFFFF;top:-1px}"
+        body = _tool_page(
+            self,
+            "网络检测",
+            "检查主机连通性、开放端口和局域网内存活设备。",
         )
-        tabs.addTab(self._build_ping_page(), "Ping")
-        tabs.addTab(self._build_port_page(), "端口扫描")
-        tabs.addTab(self._build_lan_page(), "网段扫描")
-        lo.addWidget(tabs, stretch=1)
+
+        self._network_tabs = QTabWidget()
+        self._network_tabs.setObjectName("toolTabs")
+        self._network_tabs.setDocumentMode(True)
+        self._network_tabs.addTab(self._build_ping_page(), "Ping")
+        self._network_tabs.addTab(self._build_port_page(), "端口扫描")
+        self._network_tabs.addTab(self._build_lan_page(), "网段扫描")
+        body.addWidget(self._network_tabs, stretch=1)
 
     # ---------- Ping ----------
     def _build_ping_page(self):
         w = QWidget()
+        w.setObjectName("toolTabPage")
         lo = QVBoxLayout(w)
-        lo.setContentsMargins(8, 8, 8, 8)
-        lo.setSpacing(8)
+        lo.setContentsMargins(SPACE_MD, SPACE_MD, SPACE_MD, SPACE_MD)
+        lo.setSpacing(SPACE_MD)
 
+        control = ToolCard(
+            "Ping 目标", "持续检测目标连通性；再次点击按钮即可停止")
         row = QHBoxLayout()
-        row.addWidget(QLabel("目标:"))
+        row.setSpacing(SPACE_SM)
+        row.addWidget(_field_label("目标主机"))
         self._ping_target = QLineEdit()
         self._ping_target.setPlaceholderText("IP 或域名，如 192.168.1.1 或 baidu.com")
-        self._ping_target.setFont(QFont("Consolas", 11))
         self._ping_target.returnPressed.connect(self._start_ping)
         row.addWidget(self._ping_target, stretch=1)
-        self._btn_ping = QPushButton("Ping")
-        self._btn_ping.setStyleSheet(
-            "QPushButton{background:#0078D4;color:#FFF;border:none;border-radius:4px;"
-            "padding:6px 20px;font-weight:600}QPushButton:hover{background:#106EBE}"
-            "QPushButton:disabled{background:#CCC;color:#FFF}")
+        self._btn_ping = _primary_button("Ping")
+        self._btn_ping.setFixedWidth(96)
         self._btn_ping.clicked.connect(self._start_ping)
         row.addWidget(self._btn_ping)
-        lo.addLayout(row)
+        control.body.addLayout(row)
+        lo.addWidget(control)
 
         self._ping_output = QPlainTextEdit()
-        self._ping_output.setReadOnly(True)
-        self._ping_output.setFont(QFont("Consolas", 10))
-        self._ping_output.setStyleSheet(
-            "QPlainTextEdit{background:#FFF;border:1px solid #D0D0D0;border-radius:4px;padding:6px}")
-        lo.addWidget(self._ping_output, stretch=1)
+        _code_editor(self._ping_output, readonly=True)
+        self._ping_output.setPlaceholderText("Ping 输出会实时显示在这里")
+        output = ToolCard("实时输出", "输出内容可直接选择复制")
+        output.add_header_widget(_badge("持续模式"))
+        output.body.addWidget(self._ping_output, stretch=1)
+        lo.addWidget(output, stretch=1)
         return w
 
     def _start_ping(self):
@@ -2220,23 +2620,25 @@ class NetworkTool(QWidget):
     # ---------- 端口扫描 ----------
     def _build_port_page(self):
         w = QWidget()
+        w.setObjectName("toolTabPage")
         lo = QVBoxLayout(w)
-        lo.setContentsMargins(8, 8, 8, 8)
-        lo.setSpacing(8)
+        lo.setContentsMargins(SPACE_MD, SPACE_MD, SPACE_MD, SPACE_MD)
+        lo.setSpacing(SPACE_MD)
 
+        control = ToolCard(
+            "扫描参数", "选择端口预设，或手动指定单个端口 / 端口范围")
         row1 = QHBoxLayout()
-        row1.addWidget(QLabel("目标主机:"))
+        row1.setSpacing(SPACE_SM)
+        row1.addWidget(_field_label("目标主机"))
         self._port_host = QLineEdit()
         self._port_host.setPlaceholderText("如 192.168.1.1 或 example.com")
-        self._port_host.setFont(QFont("Consolas", 11))
-        self._port_host.setMaximumWidth(340)
-        row1.addWidget(self._port_host)
-        row1.addStretch()
-        lo.addLayout(row1)
+        row1.addWidget(self._port_host, stretch=1)
+        control.body.addLayout(row1)
 
         # 快捷预设 (置于端口设置上方)
         row2 = QHBoxLayout()
-        row2.addWidget(QLabel("快捷预设:"))
+        row2.setSpacing(SPACE_SM)
+        row2.addWidget(_field_label("快捷预设"))
         self._port_preset = QComboBox()
         self._port_preset.addItems([
             "自定义端口",
@@ -2245,20 +2647,18 @@ class NetworkTool(QWidget):
             "常见服务 (21/22/80/443/3306/3389...)",
             "全端口 (1-65535)",
         ])
-        self._port_preset.setMaximumWidth(340)
         self._port_preset.currentIndexChanged.connect(self._on_port_preset)
-        row2.addWidget(self._port_preset)
-        row2.addStretch()
-        lo.addLayout(row2)
+        row2.addWidget(self._port_preset, stretch=1)
+        control.body.addLayout(row2)
 
         # 端口设置 (根据预设动态显示 1 个或 2 个输入框)
         # 用固定高度容器预留空间，避免切换预设时下方按钮/输出框上下跳动
         cfg_box = QWidget()
-        cfg_box.setFixedHeight(34)
+        cfg_box.setFixedHeight(CONTROL_HEIGHT)
         row3 = QHBoxLayout(cfg_box)
         row3.setContentsMargins(0, 0, 0, 0)
-        row3.setSpacing(6)
-        self._port_cfg_label = QLabel("端口设置:")
+        row3.setSpacing(SPACE_SM)
+        self._port_cfg_label = _field_label("端口设置")
         row3.addWidget(self._port_cfg_label)
         self._port_single = QSpinBox()
         self._port_single.setRange(1, 65535)
@@ -2279,26 +2679,23 @@ class NetworkTool(QWidget):
         self._port_end.setFixedWidth(110)
         row3.addWidget(self._port_end)
         row3.addStretch()
-        lo.addWidget(cfg_box)
+        control.body.addWidget(cfg_box)
 
-        self._btn_scan = QPushButton("开始扫描")
-        self._btn_scan.setStyleSheet(
-            "QPushButton{background:#0078D4;color:#FFF;border:none;border-radius:4px;"
-            "padding:6px 20px;font-weight:600}QPushButton:hover{background:#106EBE}"
-            "QPushButton:disabled{background:#CCC;color:#FFF}")
+        self._btn_scan = _primary_button("开始扫描")
         self._btn_scan.setFixedWidth(110)
         self._btn_scan.clicked.connect(self._start_port_scan)
         btn_row = QHBoxLayout()
         btn_row.addWidget(self._btn_scan)
         btn_row.addStretch()
-        lo.addLayout(btn_row)
+        control.body.addLayout(btn_row)
+        lo.addWidget(control)
 
         self._port_output = QPlainTextEdit()
-        self._port_output.setReadOnly(True)
-        self._port_output.setFont(QFont("Consolas", 10))
-        self._port_output.setStyleSheet(
-            "QPlainTextEdit{background:#FFF;border:1px solid #D0D0D0;border-radius:4px;padding:6px}")
-        lo.addWidget(self._port_output, stretch=1)
+        _code_editor(self._port_output, readonly=True)
+        self._port_output.setPlaceholderText("扫描进度和开放端口会显示在这里")
+        output = ToolCard("扫描结果", "完成后会汇总全部开放端口")
+        output.body.addWidget(self._port_output, stretch=1)
+        lo.addWidget(output, stretch=1)
         self._on_port_preset(0)
         return w
 
@@ -2392,32 +2789,32 @@ class NetworkTool(QWidget):
     # ---------- 网段扫描 ----------
     def _build_lan_page(self):
         w = QWidget()
+        w.setObjectName("toolTabPage")
         lo = QVBoxLayout(w)
-        lo.setContentsMargins(8, 8, 8, 8)
-        lo.setSpacing(8)
+        lo.setContentsMargins(SPACE_MD, SPACE_MD, SPACE_MD, SPACE_MD)
+        lo.setSpacing(SPACE_MD)
 
+        control = ToolCard(
+            "扫描网段", "使用 CIDR 表示网段，最多一次检测 1024 个主机")
         row = QHBoxLayout()
-        row.addWidget(QLabel("网段:"))
+        row.setSpacing(SPACE_SM)
+        row.addWidget(_field_label("网段"))
         self._lan_input = QLineEdit()
         self._lan_input.setPlaceholderText("如 192.168.1.0/24")
-        self._lan_input.setFont(QFont("Consolas", 11))
         self._lan_input.returnPressed.connect(self._start_lan_scan)
         row.addWidget(self._lan_input, stretch=1)
-        self._btn_lan = QPushButton("扫描存活主机")
-        self._btn_lan.setStyleSheet(
-            "QPushButton{background:#0078D4;color:#FFF;border:none;border-radius:4px;"
-            "padding:6px 20px;font-weight:600}QPushButton:hover{background:#106EBE}"
-            "QPushButton:disabled{background:#CCC;color:#FFF}")
+        self._btn_lan = _primary_button("扫描存活主机")
         self._btn_lan.clicked.connect(self._start_lan_scan)
         row.addWidget(self._btn_lan)
-        lo.addLayout(row)
+        control.body.addLayout(row)
+        lo.addWidget(control)
 
         self._lan_output = QPlainTextEdit()
-        self._lan_output.setReadOnly(True)
-        self._lan_output.setFont(QFont("Consolas", 10))
-        self._lan_output.setStyleSheet(
-            "QPlainTextEdit{background:#FFF;border:1px solid #D0D0D0;border-radius:4px;padding:6px}")
-        lo.addWidget(self._lan_output, stretch=1)
+        _code_editor(self._lan_output, readonly=True)
+        self._lan_output.setPlaceholderText("发现的存活主机会显示在这里")
+        output = ToolCard("存活主机", "扫描结束后会显示全部检测结果")
+        output.body.addWidget(self._lan_output, stretch=1)
+        lo.addWidget(output, stretch=1)
         return w
 
     def _start_lan_scan(self):

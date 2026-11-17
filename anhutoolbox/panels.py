@@ -9,9 +9,9 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame,
     QCheckBox, QSpinBox, QPlainTextEdit, QFileDialog,
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
-    QMenu, QComboBox, QScrollArea,
+    QMenu, QComboBox, QScrollArea, QScrollBar, QSizePolicy,
 )
-from PySide6.QtCore import QEvent, QSize, Qt, Signal, Slot, QTimer
+from PySide6.QtCore import QSize, Qt, Signal, Slot, QTimer
 from PySide6.QtGui import QFont, QFontMetrics, QIcon, QTextCursor
 
 from .styles import _find_assets_dir, prepare_menu
@@ -1087,6 +1087,11 @@ class PresetPanel(QWidget):
         self._on_change = None
         self._suspend_save = False
         self._resizing_preset_columns = False
+        self._preset_data_min_width = 60
+        self._preset_min_width_timer = QTimer(self)
+        self._preset_min_width_timer.setSingleShot(True)
+        self._preset_min_width_timer.timeout.connect(
+            self._capture_preset_data_minimum)
         self._st = QTimer()
         self._st.setSingleShot(True)
         self._st.setTimerType(Qt.TimerType.PreciseTimer)
@@ -1101,6 +1106,9 @@ class PresetPanel(QWidget):
     def _build(self):
         self.setObjectName("presetPanel")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        # 分屏宽度由用户拖动决定，不能被表格列宽的内容尺寸建议反向改变。
+        self.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
         self.setStyleSheet(PRESET_PANEL_STYLE)
         lo = QVBoxLayout(self)
         lo.setContentsMargins(10, 9, 10, 8)
@@ -1181,6 +1189,8 @@ class PresetPanel(QWidget):
         self.table.setHorizontalHeaderLabels([
             "名称", "数据", "HEX", "间隔(ms)", "循环", "发送"
         ])
+        self.table.horizontalHeaderItem(3).setTextAlignment(
+            Qt.AlignmentFlag.AlignCenter)
         self.table.horizontalHeaderItem(3).setToolTip(
             "循环发送的间隔(ms), 最小 {}ms\n".format(LOOP_MIN_INTERVAL) +
             "填得比 {}ms 小会提示并自动改回 {}ms".format(
@@ -1201,10 +1211,14 @@ class PresetPanel(QWidget):
         self.table.setColumnWidth(5, 58)
         self.table.setHorizontalScrollMode(
             QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.table.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.table.horizontalHeader().setMinimumSectionSize(40)
+        # 空表时 vertical header 宽度为 0，首行加载后会突然占约 33px。
+        # 固定预留该宽度，避免数据列初始基准多算 33px。
+        self.table.verticalHeader().setFixedWidth(33)
         self.table.horizontalHeader().sectionResized.connect(
             self._on_preset_column_resized)
-        self.table.viewport().installEventFilter(self)
         QTimer.singleShot(0, self._fit_preset_table_width)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setAlternatingRowColors(False)
@@ -1232,7 +1246,28 @@ class PresetPanel(QWidget):
         self.table.cellChanged.connect(self._on_cell_changed)
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._ctx)
-        lo.addWidget(self.table, stretch=1)
+
+        table_slot = QWidget()
+        table_slot.setObjectName("presetTableSlot")
+        table_slot_lo = QVBoxLayout(table_slot)
+        table_slot_lo.setContentsMargins(0, 0, 0, 0)
+        table_slot_lo.setSpacing(0)
+        table_slot_lo.addWidget(self.table, stretch=1)
+
+        # 横向滚动条放在表格外部的独立槽位，始终占固定高度。
+        # 列宽超出视口时只启用滑块，不会改变表格行区高度。
+        self._preset_hscroll = QScrollBar(Qt.Orientation.Horizontal)
+        self._preset_hscroll.setObjectName("presetTableScroll")
+        self._preset_hscroll.setFixedHeight(SCROLLBAR_SLOT_HEIGHT)
+        self._preset_hscroll.setEnabled(False)
+        self._preset_hscroll.valueChanged.connect(
+            self.table.horizontalScrollBar().setValue)
+        self.table.horizontalScrollBar().valueChanged.connect(
+            self._preset_hscroll.setValue)
+        self.table.horizontalScrollBar().rangeChanged.connect(
+            self._sync_preset_horizontal_scroll)
+        table_slot_lo.addWidget(self._preset_hscroll)
+        lo.addWidget(table_slot, stretch=1)
 
         # 序号列 (vertical header) 可拖动重排. 拖动完成后 _on_section_moved
         # 会按新的 visual 顺序重排 _presets 并保存, 下次启动仍按这个顺序加载.
@@ -1243,6 +1278,22 @@ class PresetPanel(QWidget):
         vh.setDefaultAlignment(Qt.AlignCenter)
         vh.setToolTip("按住序号拖动可以重新排序")
         vh.sectionMoved.connect(self._on_section_moved)
+        self._sync_preset_horizontal_scroll()
+
+    def _sync_preset_horizontal_scroll(self, *_):
+        """同步表格内部滚动范围到独立滚动条。"""
+        source = self.table.horizontalScrollBar()
+        self._preset_hscroll.blockSignals(True)
+        try:
+            self._preset_hscroll.setRange(
+                source.minimum(), source.maximum())
+            self._preset_hscroll.setPageStep(source.pageStep())
+            self._preset_hscroll.setSingleStep(source.singleStep())
+            self._preset_hscroll.setValue(source.value())
+            self._preset_hscroll.setEnabled(
+                source.maximum() > source.minimum())
+        finally:
+            self._preset_hscroll.blockSignals(False)
 
     def _preset_name_column_width(self):
         """名称列默认宽度：完整容纳 12 个中文字符及单元格内边距。"""
@@ -1251,35 +1302,69 @@ class PresetPanel(QWidget):
         text_width = QFontMetrics(font).horizontalAdvance("中" * 12)
         return text_width + 28
 
-    def eventFilter(self, watched, event):
-        if (
-            watched is self.table.viewport()
-            and event.type() == QEvent.Type.Resize
-        ):
-            QTimer.singleShot(0, self._fit_preset_table_width)
-        return super().eventFilter(watched, event)
-
     def _on_preset_column_resized(
             self, logical_index, _old_size, new_size):
         if self._resizing_preset_columns or logical_index not in (0, 1):
             return
-        if logical_index == 0:
+        if (logical_index == 1
+                and new_size < self._preset_data_min_width):
             QTimer.singleShot(
-                0,
-                lambda width=new_size:
-                self._fit_preset_table_width(
-                    preferred_name_width=width),
-            )
-        else:
-            QTimer.singleShot(
-                0,
-                lambda width=new_size:
-                self._fit_preset_table_width(
-                    preferred_data_width=width),
-            )
+                0, self._restore_preset_data_minimum)
+            return
+        # 名称列和数据列完全独立：手动拖动哪一列，就只改变该列宽度。
+        # 超出视口的部分由表格底部独立横向滚动条承担。
+        QTimer.singleShot(
+            0, self._sync_preset_horizontal_scroll)
 
-    def _fit_preset_table_width(
-            self, preferred_data_width=None, preferred_name_width=None):
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._preset_min_width_timer.start(0)
+
+    def fit_data_column_on_expand(self):
+        """预设面板展开后，按稳定后的表头宽度补满数据列。"""
+        self._preset_min_width_timer.start(0)
+
+    def _capture_preset_data_minimum(self):
+        """记录预设面板展开时刚好不出现横向滚动的数据列宽度。"""
+        if not self.isVisible():
+            return
+        available = self.table.viewport().width()
+        if available <= 0:
+            return
+        header = self.table.horizontalHeader()
+        fixed_width = sum(
+            header.sectionSize(column) for column in range(2, 6))
+        capacity = available - fixed_width - header.sectionSize(0)
+        # 数据列最低宽度随可用空间缩放，最高 150px：
+        # 1920×1080 下为 150px，1500×900 下受 60px 下限约束。
+        reduced_capacity = max(
+            60, min(150, round(capacity * 0.5)))
+        self._preset_data_min_width = max(
+            self._preset_data_min_width, reduced_capacity)
+        self._resizing_preset_columns = True
+        try:
+            header.resizeSection(1, max(60, capacity))
+        finally:
+            self._resizing_preset_columns = False
+        self._restore_preset_data_minimum()
+
+    def _restore_preset_data_minimum(self):
+        if self._resizing_preset_columns:
+            return
+        header = self.table.horizontalHeader()
+        current = header.sectionSize(1)
+        target = max(current, self._preset_data_min_width)
+        if target != current:
+            self._resizing_preset_columns = True
+            try:
+                header.resizeSection(1, target)
+            finally:
+                self._resizing_preset_columns = False
+            self.table.scheduleDelayedItemsLayout()
+            self.table.viewport().update()
+        self._sync_preset_horizontal_scroll()
+
+    def _fit_preset_table_width(self):
         if self._resizing_preset_columns:
             return
         available = self.table.viewport().width()
@@ -1293,23 +1378,13 @@ class PresetPanel(QWidget):
 
         self._resizing_preset_columns = True
         try:
-            if preferred_name_width is not None:
-                name_width = max(min_name, int(preferred_name_width))
-                data_width = capacity - name_width
-                if data_width < min_data:
-                    data_width = min_data
-            elif preferred_data_width is not None:
-                data_width = max(
-                    min_data, int(preferred_data_width))
-                name_width = capacity - data_width
-                if name_width < min_name:
-                    name_width = min_name
-            else:
-                name_width = max(
-                    min_name, header.sectionSize(0))
-                data_width = capacity - name_width
-                if data_width < min_data:
-                    data_width = min_data
+            name_width = max(
+                min_name, header.sectionSize(0))
+            data_width = max(
+                min_data,
+                self._preset_data_min_width,
+                capacity - name_width,
+            )
             header.resizeSection(0, name_width)
             header.resizeSection(1, data_width)
         finally:
@@ -1405,6 +1480,7 @@ class PresetPanel(QWidget):
             self.table.setCellWidget(i, 2, cw_hex)
             # Col 3: 间隔(ms)
             item_iv = QTableWidgetItem(str(p.get("interval", 1000)))
+            item_iv.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self.table.setItem(i, 3, item_iv)
             # Col 4: 循环 (勾选后按间隔自动发送)
             cb_loop = QCheckBox()
@@ -1602,6 +1678,7 @@ class PresetPanel(QWidget):
 
     def stop_timer(self):
         self._st.stop()
+        self._preset_min_width_timer.stop()
 
     def _save(self):
         if self._suspend_save:

@@ -30,6 +30,7 @@ from anhutoolbox.http_environments import (
 )
 from anhutoolbox.http_dialogs import UnsavedChangesDialog
 from anhutoolbox.http_page import _enabled_pairs
+from anhutoolbox.panels import PresetPanel
 from anhutoolbox.protocol_pages import (
     HTTPPage, MQTTPage, WebSocketPage,
 )
@@ -2809,6 +2810,8 @@ class ProtocolProjectTests(unittest.TestCase):
                     header_scroll.horizontalScrollBar().isVisible())
 
                 table_height = panel.table.height()
+                fixed_name_width = panel.table.columnWidth(0)
+                fixed_data_width = panel.table.columnWidth(1)
                 splitter.setSizes([650, 200])
                 APP.processEvents()
                 self.assertGreater(
@@ -2816,6 +2819,10 @@ class ProtocolProjectTests(unittest.TestCase):
                     0,
                 )
                 self.assertEqual(panel.table.height(), table_height)
+                self.assertEqual(
+                    panel.table.columnWidth(0), fixed_name_width)
+                self.assertEqual(
+                    panel.table.columnWidth(1), fixed_data_width)
                 header_viewport = panel._header_scroll.viewport()
                 self.assertLessEqual(
                     panel.btn_add.geometry().bottom() + 1,
@@ -2829,6 +2836,10 @@ class ProtocolProjectTests(unittest.TestCase):
                 splitter.moveSplitter(450, 1)
                 APP.processEvents()
                 self.assertNotEqual(splitter.sizes(), before)
+                self.assertEqual(
+                    panel.table.columnWidth(0), fixed_name_width)
+                name_before_expand = panel.table.columnWidth(0)
+                data_before_expand = panel.table.columnWidth(1)
 
                 self.assertEqual(panel.objectName(), "presetPanel")
                 self.assertIn(
@@ -2842,6 +2853,14 @@ class ProtocolProjectTests(unittest.TestCase):
                 self.assertFalse(
                     panel.table.horizontalHeader().highlightSections())
                 self.assertEqual(
+                    panel.table.horizontalHeaderItem(3).textAlignment(),
+                    int(Qt.AlignmentFlag.AlignCenter),
+                )
+                self.assertEqual(
+                    panel.table.item(0, 3).textAlignment(),
+                    int(Qt.AlignmentFlag.AlignCenter),
+                )
+                self.assertEqual(
                     panel.table.horizontalHeader().sectionResizeMode(1),
                     QHeaderView.ResizeMode.Interactive,
                 )
@@ -2851,36 +2870,71 @@ class ProtocolProjectTests(unittest.TestCase):
                 )
                 window.resize(1920, 1080)
                 APP.processEvents()
+                self.assertEqual(
+                    panel.table.columnWidth(0), name_before_expand)
+                self.assertEqual(
+                    panel.table.columnWidth(1), data_before_expand)
                 panel._fit_preset_table_width()
                 header = panel.table.horizontalHeader()
                 self.assertEqual(
                     header.sectionSize(0),
                     panel._preset_name_column_width(),
                 )
-                self.assertEqual(
+                self.assertGreaterEqual(
                     header.length(), panel.table.viewport().width())
                 name_before = header.sectionSize(0)
                 data_before = header.sectionSize(1)
                 header.resizeSection(0, name_before - 40)
                 APP.processEvents()
                 self.assertLess(header.sectionSize(0), name_before)
-                self.assertGreater(header.sectionSize(1), data_before)
-                self.assertEqual(
-                    header.length(), panel.table.viewport().width())
+                self.assertEqual(header.sectionSize(1), data_before)
                 name_before = header.sectionSize(0)
                 data_before = header.sectionSize(1)
-                header.resizeSection(1, data_before - 40)
+                minimum_before = panel._preset_data_min_width
+                header.resizeSection(1, minimum_before - 40)
                 APP.processEvents()
-                self.assertLess(header.sectionSize(1), data_before)
-                self.assertGreater(header.sectionSize(0), name_before)
                 self.assertEqual(
-                    header.length(), panel.table.viewport().width())
+                    header.sectionSize(1), minimum_before)
+                self.assertEqual(header.sectionSize(0), name_before)
                 header.resizeSection(1, data_before + 40)
                 APP.processEvents()
                 self.assertGreater(
                     header.sectionSize(1), data_before)
+                self.assertEqual(header.sectionSize(0), name_before)
                 self.assertGreaterEqual(
                     header.length(), panel.table.viewport().width())
+                table_height_before_overflow = panel.table.height()
+                header.resizeSection(
+                    1, panel.table.viewport().width() + 240)
+                APP.processEvents()
+                self.assertEqual(
+                    panel.table.horizontalScrollBarPolicy(),
+                    Qt.ScrollBarPolicy.ScrollBarAlwaysOff,
+                )
+                self.assertGreater(
+                    panel._preset_hscroll.maximum(), 0)
+                self.assertTrue(panel._preset_hscroll.isEnabled())
+                self.assertEqual(
+                    panel._preset_hscroll.height(),
+                    panel._preset_hscroll.minimumHeight(),
+                )
+                self.assertEqual(
+                    panel.table.height(), table_height_before_overflow)
+                self.assertGreaterEqual(
+                    panel._preset_hscroll.mapTo(
+                        panel, QPoint(0, 0)).y(),
+                    panel.table.mapTo(
+                        panel, QPoint(0, panel.table.height())).y(),
+                )
+                panel._preset_hscroll.setValue(
+                    panel._preset_hscroll.maximum())
+                APP.processEvents()
+                self.assertEqual(
+                    panel.table.horizontalScrollBar().value(),
+                    panel._preset_hscroll.value(),
+                )
+                panel._preset_hscroll.setValue(0)
+                APP.processEvents()
                 hex_widget = panel.table.cellWidget(0, 2)
                 self.assertGreaterEqual(
                     hex_widget.x(), header.sectionPosition(2))
@@ -2912,6 +2966,48 @@ class ProtocolProjectTests(unittest.TestCase):
                 window.close()
                 window.deleteLater()
                 APP.processEvents()
+
+    def test_preset_columns_do_not_resize_with_splitter(self):
+        panel = PresetPanel()
+        try:
+            panel.resize(520, 500)
+            panel.show()
+            APP.processEvents()
+            panel.load_from_project([{
+                "name": "测试命令",
+                "data": "01 02 FF",
+                "hex_mode": True,
+                "interval": 1000,
+            }])
+            APP.processEvents()
+            name_width = panel.table.columnWidth(0)
+            data_width = panel.table.columnWidth(1)
+
+            panel.resize(1000, 500)
+            APP.processEvents()
+
+            self.assertEqual(panel.table.columnWidth(0), name_width)
+            self.assertEqual(
+                panel.table.columnWidth(1), data_width)
+            self.assertLess(
+                panel.table.horizontalHeader().length(),
+                panel.table.viewport().width(),
+            )
+            self.assertEqual(panel._preset_hscroll.maximum(), 0)
+
+            # 关闭后以新的分屏宽度重新展开时，数据列应重新补满表头。
+            panel.hide()
+            APP.processEvents()
+            panel.show()
+            APP.processEvents()
+            self.assertEqual(
+                panel.table.horizontalHeader().length(),
+                panel.table.viewport().width(),
+            )
+            self.assertEqual(panel._preset_hscroll.maximum(), 0)
+        finally:
+            panel.stop_timer()
+            close_page(panel)
 
     def test_http_tabs_keep_navigation_controls_visible_at_minimum_width(
             self):

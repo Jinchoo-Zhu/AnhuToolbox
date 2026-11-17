@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""第一阶段 UI 设计规则，目前仅由 HTTP 页面使用。"""
+"""蓝白工程风 UI 设计规则，供 HTTP、协议页和工具库共同使用。"""
 
 
 FONT_UI = "Microsoft YaHei UI"
@@ -485,6 +485,313 @@ QDialog#httpEnvironmentDialog QPushButton#httpEnvironmentPrimary:hover {{
 """
 
 
+TOOL_PAGE_STYLE = f"""
+QWidget#toolPage {{
+    background-color: {COLOR_PAGE_BG};
+}}
+QWidget#toolPage QLabel {{
+    background: transparent;
+    color: {COLOR_TEXT_SECONDARY};
+    font-family: "{FONT_UI}";
+    font-size: 13px;
+}}
+QLabel#toolPageTitle {{
+    color: {COLOR_TEXT};
+    font-size: 20px;
+    font-weight: 600;
+}}
+QLabel#toolPageSubtitle {{
+    color: {COLOR_TEXT_MUTED};
+    font-size: 12px;
+}}
+QLabel#toolCardTitle {{
+    color: {COLOR_TEXT};
+    font-size: 14px;
+    font-weight: 600;
+}}
+QLabel#toolCardSubtitle,
+QLabel#toolHint {{
+    color: {COLOR_TEXT_MUTED};
+    font-size: 12px;
+}}
+QLabel#toolFieldLabel {{
+    color: {COLOR_TEXT_SECONDARY};
+    font-size: 12px;
+}}
+QLabel[toolBadge="true"] {{
+    background-color: {COLOR_SURFACE_SUBTLE};
+    color: {COLOR_TEXT_SECONDARY};
+    border: 1px solid {COLOR_DIVIDER};
+    border-radius: 9px;
+    padding: 1px 9px;
+    font-size: 12px;
+}}
+QLabel[toolBadge="true"][tone="primary"] {{
+    background-color: {COLOR_PRIMARY_SOFT};
+    color: #0067B8;
+    border-color: {COLOR_PRIMARY_BORDER};
+}}
+QLabel[toolBadge="true"][tone="success"] {{
+    background-color: #EFFAF2;
+    color: #107C10;
+    border-color: #C9E8D1;
+}}
+QLabel[toolBadge="true"][tone="error"] {{
+    background-color: {COLOR_DANGER_SOFT};
+    color: {COLOR_DANGER};
+    border-color: {COLOR_DANGER_BORDER};
+}}
+QLabel[toolTone="error"] {{
+    color: {COLOR_DANGER};
+    font-size: 12px;
+}}
+QLabel[toolTone="success"] {{
+    color: #107C10;
+    font-size: 12px;
+}}
+QFrame#toolAccent {{
+    background-color: {COLOR_PRIMARY};
+    border: none;
+    border-radius: 2px;
+}}
+QFrame#toolCard {{
+    background-color: {COLOR_SURFACE};
+    border: 1px solid {COLOR_BORDER};
+    border-radius: {RADIUS_CARD}px;
+}}
+QFrame#toolMetric {{
+    background-color: {COLOR_SURFACE_SUBTLE};
+    border: 1px solid {COLOR_DIVIDER};
+    border-radius: {RADIUS_SMALL}px;
+}}
+QFrame#toolDivider {{
+    background-color: {COLOR_DIVIDER};
+    border: none;
+    max-height: 1px;
+}}
+QFrame#qrCell {{
+    background-color: {COLOR_SURFACE};
+    border: 1px solid {COLOR_DIVIDER};
+    border-radius: {RADIUS_SMALL}px;
+}}
+QFrame#qrCell:hover {{
+    background-color: {COLOR_SURFACE_SUBTLE};
+    border-color: {COLOR_PRIMARY_BORDER};
+}}
+QLabel#qrText {{
+    color: {COLOR_TEXT};
+    font-size: 13px;
+    font-weight: 600;
+}}
+QWidget#toolPage QLabel#qrPreviewText {{
+    color: {COLOR_TEXT};
+    font-size: 16px;
+    font-weight: 600;
+    padding: 2px 0;
+}}
+QLabel#qrError {{
+    color: {COLOR_DANGER};
+    font-size: 12px;
+}}
+QFrame#qrPreviewOverlay {{
+    background-color: rgba(15, 23, 42, 150);
+    border: none;
+}}
+QFrame#qrEnlargedCard {{
+    background-color: {COLOR_SURFACE};
+    border: 1px solid {COLOR_BORDER_STRONG};
+    border-radius: {RADIUS_CARD}px;
+}}
+QPushButton#qrPreviewClose {{
+    background-color: transparent;
+    color: {COLOR_TEXT_SECONDARY};
+    border: none;
+    border-radius: {RADIUS_SMALL}px;
+    padding: 0;
+    font-size: 22px;
+    font-weight: 400;
+}}
+QPushButton#qrPreviewClose:hover {{
+    background-color: {COLOR_DANGER_SOFT};
+    color: {COLOR_DANGER};
+    border: none;
+}}
+QWidget#toolPage QLineEdit,
+QWidget#toolPage QSpinBox,
+QWidget#toolPage QComboBox {{
+    background-color: {COLOR_SURFACE};
+    color: {COLOR_TEXT};
+    border: 1px solid {COLOR_BORDER};
+    border-radius: {RADIUS_SMALL}px;
+    padding: 4px 9px;
+    min-height: 22px;
+    font-family: "{FONT_UI}";
+    font-size: 13px;
+    font-weight: 400;
+}}
+QWidget#toolPage QLineEdit:hover,
+QWidget#toolPage QSpinBox:hover,
+QWidget#toolPage QComboBox:hover {{
+    border-color: {COLOR_PRIMARY_BORDER};
+}}
+QWidget#toolPage QLineEdit:focus,
+QWidget#toolPage QSpinBox:focus,
+QWidget#toolPage QComboBox:focus {{
+    border-color: {COLOR_PRIMARY};
+}}
+QWidget#toolPage QLineEdit[toolResult="true"] {{
+    background-color: {COLOR_SURFACE_SUBTLE};
+    color: {COLOR_TEXT};
+    border-color: {COLOR_DIVIDER};
+}}
+QWidget#toolPage QLineEdit[toolAccentResult="true"] {{
+    background-color: {COLOR_PRIMARY_SOFT};
+    color: #005A9E;
+    border-color: {COLOR_PRIMARY_BORDER};
+    font-weight: 600;
+}}
+QWidget#toolPage QPlainTextEdit,
+QWidget#toolPage QTextEdit {{
+    background-color: {COLOR_SURFACE};
+    color: {COLOR_TEXT};
+    border: 1px solid {COLOR_BORDER};
+    border-radius: {RADIUS_SMALL}px;
+    padding: 7px 8px;
+    selection-background-color: #C9E4FA;
+    font-family: "{FONT_MONO}";
+    font-size: 13px;
+}}
+QWidget#toolPage QPlainTextEdit:hover,
+QWidget#toolPage QTextEdit:hover {{
+    border-color: {COLOR_PRIMARY_BORDER};
+}}
+QWidget#toolPage QPlainTextEdit:focus,
+QWidget#toolPage QTextEdit:focus {{
+    border-color: {COLOR_PRIMARY};
+}}
+QWidget#toolPage QPlainTextEdit[toolReadonly="true"],
+QWidget#toolPage QTextEdit[toolReadonly="true"] {{
+    background-color: {COLOR_SURFACE_SUBTLE};
+}}
+QWidget#toolPage QPushButton {{
+    background-color: {COLOR_SURFACE};
+    color: {COLOR_TEXT};
+    border: 1px solid {COLOR_BORDER};
+    border-radius: {RADIUS_SMALL}px;
+    padding: 4px 13px;
+    min-height: 22px;
+    font-family: "{FONT_UI}";
+    font-size: 13px;
+    font-weight: 500;
+}}
+QWidget#toolPage QPushButton:hover {{
+    background-color: {COLOR_SURFACE_HOVER};
+    border-color: {COLOR_PRIMARY_BORDER};
+    color: {COLOR_PRIMARY};
+}}
+QWidget#toolPage QPushButton:pressed {{
+    background-color: {COLOR_PRIMARY_SOFT};
+}}
+QWidget#toolPage QPushButton:disabled {{
+    background-color: {COLOR_SURFACE_SUBTLE};
+    color: {COLOR_TEXT_MUTED};
+    border-color: {COLOR_DIVIDER};
+}}
+QWidget#toolPage QPushButton[toolPrimary="true"] {{
+    background-color: {COLOR_PRIMARY};
+    color: #FFFFFF;
+    border-color: {COLOR_PRIMARY};
+}}
+QWidget#toolPage QPushButton[toolPrimary="true"]:hover {{
+    background-color: {COLOR_PRIMARY_HOVER};
+    color: #FFFFFF;
+    border-color: {COLOR_PRIMARY_HOVER};
+}}
+QWidget#toolPage QPushButton[toolPrimary="true"]:disabled {{
+    background-color: #B7C9DB;
+    color: #FFFFFF;
+    border-color: #B7C9DB;
+}}
+QWidget#toolPage QPushButton[toolSegment="true"]:checked {{
+    background-color: {COLOR_PRIMARY_SOFT};
+    color: #0067B8;
+    border-color: {COLOR_PRIMARY_BORDER};
+}}
+QWidget#toolPage QCheckBox {{
+    color: {COLOR_TEXT_SECONDARY};
+    font-family: "{FONT_UI}";
+    font-size: 13px;
+}}
+QWidget#toolPage QScrollArea {{
+    background: transparent;
+    border: none;
+}}
+QScrollBar#qrPreviewScrollBar:vertical {{
+    background: transparent;
+    width: 8px;
+    margin: 0;
+    border: none;
+}}
+QScrollBar#qrPreviewScrollBar::handle:vertical {{
+    background-color: {COLOR_BORDER_STRONG};
+    min-height: 30px;
+    border-radius: 4px;
+}}
+QScrollBar#qrPreviewScrollBar::handle:vertical:hover {{
+    background-color: {COLOR_TEXT_MUTED};
+}}
+QScrollBar#qrPreviewScrollBar::handle:vertical:disabled {{
+    background: transparent;
+}}
+QScrollBar#qrPreviewScrollBar::add-line:vertical,
+QScrollBar#qrPreviewScrollBar::sub-line:vertical,
+QScrollBar#qrPreviewScrollBar::add-page:vertical,
+QScrollBar#qrPreviewScrollBar::sub-page:vertical {{
+    background: transparent;
+    border: none;
+    height: 0;
+}}
+QWidget#toolPage QSplitter::handle {{
+    background-color: {COLOR_PAGE_BG};
+}}
+QSplitter#toolSplit::handle:horizontal {{
+    width: 8px;
+}}
+QSplitter#toolSplit::handle:vertical {{
+    height: 8px;
+}}
+QTabWidget#toolTabs::pane {{
+    background-color: {COLOR_SURFACE};
+    border: 1px solid {COLOR_BORDER};
+    border-radius: {RADIUS_CARD}px;
+    top: -1px;
+}}
+QTabWidget#toolTabs QTabBar::tab {{
+    background-color: {COLOR_SURFACE_SUBTLE};
+    color: {COLOR_TEXT_SECONDARY};
+    border: 1px solid {COLOR_BORDER};
+    border-bottom: none;
+    border-top-left-radius: {RADIUS_SMALL}px;
+    border-top-right-radius: {RADIUS_SMALL}px;
+    padding: 7px 16px;
+    margin-right: 4px;
+    font-size: 13px;
+}}
+QTabWidget#toolTabs QTabBar::tab:hover {{
+    background-color: {COLOR_SURFACE_HOVER};
+    color: {COLOR_TEXT};
+}}
+QTabWidget#toolTabs QTabBar::tab:selected {{
+    background-color: {COLOR_SURFACE};
+    color: {COLOR_PRIMARY};
+    border-color: {COLOR_BORDER};
+}}
+QWidget#toolTabPage {{
+    background-color: {COLOR_SURFACE};
+}}
+"""
+
+
 PROTOCOL_WORKSPACE_STYLE = f"""
 QWidget#mqttPage,
 QWidget#websocketPage {{
@@ -724,5 +1031,31 @@ QWidget#presetPanel QPushButton#presetRowSend:hover {{
 QWidget#presetPanel QCheckBox {{
     color: {COLOR_TEXT_SECONDARY};
     spacing: 5px;
+}}
+QScrollBar#presetTableScroll:horizontal {{
+    background: transparent;
+    height: 8px;
+    margin: 0;
+    border: none;
+}}
+QScrollBar#presetTableScroll::handle:horizontal {{
+    background-color: {COLOR_BORDER_STRONG};
+    min-width: 30px;
+    border-radius: 4px;
+}}
+QScrollBar#presetTableScroll::handle:horizontal:hover {{
+    background-color: {COLOR_TEXT_MUTED};
+}}
+QScrollBar#presetTableScroll::handle:horizontal:disabled {{
+    background: transparent;
+}}
+QScrollBar#presetTableScroll::add-line:horizontal,
+QScrollBar#presetTableScroll::sub-line:horizontal,
+QScrollBar#presetTableScroll::add-page:horizontal,
+QScrollBar#presetTableScroll::sub-page:horizontal {{
+    background: transparent;
+    border: none;
+    width: 0;
+    height: 0;
 }}
 """

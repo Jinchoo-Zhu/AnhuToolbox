@@ -530,6 +530,10 @@ class MainWindow(QMainWindow):
             tw = self._preset_splitter.width()
             left = tw // 2
             self._preset_splitter.setSizes([left, tw - left])
+            if stream_mode:
+                # 等分屏布局稳定后再补满数据列，避免展开时留下右侧空白。
+                QTimer.singleShot(
+                    0, self.preset_panel.fit_data_column_on_expand)
         cfg.set("preset_visible", checked)
         cfg.save()
 
@@ -607,8 +611,9 @@ class MainWindow(QMainWindow):
             "\n"
             "+======================================+\n"
             "\n"
-            "　　　欢迎使用Anhu 百宝箱\n"
-            "　　　版本号：V1.0.0   作者：Jinchoo\n"
+            "     欢迎使用Anhu 百宝箱\n"
+            "     作者：Jinchoo Zhu | Jerry Lyu\n"
+            "     版本号：V1.0.0\n"
             "\n"
             "+======================================+\n"
         )

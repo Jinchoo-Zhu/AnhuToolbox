@@ -13,7 +13,8 @@ from unittest import mock
 
 import serial
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QWidget
+from PySide6.QtTest import QTest
+from PySide6.QtWidgets import QGroupBox, QLabel, QWidget
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -28,7 +29,8 @@ from anhutoolbox.log_writer import AsyncLogWriter
 from anhutoolbox.projects import ProjectManager
 from anhutoolbox.process_metrics import ProcessMetrics, ProcessUsage
 from anhutoolbox.tools import (
-    AmountTool, BaseTool, DiffTool, NetworkTool, QRTool, TimestampTool,
+    AmountTool, BaseTool, ChecksumTool, DiffTool, EncodeTool, HardwareInfoPage,
+    JsonTool, NetworkTool, QRTool, RegexTool, SortTool, TimestampTool,
 )
 from anhutoolbox.workers import (
     SerialReadWorker, TCPClientWorker, TCPServerWorker,
@@ -178,6 +180,256 @@ class ToolTests(unittest.TestCase):
             tool._start_port_scan()
         warning.assert_called_once()
         tool.stop_tasks()
+
+    def test_all_library_pages_use_the_shared_workspace_layout(self):
+        page_classes = (
+            HardwareInfoPage, TimestampTool, BaseTool, EncodeTool,
+            ChecksumTool, AmountTool, JsonTool, RegexTool, DiffTool,
+            SortTool, QRTool, NetworkTool,
+        )
+        for page_class in page_classes:
+            page = page_class()
+            try:
+                self.assertEqual(page.objectName(), "toolPage")
+                self.assertIn("QWidget#toolPage", page.styleSheet())
+                self.assertEqual(page.findChildren(QGroupBox), [])
+                subtitle = page.findChild(QLabel, "toolPageSubtitle")
+                self.assertIsNotNone(subtitle)
+                self.assertFalse(subtitle.wordWrap())
+                for card_subtitle in page.findChildren(
+                        QLabel, "toolCardSubtitle"):
+                    self.assertFalse(card_subtitle.wordWrap())
+            finally:
+                if hasattr(page, "stop_timer"):
+                    page.stop_timer()
+                if hasattr(page, "stop_tasks"):
+                    page.stop_tasks()
+                if hasattr(page, "cleanup"):
+                    page.cleanup()
+                page.close()
+                page.deleteLater()
+        APP.processEvents()
+
+    def test_qr_preview_fits_minimum_main_window_width(self):
+        with tempfile.TemporaryDirectory() as temp:
+            window = MainWindow(temp)
+            try:
+                window._extra_tabs_timer.stop()
+                window._build_extra_tabs()
+                window.resize(1100, 720)
+                window.show()
+                window._tab_widget.setCurrentWidget(window._library_stack)
+                page = window._library_pages["qr"]
+                window._on_library_item("qr")
+                page._qr_input.setPlainText("001\n002\n003\n004\n005")
+                page._generate()
+                APP.processEvents()
+                self.assertEqual(
+                    page._qr_scroll.horizontalScrollBar().maximum(), 0)
+                window.resize(1500, 1080)
+                APP.processEvents()
+                qr_widths = [
+                    label.pixmap().width()
+                    for label in page.findChildren(
+                        QLabel, "qrImage")
+                    if label.pixmap() is not None
+                    and not label.pixmap().isNull()
+                ]
+                self.assertTrue(qr_widths)
+                self.assertGreater(max(qr_widths), 120)
+            finally:
+                close_window(window)
+
+    def test_qr_grid_keeps_fixed_rows_and_scrolls_instead_of_shrinking(self):
+        with tempfile.TemporaryDirectory() as temp:
+            window = MainWindow(temp)
+            try:
+                window._extra_tabs_timer.stop()
+                window._build_extra_tabs()
+                window.resize(1500, 1080)
+                window.show()
+                window._tab_widget.setCurrentWidget(window._library_stack)
+                page = window._library_pages["qr"]
+                window._on_library_item("qr")
+
+                page._qr_input.setPlainText(
+                    "\n".join(str(index) for index in range(1, 8)))
+                top_levels_before = {
+                    id(widget) for widget in APP.topLevelWidgets()}
+                with mock.patch(
+                        "anhutoolbox.tools.show_information") as information, \
+                        mock.patch(
+                            "anhutoolbox.tools.show_success") as success, \
+                        mock.patch(
+                            "anhutoolbox.tools.show_error") as error:
+                    page._btn_gen.click()
+                    APP.processEvents()
+                information.assert_not_called()
+                success.assert_not_called()
+                error.assert_not_called()
+                unexpected_windows = [
+                    widget for widget in APP.topLevelWidgets()
+                    if id(widget) not in top_levels_before
+                    and widget.isVisible()
+                ]
+                self.assertEqual(unexpected_windows, [])
+
+                self.assertEqual(page._grid.rowCount(), 2)
+                self.assertEqual(page._grid.count(), 10)
+                first_cell = page._grid.itemAtPosition(0, 0).widget()
+                second_cell = page._grid.itemAtPosition(1, 0).widget()
+                fixed_row_height = first_cell.height()
+                self.assertEqual(second_cell.height(), fixed_row_height)
+
+                # 从 11 条缩回 10 条时，旧网格的第三行最小高度不能残留。
+                page._qr_input.setPlainText(
+                    "\n".join(str(index) for index in range(1, 12)))
+                page._generate()
+                APP.processEvents()
+                page._qr_input.setPlainText(
+                    "\n".join(str(index) for index in range(1, 11)))
+                page._generate()
+                APP.processEvents()
+                ten_first_cell = page._grid.itemAtPosition(0, 0).widget()
+                ten_geometry = ten_first_cell.geometry()
+                self.assertFalse(
+                    page._qr_scroll.verticalScrollBar().isEnabled())
+                self.assertEqual(page._grid.count(), 10)
+                self.assertEqual(
+                    page._grid.itemAtPosition(0, 0).widget().height(),
+                    fixed_row_height,
+                )
+                self.assertEqual(
+                    page._grid.itemAtPosition(1, 0).widget().height(),
+                    fixed_row_height,
+                )
+
+                page._qr_input.setPlainText(
+                    "\n".join(str(index) for index in range(1, 12)))
+                page._generate()
+                APP.processEvents()
+                eleven_first_cell = page._grid.itemAtPosition(0, 0).widget()
+                self.assertEqual(
+                    page._qr_scroll.verticalScrollBarPolicy(),
+                    Qt.ScrollBarPolicy.ScrollBarAlwaysOn,
+                )
+                self.assertTrue(
+                    page._qr_scroll.verticalScrollBar().isEnabled())
+                self.assertEqual(
+                    eleven_first_cell.geometry(), ten_geometry)
+
+                page._qr_input.setPlainText(
+                    "\n".join(str(index) for index in range(1, 19)))
+                page._generate()
+                APP.processEvents()
+                self.assertEqual(page._grid.rowCount(), 4)
+                self.assertEqual(page._grid.count(), 20)
+                first_cell = page._grid.itemAtPosition(0, 0).widget()
+                second_cell = page._grid.itemAtPosition(1, 0).widget()
+                self.assertEqual(first_cell.height(), fixed_row_height)
+                self.assertEqual(second_cell.height(), fixed_row_height)
+                self.assertGreater(
+                    page._qr_scroll.verticalScrollBar().maximum(), 0)
+                self.assertEqual(
+                    page._qr_scroll.horizontalScrollBar().maximum(), 0)
+            finally:
+                close_window(window)
+
+    def test_double_click_qr_opens_and_closes_enlarged_preview(self):
+        with tempfile.TemporaryDirectory() as temp:
+            window = MainWindow(temp)
+            try:
+                window._extra_tabs_timer.stop()
+                window._build_extra_tabs()
+                window.resize(1500, 1080)
+                window.show()
+                window._tab_widget.setCurrentWidget(window._library_stack)
+                page = window._library_pages["qr"]
+                window._on_library_item("qr")
+                page._qr_input.setPlainText("001\n002")
+                page._generate()
+                APP.processEvents()
+
+                cell = page._grid.itemAtPosition(0, 0).widget()
+                QTest.mouseDClick(
+                    cell, Qt.MouseButton.LeftButton,
+                    pos=cell.rect().center())
+                APP.processEvents()
+                self.assertTrue(page._qr_preview_overlay.isVisible())
+                self.assertEqual(page._qr_preview_content.text(), "001")
+                self.assertEqual(
+                    page._qr_preview_content.objectName(), "qrPreviewText")
+                self.assertGreaterEqual(
+                    page._qr_preview_content.font().pixelSize(), 16)
+                self.assertTrue(
+                    page._qr_preview_content.alignment()
+                    & Qt.AlignmentFlag.AlignHCenter)
+                self.assertFalse(any(
+                    label.text() == "二维码放大预览"
+                    for label in page.findChildren(QLabel)
+                ))
+                self.assertFalse(
+                    page._qr_preview_image.pixmap().isNull())
+                self.assertEqual(
+                    page._btn_close_qr_preview.focusPolicy(),
+                    Qt.FocusPolicy.NoFocus,
+                )
+
+                QTest.keyClick(window, Qt.Key.Key_Escape)
+                APP.processEvents()
+                self.assertFalse(page._qr_preview_overlay.isVisible())
+                self.assertEqual(page._grid.itemAtPosition(0, 0).widget().findChild(
+                    QLabel, "qrText").text(), "001")
+            finally:
+                close_window(window)
+
+    def test_refactored_library_pages_keep_their_interactions(self):
+        json_tool = JsonTool()
+        json_tool._json_input.setPlainText('{"b":2,"a":1}')
+        json_tool._format()
+        self.assertIn('"a": 1', json_tool._json_output.toPlainText())
+        self.assertEqual(json_tool._json_status.text(), "格式化成功")
+        self.assertTrue(json_tool._json_output.isReadOnly())
+        self.assertTrue(json_tool._btn_copy_output.isEnabled())
+        QApplication.clipboard().clear()
+        json_tool._btn_copy_output.click()
+        self.assertEqual(
+            QApplication.clipboard().text(),
+            json_tool._json_output.toPlainText(),
+        )
+        self.assertEqual(json_tool._json_status.text(), "已复制结果")
+
+        regex_tool = RegexTool()
+        regex_tool._re_input.setText(r"item-(\d+)")
+        regex_tool._text_input.setPlainText("item-1 item-2")
+        self.assertEqual(regex_tool._regex_count.text(), "2 个匹配")
+        self.assertTrue(regex_tool._result_output.isReadOnly())
+
+        sort_tool = SortTool()
+        sort_tool._sort_input.setPlainText("2\n10\n1")
+        sort_tool._sort_mode.setCurrentText("数值")
+        sort_tool._btn_desc.click()
+        self.assertEqual(
+            sort_tool._sort_output.toPlainText().splitlines(),
+            ["10", "2", "1"],
+        )
+        self.assertTrue(sort_tool._btn_desc.isChecked())
+        self.assertFalse(sort_tool._btn_asc.isChecked())
+
+        encode_tool = EncodeTool()
+        encode_tool._enc_input.setPlainText("Anhu")
+        self.assertEqual(
+            encode_tool._enc_results["Base64 编码"].text(),
+            "QW5odQ==",
+        )
+
+        checksum_tool = ChecksumTool()
+        checksum_tool._cs_mode.setCurrentText("文本")
+        checksum_tool._cs_input.setPlainText("abc")
+        self.assertEqual(
+            checksum_tool._cs_results["MD5"].text(),
+            "900150983CD24FB0D6963F7D28E17F72",
+        )
 
 
 class HexTests(unittest.TestCase):
@@ -619,6 +871,26 @@ class OptionalToolboxTests(unittest.TestCase):
 
 
 class PersistenceTests(unittest.TestCase):
+    def test_welcome_text_lines_share_the_same_indent(self):
+        with tempfile.TemporaryDirectory() as temp:
+            window = MainWindow(temp)
+            try:
+                window._show_welcome()
+                text_lines = window.log_panel.text.toPlainText().splitlines()
+                welcome_lines = [
+                    line for line in text_lines
+                    if any(keyword in line for keyword in (
+                        "欢迎使用", "作者：", "版本号："))
+                ]
+                self.assertEqual(len(welcome_lines), 3)
+                self.assertTrue(all(
+                    line.startswith("     ")
+                    and not line.startswith("      ")
+                    for line in welcome_lines
+                ))
+            finally:
+                close_window(window)
+
     def test_global_resource_bar_stays_visible_on_all_tabs(self):
         with tempfile.TemporaryDirectory() as temp:
             window = MainWindow(temp)
