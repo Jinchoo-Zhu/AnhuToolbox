@@ -4,6 +4,7 @@
 import hashlib
 import json
 import os
+import sys
 import tempfile
 import threading
 import unittest
@@ -115,14 +116,46 @@ class UpdateTests(unittest.TestCase):
 
     def test_release_manifest_builder_and_updater_hash(self):
         with tempfile.TemporaryDirectory() as temp:
-            installer = Path(temp) / "AnhuToolbox_Setup_1.0.0.exe"
+            installer = (
+                Path(temp) / f"AnhuToolbox_Setup_{__version__}.exe")
             installer.write_bytes(b"signed-installer-placeholder")
             manifest = build_manifest(
                 ROOT, installer, __version__, "release notes")
             self.assertEqual(manifest["size"], installer.stat().st_size)
             self.assertEqual(
                 updater.sha256_file(installer), manifest["sha256"])
-            self.assertIn("/releases/download/v1.0.0/", manifest["installer_url"])
+            self.assertIn(
+                f"/releases/download/v{__version__}/",
+                manifest["installer_url"])
+
+    def test_updater_restarts_application_after_install(self):
+        with tempfile.TemporaryDirectory() as temp:
+            installer = Path(temp) / "update.exe"
+            installer.write_bytes(b"installer")
+            app_path = str(Path(temp) / "Anhu百宝箱.exe")
+            log_path = str(Path(temp) / "updater.log")
+            argv = [
+                "AnhuUpdater.exe",
+                "--pid", "123",
+                "--installer", str(installer),
+                "--sha256", "a" * 64,
+                "--app", app_path,
+                "--log", log_path,
+            ]
+            with mock.patch.object(sys, "argv", argv), mock.patch.object(
+                    updater, "wait_for_process", return_value=True), \
+                    mock.patch.object(
+                        updater, "sha256_file", return_value="a" * 64), \
+                    mock.patch.object(
+                        updater.logging, "basicConfig"), \
+                    mock.patch.object(
+                        updater.subprocess, "run") as run_installer, \
+                    mock.patch.object(
+                        updater, "start_application",
+                        return_value=True) as start_application:
+                run_installer.return_value.returncode = 0
+                self.assertEqual(updater.main(), 0)
+            start_application.assert_called_once_with(app_path)
 
     def test_packaging_contains_updater_and_close_applications(self):
         updater_spec = (ROOT / "AnhuUpdater.spec").read_text(encoding="utf-8")

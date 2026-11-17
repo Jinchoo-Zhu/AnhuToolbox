@@ -99,7 +99,10 @@ def main():
             os.remove(args.installer)
         except OSError:
             pass
-    start_application(args.app)
+    if not start_application(args.app):
+        logging.error("failed to restart application: %s", args.app)
+        return 1
+    logging.info("application restarted: %s", args.app)
     return 0 if success else 1
 
 
