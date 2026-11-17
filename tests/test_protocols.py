@@ -39,6 +39,7 @@ from anhutoolbox.protocol_workers import (
 )
 from anhutoolbox.sidebar import Sidebar
 from anhutoolbox.styles import GLOBAL_STYLE
+from anhutoolbox.version import __version__
 
 _HARDWARE_TEST_PATCH = mock.patch(
     "anhutoolbox.hardware.collect_hardware_info",
@@ -575,6 +576,9 @@ class ProtocolPageTests(unittest.TestCase):
 
     def test_mqtt_sidebar_uses_server_ip_label_and_default_port(self):
         sidebar = Sidebar()
+        self.assertIn(f"V{__version__}", [
+            label.text() for label in sidebar.findChildren(QLabel)
+        ])
         self.assertEqual(sidebar.sp_mqtt_port.value(), 1883)
         self.assertEqual(sidebar.sp_mqtt_keepalive.value(), 60)
         sidebar._mode_group.button(3).click()

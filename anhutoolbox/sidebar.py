@@ -17,6 +17,7 @@ from PySide6.QtGui import QFont
 from .styles import _find_assets_dir, SIDEBAR_STYLE, COMBO_STYLE, prepare_menu
 from .dialogs import ask_yes_no, get_text
 from .ui_tokens import HTTP_METHOD_COLORS, PROTOCOL_SETTINGS_STYLE
+from .version import __version__
 
 
 # 参数配置滚动区: 只在需要时露出细滚动条, 无边框, 背景与侧边栏一致
@@ -344,7 +345,7 @@ class Sidebar(QWidget):
         title.setStyleSheet("color: #1A1A1A; padding: 4px 0 2px 6px;")
         layout.addWidget(title)
 
-        # 作者与版本号：前缀列等宽，使 "Jinchoo" 的 J 与 "V1.0.0" 的 V 左对齐
+        # 作者与版本号：前缀列等宽，保证两行值列左对齐
         info_grid = QGridLayout()
         info_grid.setHorizontalSpacing(0)
         info_grid.setVerticalSpacing(0)
@@ -361,7 +362,7 @@ class Sidebar(QWidget):
         version_key = QLabel("版本号：")
         version_key.setFont(QFont("Microsoft YaHei", 10))
         version_key.setStyleSheet("color: #888; padding: 0 0 8px 0;")
-        version_val = QLabel("V1.0.0")
+        version_val = QLabel(f"V{__version__}")
         version_val.setFont(QFont("Microsoft YaHei", 10))
         version_val.setStyleSheet("color: #888; padding: 0 0 8px 0;")
 
