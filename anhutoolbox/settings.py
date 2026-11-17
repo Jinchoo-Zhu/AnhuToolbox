@@ -10,6 +10,7 @@ DEFAULTS = {
     "last_project": "",
     "preset_visible": False,
     "preset_splitter": None,
+    "update_skipped_version": "",
     "mode": "serial",
     "serial": {
         "port": "COM1", "baud": "115200", "data": "8",

@@ -36,7 +36,6 @@ _verify_external_tools()
 VERSION_FILE = os.path.join(
     os.path.dirname(os.path.abspath(SPEC)), "version_info.txt")
 
-
 a = Analysis(
     ['main.py'],
     pathex=[],

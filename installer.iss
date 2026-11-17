@@ -29,8 +29,10 @@ DefaultGroupName=Anhu百宝箱
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
+CloseApplications=yes
+RestartApplications=no
 OutputDir=installer
-OutputBaseFilename=Anhu百宝箱_{#MyAppVersion}
+OutputBaseFilename=AnhuToolbox_Setup_{#MyAppVersion}
 SetupIconFile=anhutoolbox.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 Compression=lzma2/max
@@ -49,6 +51,7 @@ Name: "installtoolbox"; Description: "安装安护工具箱（可选第三方工
 [Files]
 Source: "dist\Anhu百宝箱\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "dist\Anhu百宝箱\lib\*"; DestDir: "{app}\lib"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "dist\AnhuUpdater.exe"; DestDir: "{app}"; Flags: ignoreversion
 ; tools.json 是工具清单, 每次安装/升级都要用新版本覆盖,
 ; 否则升级时旧清单不更新, 新增的工具(如 Geek/TCPView)不会出现在工具箱里
 Source: "tools\tools.json"; DestDir: "{app}\tools"; Tasks: installtoolbox; Flags: ignoreversion

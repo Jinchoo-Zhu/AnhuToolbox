@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """AnhuToolbox 主窗口 -- 带配置持久化 + 预设面板可折叠"""
 
-import os, json, shutil, socket, time
+import os, json, shutil, socket, sys, time
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QTabWidget, QStackedWidget,
@@ -26,6 +26,11 @@ from . import toolbox
 from .custom_library import CustomLibraryPage
 from .projects import ProjectManager, DEFAULT_PROJECT_NAME
 from .secrets_guard import contains_sensitive_values
+from .updates import (
+    UpdateCheckWorker, cleanup_update_cache, launch_updater,
+)
+from .update_ui import UpdateAvailableDialog, UpdateDownloadDialog
+from .version import __version__
 from .app_paths import choose_data_root
 from .dialogs import (
     ask_yes_no, get_text, show_error, show_success, show_warning,
@@ -203,6 +208,12 @@ class MainWindow(QMainWindow):
         self._resource_timer.timeout.connect(self._update_resource_usage)
         self._resource_timer.start(1000)
         self._update_resource_usage()
+        self._update_check_worker = None
+        self._update_download_dialog = None
+        self._update_check_timer = QTimer(self)
+        self._update_check_timer.setSingleShot(True)
+        self._update_check_timer.timeout.connect(self._start_update_check)
+        self._update_check_timer.start(2500)
 
     def _stream_page(self, mode=None):
         key = mode or self._active_stream_key
@@ -615,11 +626,70 @@ class MainWindow(QMainWindow):
             "\n"
             "     欢迎使用Anhu 百宝箱\n"
             "     作者：Jinchoo Zhu | Jerry Lyu\n"
-            "     版本号：V1.0.0\n"
+            f"     版本号：V{__version__}\n"
             "\n"
             "+======================================+\n"
         )
         self.log_panel.text.setPlainText(msg)
+
+    def _start_update_check(self):
+        if (not getattr(sys, "frozen", False)
+                and os.environ.get("ANHUTOOLBOX_FORCE_UPDATE") != "1"):
+            return
+        if (self._update_check_worker is not None
+                and self._update_check_worker.isRunning()):
+            return
+        cleanup_update_cache()
+        worker = UpdateCheckWorker(__version__, self)
+        worker.available.connect(self._on_update_available)
+        worker.failed.connect(lambda _message: None)
+        worker.finished.connect(self._clear_update_check_worker)
+        self._update_check_worker = worker
+        worker.start()
+
+    def _clear_update_check_worker(self):
+        worker, self._update_check_worker = self._update_check_worker, None
+        if worker is not None:
+            worker.deleteLater()
+
+    def _on_update_available(self, release):
+        if cfg.get("update_skipped_version", "") == release.version:
+            return
+        dialog = UpdateAvailableDialog(release, self)
+        dialog.exec()
+        if dialog.decision == "skip":
+            cfg.set("update_skipped_version", release.version)
+            cfg.save()
+            return
+        if dialog.decision != "update":
+            return
+        download = UpdateDownloadDialog(release, self)
+        self._update_download_dialog = download
+        try:
+            accepted = download.exec()
+        finally:
+            self._update_download_dialog = None
+        if accepted and download.download_path:
+            self._install_downloaded_update(
+                release, download.download_path)
+
+    def _install_downloaded_update(self, release, installer_path):
+        try:
+            launch_updater(
+                os.path.dirname(os.path.abspath(sys.executable)),
+                os.path.abspath(sys.executable),
+                installer_path,
+                release,
+            )
+        except Exception as exc:
+            show_error(
+                self, "更新失败",
+                "无法启动更新程序：\n{}".format(exc))
+            return
+        self._save_current_project()
+        self._save_global()
+        self.close()
+
     def _save_global(self):
         """只保存与项目无关的全局偏好; 项目内容由 _save_current_project 负责"""
         # 工具页会临时隐藏预设面板，但用户的开关意图仍保留在按钮上。
@@ -1885,6 +1955,12 @@ class MainWindow(QMainWindow):
         self._sync_timer.stop(); self._port_timer.stop()
         self._resource_timer.stop()
         self._extra_tabs_timer.stop()
+        self._update_check_timer.stop()
+        if self._update_download_dialog is not None:
+            self._update_download_dialog.reject()
+        if (self._update_check_worker is not None
+                and self._update_check_worker.isRunning()):
+            self._update_check_worker.stop()
         for page in self._stream_pages.values():
             page.send_bar.stop_repeat()
             page.log_panel.cleanup()
