@@ -5,6 +5,8 @@ import json
 import os
 import socket
 import tempfile
+import threading
+import time
 import unittest
 import zipfile
 from pathlib import Path
@@ -13,6 +15,7 @@ from unittest import mock
 
 import serial
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QPixmap
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QGroupBox, QLabel, QWidget
 
@@ -27,6 +30,7 @@ from anhutoolbox.dialogs import AnhuInputDialog
 from anhutoolbox.panels import LogPanel, PresetPanel, SendBar, parse_hex_bytes
 from anhutoolbox.log_writer import AsyncLogWriter
 from anhutoolbox.projects import ProjectManager
+from anhutoolbox.secrets_guard import contains_sensitive_values
 from anhutoolbox.process_metrics import ProcessMetrics, ProcessUsage
 from anhutoolbox.tools import (
     AmountTool, BaseTool, ChecksumTool, DiffTool, EncodeTool, HardwareInfoPage,
@@ -56,6 +60,23 @@ def close_window(window):
 
 
 class ToolTests(unittest.TestCase):
+    def test_qr_preview_caps_bulk_generation_but_keeps_all_saved_lines(self):
+        tool = QRTool()
+        pixmap = QPixmap(4, 4)
+        pixmap.fill(Qt.GlobalColor.white)
+        try:
+            tool._qr_input.setPlainText(
+                "\n".join(str(index) for index in range(250)))
+            with mock.patch.object(
+                    tool, "_make_qr_pixmap",
+                    return_value=(pixmap, None)) as make_pixmap:
+                tool._generate()
+            self.assertEqual(make_pixmap.call_count, 200)
+            self.assertEqual(len(tool._lines), 250)
+            self.assertIn("仅预览前 200 条", tool._lbl_qr_count.text())
+        finally:
+            tool.close()
+
     def test_process_metrics_report_memory_and_cpu(self):
         usage = ProcessMetrics().sample()
         self.assertGreater(usage.memory_bytes, 0)
@@ -180,6 +201,60 @@ class ToolTests(unittest.TestCase):
             tool._start_port_scan()
         warning.assert_called_once()
         tool.stop_tasks()
+
+    def test_full_port_scan_limits_submitted_futures(self):
+        entered_wait = threading.Event()
+        release_wait = threading.Event()
+        submitted = []
+        shutdowns = []
+
+        class FakeFuture:
+            def cancel(self):
+                return True
+
+        class FakeExecutor:
+            def __init__(self, max_workers):
+                self.max_workers = max_workers
+
+            def submit(self, _fn, _port):
+                future = FakeFuture()
+                submitted.append(future)
+                return future
+
+            def shutdown(self, **_kwargs):
+                shutdowns.append(True)
+
+        def fake_wait(futures, **_kwargs):
+            entered_wait.set()
+            release_wait.wait(1)
+            return set(futures), set()
+
+        tool = NetworkTool()
+        try:
+            tool._port_host.setText("127.0.0.1")
+            tool._port_preset.setCurrentIndex(4)
+            with mock.patch(
+                    "concurrent.futures.ThreadPoolExecutor", FakeExecutor), \
+                    mock.patch("concurrent.futures.wait", fake_wait):
+                started = time.perf_counter()
+                tool._start_port_scan()
+                elapsed = time.perf_counter() - started
+                self.assertTrue(entered_wait.wait(1))
+                self.assertLess(elapsed, 0.3)
+                self.assertEqual(len(submitted), 1000)
+                tool.stop_tasks()
+                release_wait.set()
+                end = time.monotonic() + 1
+                while not shutdowns and time.monotonic() < end:
+                    APP.processEvents()
+                    threading.Event().wait(0.01)
+                self.assertTrue(shutdowns)
+        finally:
+            release_wait.set()
+            tool.stop_tasks()
+            tool.close()
+            tool.deleteLater()
+            APP.processEvents()
 
     def test_all_library_pages_use_the_shared_workspace_layout(self):
         page_classes = (
@@ -513,6 +588,27 @@ class HexTests(unittest.TestCase):
 
 
 class CommunicationTests(unittest.TestCase):
+    def test_serial_gap_wait_can_be_stopped_without_waiting_for_full_hold(self):
+        worker = SerialReadWorker()
+        worker._running = True
+        fake = SimpleNamespace(in_waiting=0)
+        result = []
+
+        def wait_gap():
+            result.append(worker._wait_serial_gap(fake, 10.0))
+
+        thread = threading.Thread(target=wait_gap)
+        started = time.perf_counter()
+        thread.start()
+        time.sleep(0.05)
+        worker._stop_event.set()
+        worker._running = False
+        thread.join(0.5)
+        elapsed = time.perf_counter() - started
+        self.assertFalse(thread.is_alive())
+        self.assertLess(elapsed, 0.5)
+        self.assertEqual(result, [False])
+
     def test_serial_framing_scales_with_baud(self):
         slow = SimpleNamespace(
             baudrate=9600, bytesize=8, stopbits=1, parity="N")
@@ -864,6 +960,7 @@ class OptionalToolboxTests(unittest.TestCase):
             if line.startswith('Name: "installtoolbox"'))
         self.assertNotIn("checkedonce", task_line)
         self.assertIn("RemoveOfficialToolboxFiles", installer)
+        self.assertIn("{app}\\lib\\tools", installer)
         self.assertIn("toolbox.install-state", installer)
         self.assertIn("tools.user.json", installer)
         self.assertIn("_verify_external_tools()", spec)
@@ -871,6 +968,93 @@ class OptionalToolboxTests(unittest.TestCase):
 
 
 class PersistenceTests(unittest.TestCase):
+    def test_preset_visibility_is_saved_from_toggle_intent(self):
+        with tempfile.TemporaryDirectory() as temp:
+            window = MainWindow(temp)
+            try:
+                window._extra_tabs_timer.stop()
+                window._build_extra_tabs()
+                window.show()
+                APP.processEvents()
+                window._btn_toggle_preset.setChecked(True)
+                window._tab_widget.setCurrentWidget(window._library_stack)
+                APP.processEvents()
+                window.close()
+                saved = json.loads(
+                    (Path(temp) / "data" / "settings.json").read_text(
+                        encoding="utf-8"))
+                self.assertTrue(saved["preset_visible"])
+            finally:
+                window.deleteLater()
+                APP.processEvents()
+
+    def test_project_create_reports_write_failure(self):
+        with tempfile.TemporaryDirectory() as temp:
+            manager = ProjectManager(temp)
+            with mock.patch.object(
+                    manager, "save", return_value=False):
+                self.assertIsNone(
+                    manager.create("无法保存", {"format": 1}))
+
+    def test_autosave_retries_after_write_failure(self):
+        with tempfile.TemporaryDirectory() as temp:
+            window = MainWindow(temp)
+            try:
+                window.sidebar.cb_baud.setCurrentText("57600")
+                with mock.patch.object(
+                        window._pm, "save", return_value=False) as save:
+                    window._autosave_project()
+                    first_retry = window._last_snapshot
+                    window._autosave_project()
+                self.assertEqual(save.call_count, 2)
+                self.assertNotEqual(
+                    first_retry, window._snapshot_ui())
+            finally:
+                close_window(window)
+
+    def test_sensitive_export_detection(self):
+        self.assertTrue(contains_sensitive_values(
+            {"mqtt": {"password": "secret"}}))
+        self.assertTrue(contains_sensitive_values({
+            "variables": [{"name": "token", "value": "abc"}],
+        }))
+        self.assertFalse(contains_sensitive_values({
+            "mqtt": {"password": ""},
+            "variables": [{"name": "host", "value": "example.test"}],
+        }))
+
+    def test_project_export_stops_when_secret_warning_is_cancelled(self):
+        with tempfile.TemporaryDirectory() as temp:
+            window = MainWindow(temp)
+            try:
+                window.sidebar.le_mqtt_password.setText("secret")
+                window._save_current_project()
+                with mock.patch(
+                        "anhutoolbox.main_window.ask_yes_no",
+                        return_value=False) as confirm, \
+                        mock.patch(
+                            "anhutoolbox.main_window.QFileDialog."
+                            "getSaveFileName") as save_dialog:
+                    window._project_export()
+                confirm.assert_called_once()
+                save_dialog.assert_not_called()
+            finally:
+                close_window(window)
+
+    def test_project_export_supports_relative_destination(self):
+        with tempfile.TemporaryDirectory() as temp:
+            manager = ProjectManager(temp)
+            manager.create("相对路径", {"name": "相对路径"})
+            previous = os.getcwd()
+            try:
+                os.chdir(temp)
+                self.assertTrue(
+                    manager.export_to("相对路径", "relative.json"))
+                self.assertTrue(
+                    (Path(temp) / "relative.json").is_file())
+            finally:
+                os.chdir(previous)
+
     def test_welcome_text_lines_share_the_same_indent(self):
         with tempfile.TemporaryDirectory() as temp:
             window = MainWindow(temp)

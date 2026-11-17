@@ -30,3 +30,6 @@ data/amount_migration_preview.png
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# 本地 Codex 仓库规则，不上传到 Git
+AGENTS.md

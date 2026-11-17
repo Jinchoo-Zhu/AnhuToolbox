@@ -1622,6 +1622,7 @@ class PresetPanel(QWidget):
                 return      # 定时器提前醒来, 还没到点: 由 _arm_loop 补一小觉
             cur = items[self._loop_pos]
             d = _build_preset(cur)
+            interval = _loop_interval(cur)
             if d:
                 self.send_preset.emit(d)
             elif cur.get("data", "").strip():
@@ -1633,7 +1634,7 @@ class PresetPanel(QWidget):
             self._loop_last = datetime.now()
             self._loop_pos = (self._loop_pos + 1) % len(items)
             self._loop_due = _advance_due(
-                self._loop_due, _loop_interval(items[self._loop_pos]), now_ms)
+                self._loop_due, interval, now_ms)
         except Exception:
             pass
         finally:

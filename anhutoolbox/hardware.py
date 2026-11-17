@@ -255,7 +255,7 @@ def _collect_wmi(timeout=40):
     try:
         return json.loads(text[start:])
     except json.JSONDecodeError as e:
-        raise RuntimeError("硬件信息 JSON 解析失败：" + str(e))
+        raise RuntimeError("硬件信息 JSON 解析失败：" + str(e)) from e
 
 
 def collect_hardware_info(timeout=40):

@@ -30,7 +30,7 @@ from PySide6.QtWidgets import (
 )
 
 from .dialogs import (
-    get_text, show_error, show_warning,
+    ask_yes_no, get_text, show_error, show_warning,
 )
 from .http_dialogs import UnsavedChangesDialog
 from .http_environments import (
@@ -46,6 +46,7 @@ from .http_transfer_dialogs import (
 from .http_url_editor import EnvironmentUrlEditor
 from .panels import parse_hex_bytes
 from .protocol_workers import HTTPRequestWorker
+from .secrets_guard import contains_sensitive_values
 from .styles import _find_assets_dir, prepare_menu
 from .table_actions import (
     apply_data_table_style, install_select_all_header,
@@ -738,6 +739,7 @@ class HTTPPage(QWidget):
 
         self._build_actual_request_tab()
         self._console = QPlainTextEdit()
+        self._console.document().setMaximumBlockCount(5000)
         self._console.setObjectName("httpConsole")
         self._console.setReadOnly(True)
         self._console.setFont(QFont(FONT_MONO, 10))
@@ -1833,6 +1835,14 @@ class HTTPPage(QWidget):
         if not library["interfaces"]:
             show_warning(self, "导出项目", "当前项目没有可导出的 HTTP 接口。")
             return False
+        if contains_sensitive_values(library):
+            if not ask_yes_no(
+                self, "导出包含凭据",
+                "当前 HTTP 项目包含明文密码、Token 或环境变量凭据。\n"
+                "导出后请妥善保管，确定继续导出吗？",
+                confirm_text="继续导出", danger=True,
+            ):
+                return False
         dialog = ExportTransferDialog(self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return False
@@ -2450,10 +2460,14 @@ class HTTPPage(QWidget):
         self._auth_password.setEchoMode(QLineEdit.Password)
         self._auth_password.setPlaceholderText("Basic 密码")
         self._auth_password.setFixedHeight(CONTROL_HEIGHT)
+        self._auth_password.setToolTip(
+            "认证信息可能在 HTTP 项目导出时以明文写入，请妥善保管导出文件")
         self._auth_token = QLineEdit()
         self._auth_token.setEchoMode(QLineEdit.Password)
         self._auth_token.setPlaceholderText("Bearer Token")
         self._auth_token.setFixedHeight(CONTROL_HEIGHT)
+        self._auth_token.setToolTip(
+            "Token 可能在 HTTP 项目导出时以明文写入，请妥善保管导出文件")
         layout.addWidget(self._auth_user)
         layout.addWidget(self._auth_password)
         layout.addWidget(self._auth_token)
@@ -2949,8 +2963,7 @@ class HTTPPage(QWidget):
                 jar.load(item.get("value", ""))
             except Exception:
                 continue
-            for morsel in jar.values():
-                entries.append({
+            entries.extend({
                     "name": morsel.key,
                     "value": morsel.value,
                     "domain": morsel["domain"],
@@ -2958,7 +2971,7 @@ class HTTPPage(QWidget):
                     "expires": morsel["expires"],
                     "httponly": bool(morsel["httponly"]),
                     "secure": bool(morsel["secure"]),
-                })
+                } for morsel in jar.values())
         if not entries:
             entries = [
                 {

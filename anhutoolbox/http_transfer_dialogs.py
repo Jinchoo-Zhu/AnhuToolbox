@@ -280,7 +280,7 @@ class ImportTransferDialog(QDialog):
         return self._cards[self._group.id(button)].format_name
 
     def _select_format(self, format_name):
-        for index, card in enumerate(self._cards):
+        for card in self._cards:
             if card.format_name == format_name:
                 card.radio.setChecked(True)
                 return

@@ -468,8 +468,9 @@ class QRCellFrame(QFrame):
 
 
 class QRTool(QWidget):
-    """二维码批量生成：固定2行6列隐框网格，二维码填入对应格子"""
+    """二维码批量生成：五列网格，预览数量有上限，批量保存不限量。"""
     ROWS, COLS = 2, 5
+    MAX_PREVIEW_ITEMS = 200
 
     def __init__(self):
         super().__init__()
@@ -746,13 +747,15 @@ class QRTool(QWidget):
             _set_tone(self._lbl_qr_count, "default")
             return
 
+        preview_lines = self._lines[:self.MAX_PREVIEW_ITEMS]
+        preview_count = len(preview_lines)
         # 动态行数：至少 2 行，多出的向上取整
-        rows = max(2, (n + self.COLS - 1) // self.COLS)
+        rows = max(2, (preview_count + self.COLS - 1) // self.COLS)
         self._rebuild_grid(rows)
 
         # 填入二维码
         fail = 0
-        for i, line in enumerate(self._lines):
+        for i, line in enumerate(preview_lines):
             pix, err = self._make_qr_pixmap(line)
             if err:
                 fail += 1
@@ -767,7 +770,15 @@ class QRTool(QWidget):
                     w.deleteLater()
             self._grid.addWidget(cell, r, c)
 
-        if fail:
+        if n > self.MAX_PREVIEW_ITEMS:
+            suffix = (
+                "，失败 {} 条".format(fail) if fail else "")
+            self._lbl_qr_count.setText(
+                "共 {} 条，仅预览前 {} 条{}".format(
+                    n, self.MAX_PREVIEW_ITEMS, suffix))
+            _set_tone(
+                self._lbl_qr_count, "error" if fail else "primary")
+        elif fail:
             self._lbl_qr_count.setText(f"共 {n} 条，失败 {fail} 条")
             _set_tone(self._lbl_qr_count, "error")
         else:
@@ -1731,7 +1742,7 @@ def chinese_to_amount(text: str) -> Decimal:
             parts.append((0, 1))
 
         # 高权节必须大于低权节；不能重复写“亿”。
-        for current, following in zip(parts, parts[1:]):
+        for current, following in zip(parts, parts[1:], strict=False):
             if current[1] <= following[1]:
                 raise ValueError("万、亿的单位顺序错误")
         return sum(value * multiplier for value, multiplier in parts)
@@ -2046,7 +2057,7 @@ class ChecksumTool(QWidget):
         ]
 
         self._cs_results = {}
-        for label, func, r, c in checks:
+        for label, _func, r, c in checks:
             metric = QFrame()
             metric.setObjectName("toolMetric")
             metric_lo = QVBoxLayout(metric)
@@ -2551,6 +2562,7 @@ class NetworkTool(QWidget):
 
         self._ping_output = QPlainTextEdit()
         _code_editor(self._ping_output, readonly=True)
+        self._ping_output.document().setMaximumBlockCount(5000)
         self._ping_output.setPlaceholderText("Ping 输出会实时显示在这里")
         output = ToolCard("实时输出", "输出内容可直接选择复制")
         output.add_header_widget(_badge("持续模式"))
@@ -2777,14 +2789,54 @@ class NetworkTool(QWidget):
                 if not cancel_event.is_set():
                     self._queue.put(("task_done", run_id))
 
-        from concurrent.futures import ThreadPoolExecutor
+        from concurrent.futures import (
+            FIRST_COMPLETED, ThreadPoolExecutor, wait,
+        )
         # 大范围扫描时提高并发以加速
         workers = 200 if len(ports) <= 1024 else 500
         ex = ThreadPoolExecutor(max_workers=workers)
         self._executor = ex
-        for p in ports:
-            ex.submit(scan, p)
-        ex.shutdown(wait=False, cancel_futures=False)
+        iterator = iter(ports)
+        max_inflight = workers * 2
+        inflight = set()
+
+        def submit_more():
+            while len(inflight) < max_inflight and not cancel_event.is_set():
+                try:
+                    port = next(iterator)
+                except StopIteration:
+                    return
+                try:
+                    inflight.add(ex.submit(scan, port))
+                except RuntimeError:
+                    cancel_event.set()
+                    return
+
+        def coordinate():
+            try:
+                submit_more()
+                while inflight and not cancel_event.is_set():
+                    done, _pending_futures = wait(
+                        inflight,
+                        timeout=0.1,
+                        return_when=FIRST_COMPLETED,
+                    )
+                    inflight.difference_update(done)
+                    submit_more()
+                if cancel_event.is_set():
+                    for future in inflight:
+                        future.cancel()
+            finally:
+                ex.shutdown(
+                    wait=False,
+                    cancel_futures=cancel_event.is_set(),
+                )
+
+        threading.Thread(
+            target=coordinate,
+            name="AnhuPortScanCoordinator",
+            daemon=True,
+        ).start()
 
     # ---------- 网段扫描 ----------
     def _build_lan_page(self):
@@ -2926,6 +2978,7 @@ class NetworkTool(QWidget):
 
     def _on_all_done(self):
         self._scan_running = False
+        self._executor = None
         if self._scan_kind == "port":
             if self._open_ports:
                 self._port_output.appendPlainText(

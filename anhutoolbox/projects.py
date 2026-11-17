@@ -97,15 +97,21 @@ class ProjectManager:
 
     # ---------------- 写入 ----------------
     def _write(self, path: str, data: dict) -> bool:
+        path = os.path.abspath(path)
+        tmp = path + ".tmp"
         try:
             os.makedirs(os.path.dirname(path), exist_ok=True)
-            tmp = path + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
             os.replace(tmp, path)        # 原子替换, 避免写一半损坏
             return True
         except Exception as e:
             print("[AnhuToolbox] 保存项目失败:", path, e)
+            try:
+                if os.path.exists(tmp):
+                    os.remove(tmp)
+            except Exception:
+                pass
             return False
 
     def save(self, name: str, data: dict) -> bool:
@@ -127,16 +133,15 @@ class ProjectManager:
             i += 1
         return "{} ({})".format(stem, i)
 
-    def create(self, name: str, data: dict) -> str:
-        """新建项目, 返回实际使用的项目名(可能因重名而调整)"""
+    def create(self, name: str, data: dict):
+        """新建项目；成功返回实际名称，写盘失败返回 None。"""
         name = str(name or "").strip() or DEFAULT_PROJECT_NAME
         base = name
         i = 2
         while self.exists(name):
             name = "{} ({})".format(base, i)
             i += 1
-        self.save(name, data)
-        return name
+        return name if self.save(name, data) else None
 
     def rename(self, old: str, new: str) -> str:
         """重命名项目; 返回新名字(重名时会加后缀), 失败返回原名"""

@@ -130,6 +130,46 @@ class ProtocolWorkerTests(unittest.TestCase):
         self.assertEqual(event[0], "ok")
         self.assertEqual(event[1]["status"], 200)
 
+    def test_http_auto_does_not_retry_non_idempotent_request(self):
+        worker = HTTPRequestWorker()
+        worker.configure({
+            "method": "POST",
+            "url": "https://example.test/charge",
+            "content": b"charge-once",
+            "http_version": "auto",
+            "timeout": 5,
+            "verify_tls": True,
+        })
+        with mock.patch(
+                "anhutoolbox.protocol_workers.httpx.Client") as client_class:
+            client = client_class.return_value
+            client.stream.side_effect = OSError(
+                "response lost after request")
+            worker.run()
+        self.assertEqual(client.stream.call_count, 1)
+        self.assertEqual(worker.pop_event()[0], "error")
+
+    def test_http_worker_rejects_oversized_response(self):
+        worker = HTTPRequestWorker()
+        worker.MAX_RESPONSE_BYTES = 4
+        worker.configure({
+            "method": "GET",
+            "url": "https://example.test/data",
+            "http_version": "http/1.1",
+            "timeout": 5,
+            "verify_tls": True,
+        })
+        response = mock.MagicMock()
+        response.iter_bytes.return_value = [b"12345"]
+        with mock.patch(
+                "anhutoolbox.protocol_workers.httpx.Client") as client_class:
+            client = client_class.return_value
+            client.stream.return_value.__enter__.return_value = response
+            worker.run()
+        kind, message = worker.pop_event()
+        self.assertEqual(kind, "error")
+        self.assertIn("响应体超过", message)
+
     def test_mqtt_worker_subscription_state(self):
         worker = MQTTWorker()
         worker.set_subscriptions([
@@ -453,9 +493,12 @@ class ProtocolPageTests(unittest.TestCase):
                 page.set_log_directory(temp, prefix)
                 default_paths = []
 
-                def choose_path(parent, title, default, filters):
-                    default_paths.append(default)
-                    return path, ""
+                def choose_path(
+                        parent, title, default, filters,
+                        target_path=path,
+                        recorded_paths=default_paths):
+                    recorded_paths.append(default)
+                    return target_path, ""
 
                 with mock.patch(
                         "anhutoolbox.protocol_pages.AUTO_CLEAR_RECORDS",
@@ -956,6 +999,33 @@ class ProtocolPageTests(unittest.TestCase):
                             page, "_show_http_toast") as export_toast:
                     page.export_interfaces("测试项目")
                 export_toast.assert_called_once_with("导出成功")
+        finally:
+            close_page(page)
+
+    def test_http_export_can_be_cancelled_when_credentials_are_present(self):
+        page = HTTPPage()
+        try:
+            library = {
+                "folders": [],
+                "interfaces": [{
+                    "id": "api-1",
+                    "name": "带 Token 的接口",
+                    "folder_id": None,
+                    "request": {"auth_token": "secret-token"},
+                }],
+                "environments": [],
+                "active_environment": "default",
+            }
+            with mock.patch.object(
+                    page, "_transfer_library", return_value=library), \
+                    mock.patch(
+                        "anhutoolbox.http_page.ask_yes_no",
+                        return_value=False) as confirm, \
+                    mock.patch(
+                        "anhutoolbox.http_page.ExportTransferDialog") as dialog:
+                self.assertFalse(page.export_interfaces("安全项目"))
+            confirm.assert_called_once()
+            dialog.assert_not_called()
         finally:
             close_page(page)
 
@@ -2751,6 +2821,36 @@ class ProtocolPageTests(unittest.TestCase):
 
 
 class ProtocolProjectTests(unittest.TestCase):
+    def test_preset_loop_uses_current_item_interval(self):
+        panel = PresetPanel()
+        try:
+            panel._st.stop()
+            panel.load_from_project([
+                {
+                    "name": "A", "data": "A", "hex_mode": False,
+                    "interval": 1000,
+                },
+                {
+                    "name": "B", "data": "B", "hex_mode": False,
+                    "interval": 5000,
+                },
+            ])
+            for item in panel._presets:
+                item["enabled"] = True
+            sent = []
+            panel.send_preset.connect(sent.append)
+            panel._loop_pos = 0
+            panel._loop_due = time.monotonic() * 1000.0 - 1
+            with mock.patch.object(panel, "_arm_loop"):
+                panel._tick()
+            wait_ms = panel._loop_due - time.monotonic() * 1000.0
+            self.assertEqual(sent, [b"A"])
+            self.assertGreaterEqual(wait_ms, 800)
+            self.assertLessEqual(wait_ms, 1200)
+        finally:
+            panel.stop_timer()
+            close_page(panel)
+
     def test_preset_panel_ui_and_splitter_resize(self):
         with tempfile.TemporaryDirectory() as temp:
             window = MainWindow(temp)

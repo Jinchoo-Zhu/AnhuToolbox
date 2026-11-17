@@ -360,6 +360,11 @@ class WebSocketWorker(QThread):
 
 
 class HTTPRequestWorker:
+    MAX_RESPONSE_BYTES = 64 * 1024 * 1024
+    IDEMPOTENT_METHODS = {
+        "GET", "HEAD", "OPTIONS", "TRACE", "PUT", "DELETE",
+    }
+
     def __init__(self):
         self._request = {}
         self._client = None
@@ -378,6 +383,7 @@ class HTTPRequestWorker:
                 req.get("http_version") or "http/1.1").lower()
             use_http2 = version in ("auto", "http/2")
             auto_version = version == "auto"
+            method = str(req.get("method") or "GET").upper()
 
             def send_request(http2_enabled):
                 client = httpx.Client(
@@ -391,13 +397,58 @@ class HTTPRequestWorker:
                 )
                 self._client = client
                 try:
-                    return client.request(
-                        str(req.get("method") or "GET").upper(),
+                    with client.stream(
+                        method,
                         str(req.get("url") or ""),
                         params=req.get("params") or None,
                         headers=req.get("headers") or None,
                         content=req.get("content"),
-                    )
+                    ) as response:
+                        chunks = []
+                        total = 0
+                        for chunk in response.iter_bytes():
+                            total += len(chunk)
+                            if total > self.MAX_RESPONSE_BYTES:
+                                raise ValueError(
+                                    "响应体超过 {} MiB 限制".format(
+                                        self.MAX_RESPONSE_BYTES // (1024 * 1024)))
+                            chunks.append(chunk)
+                        request = response.request
+                        return {
+                            "status": response.status_code,
+                            "reason": response.reason_phrase,
+                            "url": str(response.url),
+                            "headers": [
+                                {"name": str(name), "value": str(value)}
+                                for name, value
+                                in response.headers.multi_items()
+                            ],
+                            "cookies": [
+                                {
+                                    "name": cookie.name,
+                                    "value": cookie.value,
+                                }
+                                for cookie in response.cookies.jar
+                            ],
+                            "content": b"".join(chunks),
+                            "history": [
+                                {
+                                    "status": item.status_code,
+                                    "url": str(item.url),
+                                }
+                                for item in response.history
+                            ],
+                            "request": {
+                                "method": request.method,
+                                "url": str(request.url),
+                                "headers": [
+                                    {"name": str(name), "value": str(value)}
+                                    for name, value
+                                    in request.headers.multi_items()
+                                ],
+                                "content": bytes(request.content or b""),
+                            },
+                        }
                 finally:
                     self._client = None
                     client.close()
@@ -405,41 +456,19 @@ class HTTPRequestWorker:
             try:
                 response = send_request(use_http2)
             except Exception:
-                if self._stopping or not (auto_version and use_http2):
+                # httpx 会在 http2=True 时自动协商到 HTTP/1.1。
+                # 只有幂等请求才允许对连接级异常做一次显式回退，避免
+                # “服务器已处理 POST，但客户端读响应超时”后重复提交。
+                if (
+                    self._stopping
+                    or not (auto_version and use_http2)
+                    or method not in self.IDEMPOTENT_METHODS
+                ):
                     raise
                 response = send_request(False)
             elapsed_ms = (time.perf_counter() - started) * 1000.0
-            headers = [
-                {"name": str(name), "value": str(value)}
-                for name, value in response.headers.multi_items()
-            ]
-            cookies = [
-                {"name": cookie.name, "value": cookie.value}
-                for cookie in response.cookies.jar
-            ]
-            request = response.request
-            self._events.put(("ok", {
-                "status": response.status_code,
-                "reason": response.reason_phrase,
-                "url": str(response.url),
-                "headers": headers,
-                "cookies": cookies,
-                "content": response.content,
-                "elapsed_ms": elapsed_ms,
-                "history": [
-                    {"status": item.status_code, "url": str(item.url)}
-                    for item in response.history
-                ],
-                "request": {
-                    "method": request.method,
-                    "url": str(request.url),
-                    "headers": [
-                        {"name": str(name), "value": str(value)}
-                        for name, value in request.headers.multi_items()
-                    ],
-                    "content": bytes(request.content or b""),
-                },
-            }))
+            response["elapsed_ms"] = elapsed_ms
+            self._events.put(("ok", response))
         except Exception as exc:
             if not self._stopping:
                 self._events.put(("error", str(exc)))

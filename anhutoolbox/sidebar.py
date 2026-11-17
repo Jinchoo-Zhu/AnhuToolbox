@@ -447,7 +447,7 @@ class Sidebar(QWidget):
         mode_grid.setColumnStretch(0, 1)
         mode_grid.setColumnStretch(1, 1)
         mode_grid.setColumnStretch(2, 1)
-        for i, (key, label, tooltip) in enumerate(modes):
+        for i, (_key, label, tooltip) in enumerate(modes):
             btn = QPushButton(label)
             btn.setCheckable(True)
             btn.setToolTip(tooltip)
@@ -876,7 +876,8 @@ class Sidebar(QWidget):
 
         for i, (lab, combo) in enumerate(zip(lab_widgets, [
                 self._cb_port, self._cb_baud, self._cb_data,
-                self._cb_stop, self._cb_parity, self._cb_flow])):
+                self._cb_stop, self._cb_parity, self._cb_flow],
+                strict=False)):
             combo.setStyleSheet(COMBO_STYLE)   # 与项目下拉框同一套样式
             form.addWidget(lab, i, 0, Qt.AlignLeft)
             form.addWidget(combo, i, 1)
@@ -1013,6 +1014,8 @@ class Sidebar(QWidget):
         self._le_mqtt_user = QLineEdit()
         self._le_mqtt_password = QLineEdit()
         self._le_mqtt_password.setEchoMode(QLineEdit.Password)
+        self._le_mqtt_password.setToolTip(
+            "密码会随当前项目保存在本地 JSON 中，请勿直接分享项目文件")
         self._sp_mqtt_keepalive = QSpinBox()
         self._sp_mqtt_keepalive.setRange(5, 3600)
         self._sp_mqtt_keepalive.setValue(60)
@@ -1031,7 +1034,8 @@ class Sidebar(QWidget):
             self._le_mqtt_password, self._sp_mqtt_keepalive,
             self._cb_mqtt_protocol,
         ]
-        for row, (label, widget) in enumerate(zip(labels, widgets)):
+        for row, (label, widget) in enumerate(
+                zip(labels, widgets, strict=False)):
             form.addWidget(label, row, 0, Qt.AlignLeft)
             form.addWidget(widget, row, 1)
 
@@ -1074,7 +1078,7 @@ class Sidebar(QWidget):
         self._sp_ws_ping.setFixedHeight(32)
         for row, (label, widget) in enumerate(zip(labels, [
                 self._le_ws_origin, self._le_ws_protocol,
-                self._sp_ws_ping])):
+                self._sp_ws_ping], strict=False)):
             form.addWidget(label, row, 0, Qt.AlignLeft)
             form.addWidget(widget, row, 1)
         self._chk_ws_reconnect = QCheckBox("自动重连")

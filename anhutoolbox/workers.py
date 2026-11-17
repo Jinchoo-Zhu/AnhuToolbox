@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """AnhuToolbox 通信后端 -- 超低延迟版本"""
 
-import os, socket, select, time, ctypes
+import os, socket, select, time, ctypes, threading
 from PySide6.QtCore import QThread, Signal
 import serial
 
@@ -34,10 +34,14 @@ class SerialReadWorker(QThread):
         self._serial: serial.Serial | None = None
         self._running = False
         self._stopping = False
+        self._stop_event = threading.Event()
 
     def set_serial(self, ser: serial.Serial | None):
         # 保留外部设置的 timeout (作为无数据时的最大等待, 保证线程可退出)
         # 数据到达时 pyserial 是事件驱动, 阻塞 read() 会立即返回, 不受 timeout 影响
+        # 下一次明确设置串口时才解除停止标志。这样 start 后立刻 stop 的
+        # 取消请求不会被 run() 入口重新清除。
+        self._stop_event.clear()
         self._serial = ser
 
     @staticmethod
@@ -65,8 +69,7 @@ class SerialReadWorker(QThread):
         hold = max(FRAME_MAX_HOLD_S, char_time * FRAME_MAX_BYTES)
         return gap, hold
 
-    @staticmethod
-    def _wait_serial_gap(ser, gap_s=None) -> bool:
+    def _wait_serial_gap(self, ser, gap_s=None) -> bool:
         """高精度等待帧间隙: 忙等 FRAME_GAP_S 内无新字节则返回 True(帧结束)。
 
         Windows 的 time.sleep 精度仅 ~15.6ms, 无法满足 1ms 级等待,
@@ -74,10 +77,12 @@ class SerialReadWorker(QThread):
         """
         deadline = time.monotonic() + (
             FRAME_GAP_S if gap_s is None else gap_s)
-        while time.monotonic() < deadline:
+        while (self._running
+               and not self._stop_event.is_set()
+               and time.monotonic() < deadline):
             if ser.in_waiting > 0:
                 return False
-        return True
+        return not self._stop_event.is_set() and self._running
 
     def _read_frame(self, ser) -> bytes:
         """从串口读取一帧数据 (按帧间隙分帧)。
@@ -95,7 +100,7 @@ class SerialReadWorker(QThread):
         chunks = [first]
         total = 1
         t0 = time.monotonic()
-        while True:
+        while self._running and not self._stop_event.is_set():
             # 读尽当前缓冲 (帧内字节)
             while True:
                 n = ser.in_waiting
@@ -114,7 +119,7 @@ class SerialReadWorker(QThread):
 
     def run(self):
         self._running = True
-        while self._running:
+        while self._running and not self._stop_event.is_set():
             ser = self._serial
             if ser and ser.is_open:
                 try:
@@ -140,7 +145,8 @@ class SerialReadWorker(QThread):
     def stop(self):
         self._stopping = True
         self._running = False
-        self.wait(1000)
+        self._stop_event.set()
+        self.wait(1500)
         self._stopping = False
 
 

@@ -25,6 +25,7 @@ from . import settings as cfg
 from . import toolbox
 from .custom_library import CustomLibraryPage
 from .projects import ProjectManager, DEFAULT_PROJECT_NAME
+from .secrets_guard import contains_sensitive_values
 from .app_paths import choose_data_root
 from .dialogs import (
     ask_yes_no, get_text, show_error, show_success, show_warning,
@@ -181,6 +182,7 @@ class MainWindow(QMainWindow):
         self._pm = ProjectManager(self._data_root)
         self._current_project = ""
         self._project_load_failed = False
+        self._last_project_save_error = ""
         self._applying = False          # 应用项目配置期间抑制自动保存
         self._last_snapshot = None
         self._has_dtr_rts = False       # 当前项目是否记录了 DTR/RTS 状态
@@ -620,7 +622,8 @@ class MainWindow(QMainWindow):
         self.log_panel.text.setPlainText(msg)
     def _save_global(self):
         """只保存与项目无关的全局偏好; 项目内容由 _save_current_project 负责"""
-        cfg.set("preset_visible", self.preset_panel.isVisible())
+        # 工具页会临时隐藏预设面板，但用户的开关意图仍保留在按钮上。
+        cfg.set("preset_visible", self._btn_toggle_preset.isChecked())
         cfg.set("preset_splitter", list(self._preset_splitter.sizes()))
         cfg.set("last_project", self._current_project or "")
         cfg.save()
@@ -702,6 +705,11 @@ class MainWindow(QMainWindow):
         base_name = str(project_name or "导入项目").strip()
         actual_name = self._pm.create(
             base_name, self._default_profile())
+        if not actual_name:
+            show_error(
+                self, "导入失败",
+                "无法创建导入项目，请检查数据目录权限或磁盘空间。")
+            return
         self._reload_project_list(actual_name)
         self.sidebar._mode_group.button(5).click()
         imported, skipped = self._http_page._apply_transfer(
@@ -729,8 +737,19 @@ class MainWindow(QMainWindow):
         snap = self._snapshot_ui()
         if snap == self._last_snapshot:
             return
-        self._last_snapshot = snap
-        self._pm.save(self._current_project, snap)
+        self._persist_project_snapshot(snap)
+
+    def _persist_project_snapshot(self, snap):
+        if self._pm.save(self._current_project, snap):
+            self._last_snapshot = snap
+            self._last_project_save_error = ""
+            return True
+        message = "项目保存失败，请检查数据目录权限或磁盘空间。"
+        if message != self._last_project_save_error:
+            self._last_project_save_error = message
+            self.status_bar.showMessage(message, 15000)
+            self.log_panel.text.appendPlainText("[错误] " + message + "\n")
+        return False
 
     # ==================== 项目管理 ====================
     def _init_projects(self):
@@ -738,7 +757,13 @@ class MainWindow(QMainWindow):
         names = self._pm.names()
         if not names:
             self._apply_legacy_settings_to_ui()
-            self._pm.create(DEFAULT_PROJECT_NAME, self._snapshot_ui())
+            created = self._pm.create(
+                DEFAULT_PROJECT_NAME, self._snapshot_ui())
+            if not created:
+                message = "无法创建默认项目，请检查数据目录权限或磁盘空间。"
+                self.status_bar.showMessage(message, 15000)
+                self.log_panel.text.appendPlainText("[错误] " + message + "\n")
+                return
             names = self._pm.names()
         last = cfg.get("last_project", "")
         name = last if last in names else names[0]
@@ -873,16 +898,14 @@ class MainWindow(QMainWindow):
                 or self._project_load_failed):
             return
         snap = self._snapshot_ui()
-        self._last_snapshot = snap
-        self._pm.save(self._current_project, snap)
+        self._persist_project_snapshot(snap)
 
     def _on_presets_changed(self, presets):
         """预设内容变化 -> 立即写回当前项目"""
         if self._applying or not self._current_project:
             return
         snap = self._snapshot_ui()
-        self._last_snapshot = snap
-        self._pm.save(self._current_project, snap)
+        self._persist_project_snapshot(snap)
 
     def _check_port_exists(self):
         """项目里的串口号在本机不存在时给出提示(只提示, 不自动改)"""
@@ -1053,7 +1076,18 @@ class MainWindow(QMainWindow):
         """重建项目下拉框(新建/重命名/删除/导入后调用)"""
         names = self._pm.names()
         if not names:
-            names = [self._pm.create(DEFAULT_PROJECT_NAME, self._default_profile())]
+            created = self._pm.create(
+                DEFAULT_PROJECT_NAME, self._default_profile())
+            if not created:
+                show_error(
+                    self, "项目创建失败",
+                    "无法创建默认项目，请检查数据目录权限或磁盘空间。")
+                names = []
+            else:
+                names = [created]
+        if not names:
+            self.sidebar.set_projects([], "")
+            return
         target = select or self._current_project or names[0]
         if target not in names:
             target = names[0]
@@ -1106,7 +1140,13 @@ class MainWindow(QMainWindow):
             return
         self._save_current_project()
         # 新项目用默认配置(含空预设), 不继承当前项目的任何设置
-        self._reload_project_list(self._pm.create(name, self._default_profile()))
+        actual_name = self._pm.create(name, self._default_profile())
+        if not actual_name:
+            show_error(
+                self, "新建失败",
+                "项目无法保存，请检查数据目录权限或磁盘空间。")
+            return
+        self._reload_project_list(actual_name)
 
     def _project_rename(self):
         old = self._current_project
@@ -1130,7 +1170,13 @@ class MainWindow(QMainWindow):
             return
         self._save_current_project()
         data = self._pm.load(old) or self._snapshot_ui()
-        self._reload_project_list(self._pm.create(name, data))
+        actual_name = self._pm.create(name, data)
+        if not actual_name:
+            show_error(
+                self, "复制失败",
+                "项目副本无法保存，请检查数据目录权限或磁盘空间。")
+            return
+        self._reload_project_list(actual_name)
 
     def _project_delete(self):
         old = self._current_project
@@ -1172,6 +1218,15 @@ class MainWindow(QMainWindow):
         if not old:
             return
         self._save_current_project()
+        data = self._pm.load(old)
+        if data is not None and contains_sensitive_values(data):
+            if not ask_yes_no(
+                self, "导出包含凭据",
+                "项目文件包含明文密码、Token 或其他凭据。\n"
+                "导出后请妥善保管，确定继续导出吗？",
+                confirm_text="继续导出", danger=True,
+            ):
+                return
         path, _ = QFileDialog.getSaveFileName(
             self, "导出项目", "{}.json".format(old), "JSON 文件 (*.json)")
         if not path:
