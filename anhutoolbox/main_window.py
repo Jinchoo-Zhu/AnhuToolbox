@@ -624,7 +624,7 @@ class MainWindow(QMainWindow):
             "\n"
             "+======================================+\n"
             "\n"
-            "     欢迎使用Anhu 百宝箱\n"
+            "     欢迎使用Anhu百宝箱\n"
             "     作者：Jinchoo Zhu | Jerry Lyu\n"
             f"     版本号：V{__version__}\n"
             "\n"
