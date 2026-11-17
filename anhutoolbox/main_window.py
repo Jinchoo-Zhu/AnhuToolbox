@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QTabWidget, QStackedWidget,
     QSplitter, QStatusBar, QLabel, QFrame,
-    QMenu, QFileDialog
+    QMenu, QFileDialog, QPushButton,
 )
 from PySide6.QtCore import Qt, QTimer, Signal, Slot
 import serial, serial.tools.list_ports
@@ -74,6 +74,9 @@ COMM_MODE_INDEX = {
     "websocket": 4,
     "http": 5,
 }
+
+UPDATE_INITIAL_DELAY_MS = 2500
+UPDATE_RECHECK_INTERVAL_MS = 4 * 60 * 60 * 1000
 
 
 def _profile_int(value, default, minimum=None, maximum=None):
@@ -192,6 +195,7 @@ class MainWindow(QMainWindow):
         self._last_snapshot = None
         self._has_dtr_rts = False       # 当前项目是否记录了 DTR/RTS 状态
         self._extra_tabs_built = False
+        self._pending_update = None
 
         self._build_ui()
         self._restore_global()
@@ -211,9 +215,13 @@ class MainWindow(QMainWindow):
         self._update_check_worker = None
         self._update_download_dialog = None
         self._update_check_timer = QTimer(self)
-        self._update_check_timer.setSingleShot(True)
+        self._update_check_timer.setInterval(UPDATE_RECHECK_INTERVAL_MS)
         self._update_check_timer.timeout.connect(self._start_update_check)
-        self._update_check_timer.start(2500)
+        self._update_check_timer.start()
+        self._update_initial_timer = QTimer(self)
+        self._update_initial_timer.setSingleShot(True)
+        self._update_initial_timer.timeout.connect(self._start_update_check)
+        self._update_initial_timer.start(UPDATE_INITIAL_DELAY_MS)
 
     def _stream_page(self, mode=None):
         key = mode or self._active_stream_key
@@ -447,6 +455,24 @@ class MainWindow(QMainWindow):
         self._lbl_stats.setStyleSheet("color:{};font-size:12px".format(TEXT_SECONDARY))
         lo.addWidget(self._lbl_stats)
         lo.addStretch()
+        self._btn_update_available = QPushButton("发现新版本")
+        self._btn_update_available.setObjectName("updateAvailableButton")
+        self._btn_update_available.setCursor(
+            Qt.CursorShape.PointingHandCursor)
+        self._btn_update_available.setFixedHeight(24)
+        self._btn_update_available.setToolTip(
+            "点击查看更新内容，并选择是否立即更新")
+        self._btn_update_available.setStyleSheet(
+            "QPushButton#updateAvailableButton{"
+            "background:#EAF4FF;color:#0067B8;border:1px solid #B7D9F5;"
+            "border-radius:11px;padding:1px 10px;font-size:12px;}"
+            "QPushButton#updateAvailableButton:hover{"
+            "background:#D9ECFF;border-color:#8CC4F0;}"
+            "QPushButton#updateAvailableButton:pressed{"
+            "background:#CBE4FB;}"
+        )
+        self._btn_update_available.hide()
+        lo.addWidget(self._btn_update_available)
         self._lbl_resource_usage = QLabel("内存 --  |  CPU --")
         self._lbl_resource_usage.setObjectName("processResourceUsage")
         self._lbl_resource_usage.setMinimumWidth(200)
@@ -654,12 +680,28 @@ class MainWindow(QMainWindow):
 
     def _on_update_available(self, release):
         if cfg.get("update_skipped_version", "") == release.version:
+            self._clear_update_notice()
+            return
+        self._pending_update = release
+        self._btn_update_available.setText(
+            "发现新版本 V{}".format(release.version))
+        self._btn_update_available.show()
+
+    def _clear_update_notice(self):
+        self._pending_update = None
+        self._btn_update_available.hide()
+
+    @Slot()
+    def _prompt_for_update(self):
+        release = self._pending_update
+        if release is None:
             return
         dialog = UpdateAvailableDialog(release, self)
         dialog.exec()
         if dialog.decision == "skip":
             cfg.set("update_skipped_version", release.version)
             cfg.save()
+            self._clear_update_notice()
             return
         if dialog.decision != "update":
             return
@@ -699,6 +741,7 @@ class MainWindow(QMainWindow):
         cfg.save()
 
     def _connect_signals(self):
+        self._btn_update_available.clicked.connect(self._prompt_for_update)
         self.sidebar.mode_changed.connect(self._on_mode_changed)
         self.sidebar.connect_clicked.connect(self._on_connect)
         self.sidebar.disconnect_clicked.connect(self._on_disconnect)
@@ -1956,6 +1999,7 @@ class MainWindow(QMainWindow):
         self._resource_timer.stop()
         self._extra_tabs_timer.stop()
         self._update_check_timer.stop()
+        self._update_initial_timer.stop()
         if self._update_download_dialog is not None:
             self._update_download_dialog.reject()
         if (self._update_check_worker is not None

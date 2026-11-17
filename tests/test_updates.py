@@ -16,7 +16,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication
 
-from anhutoolbox.main_window import MainWindow
+from anhutoolbox.main_window import (
+    MainWindow, UPDATE_RECHECK_INTERVAL_MS,
+)
 from anhutoolbox.updates import (
     ReleaseInfo, UpdateCheckWorker, UpdateDownloadWorker,
     is_newer_version, parse_manifest, version_tuple,
@@ -182,17 +184,41 @@ class UpdateTests(unittest.TestCase):
                 window = MainWindow(temp)
             try:
                 window._extra_tabs_timer.stop()
+                window._on_update_available(release)
+                self.assertFalse(window._btn_update_available.isHidden())
+                self.assertEqual(
+                    window._btn_update_available.text(),
+                    "发现新版本 V9.9.9")
                 dialog = mock.MagicMock()
                 dialog.decision = "skip"
                 with mock.patch(
                         "anhutoolbox.main_window.UpdateAvailableDialog",
                         return_value=dialog):
-                    window._on_update_available(release)
+                    window._btn_update_available.click()
                 settings = json.loads(
                     (Path(temp) / "data" / "settings.json").read_text(
                         encoding="utf-8"))
                 self.assertEqual(
                     settings["update_skipped_version"], "9.9.9")
+                self.assertTrue(window._btn_update_available.isHidden())
+            finally:
+                window.close()
+                window.deleteLater()
+                APP.processEvents()
+
+    def test_update_runs_after_launch_and_periodically_while_open(self):
+        with tempfile.TemporaryDirectory() as temp:
+            with mock.patch(
+                    "anhutoolbox.hardware.collect_hardware_info",
+                    return_value={}):
+                window = MainWindow(temp)
+            try:
+                self.assertTrue(window._update_initial_timer.isActive())
+                self.assertTrue(window._update_check_timer.isActive())
+                self.assertEqual(
+                    window._update_check_timer.interval(),
+                    UPDATE_RECHECK_INTERVAL_MS)
+                self.assertFalse(window._update_check_timer.isSingleShot())
             finally:
                 window.close()
                 window.deleteLater()
