@@ -87,7 +87,7 @@ var
 begin
   if CurStep = ssPostInstall then
   begin
-    ; 旧版曾把 tools 同时打入 lib\tools，这份副本不会被程序使用。
+    // 旧版曾把 tools 同时打入 lib\tools，这份副本不会被程序使用。
     DelTree(ExpandConstant('{app}\lib\tools'), True, True, True);
     ForceDirectories(ExpandConstant('{app}\tools'));
     StateFile := ExpandConstant('{app}\tools\toolbox.install-state');
