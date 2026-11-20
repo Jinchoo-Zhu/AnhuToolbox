@@ -16,6 +16,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication, QLabel, QPushButton
 
+from anhutoolbox.about_dialog import AboutDialog
 from anhutoolbox.main_window import (
     MainWindow, UPDATE_RECHECK_INTERVAL_MS,
 )
@@ -47,6 +48,26 @@ class _DownloadHandler(BaseHTTPRequestHandler):
 
 
 class UpdateTests(unittest.TestCase):
+    def test_about_dialog_contains_version_and_manual_check(self):
+        dialog = AboutDialog()
+        try:
+            labels = [
+                label.text() for label in dialog.findChildren(QLabel)
+            ]
+            self.assertTrue(any(
+                f"当前版本：V{__version__}" == text for text in labels))
+            self.assertTrue(dialog.status.isHidden())
+            checked = []
+            dialog.check_update_requested.connect(lambda: checked.append(1))
+            dialog.check_button.click()
+            self.assertEqual(checked, [1])
+            self.assertEqual(dialog.status.text(), "正在检查更新...")
+            self.assertFalse(dialog.status.isHidden())
+        finally:
+            dialog.close()
+            dialog.deleteLater()
+            APP.processEvents()
+
     def test_update_prompt_explains_automatic_restart(self):
         release = ReleaseInfo(
             version="1.0.3",
@@ -248,6 +269,67 @@ class UpdateTests(unittest.TestCase):
                     window._update_check_timer.interval(),
                     UPDATE_RECHECK_INTERVAL_MS)
                 self.assertFalse(window._update_check_timer.isSingleShot())
+            finally:
+                window.close()
+                window.deleteLater()
+                APP.processEvents()
+
+    def test_manual_update_check_bypasses_skipped_version(self):
+        release = ReleaseInfo(
+            version="9.9.9",
+            installer_url=(
+                "https://github.com/Jinchoo-Zhu/AnhuToolbox/"
+                "releases/download/v9.9.9/AnhuToolbox_Setup_9.9.9.exe"
+            ),
+            sha256="e" * 64,
+            size=100,
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            with mock.patch(
+                    "anhutoolbox.hardware.collect_hardware_info",
+                    return_value={}):
+                window = MainWindow(temp)
+            try:
+                with mock.patch(
+                        "anhutoolbox.main_window.cfg.get",
+                        return_value="9.9.9"):
+                    window._on_update_available(release)
+                self.assertTrue(window._btn_update_available.isHidden())
+                window._on_update_available(release, manual=True)
+                self.assertFalse(window._btn_update_available.isHidden())
+                self.assertIn(
+                    "请点击顶部提示查看",
+                    window.status_bar.currentMessage(),
+                )
+                self.assertFalse(
+                    window._info_bar.isAncestorOf(
+                        window._btn_update_available))
+            finally:
+                window.close()
+                window.deleteLater()
+                APP.processEvents()
+
+    def test_manual_check_reports_latest_and_failed_states(self):
+        with tempfile.TemporaryDirectory() as temp:
+            with mock.patch(
+                    "anhutoolbox.hardware.collect_hardware_info",
+                    return_value={}):
+                window = MainWindow(temp)
+            try:
+                with mock.patch.object(
+                        window, "_start_update_check") as start_check:
+                    window._manual_check_update()
+                start_check.assert_called_once_with(manual=True)
+                window._on_update_up_to_date(manual=True)
+                self.assertEqual(
+                    window.status_bar.currentMessage(),
+                    "当前已是最新版本",
+                )
+                window._on_update_check_failed("network", manual=True)
+                self.assertIn(
+                    "检查更新失败",
+                    window.status_bar.currentMessage(),
+                )
             finally:
                 window.close()
                 window.deleteLater()

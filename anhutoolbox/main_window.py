@@ -30,6 +30,7 @@ from .updates import (
     UpdateCheckWorker, cleanup_update_cache, launch_updater,
 )
 from .update_ui import UpdateAvailableDialog, UpdateDownloadDialog
+from .about_dialog import AboutDialog
 from .version import __version__
 from .app_paths import choose_data_root
 from .dialogs import (
@@ -196,6 +197,7 @@ class MainWindow(QMainWindow):
         self._has_dtr_rts = False       # 当前项目是否记录了 DTR/RTS 状态
         self._extra_tabs_built = False
         self._pending_update = None
+        self._about_dialog = None
 
         self._build_ui()
         self._restore_global()
@@ -297,6 +299,7 @@ class MainWindow(QMainWindow):
             "QTabBar::tab:hover{background:#E8F0FE;color:#0078D4}"
         )
         self._tab_widget.addTab(self._comm_stack, "通信调试")
+        self._build_header_actions()
         self._tab_widget.currentChanged.connect(self._on_tab_changed)
         # 其余工具页延迟到事件循环开始后再创建, 加快首屏显示
         self._extra_tabs_timer = QTimer(self)
@@ -342,6 +345,52 @@ class MainWindow(QMainWindow):
         self.status_bar.setStyleSheet(STATUS_BAR_STYLE)
         self.setStatusBar(self.status_bar)
         self.status_bar.showMessage("就绪")
+
+    def _build_header_actions(self):
+        actions = QWidget()
+        layout = QHBoxLayout(actions)
+        layout.setContentsMargins(0, 1, 6, 1)
+        layout.setSpacing(2)
+
+        self._btn_about = QPushButton("关于")
+        self._btn_about.setObjectName("aboutLinkButton")
+        self._btn_about.setCursor(
+            Qt.CursorShape.PointingHandCursor)
+        self._btn_about.setStyleSheet(
+            "QPushButton#aboutLinkButton{"
+            "background:transparent;color:#555;border:1px solid #9CC7EA;"
+            "border-radius:4px;padding:0 9px;font-size:12px;"
+            "min-height:22px;max-height:24px;}"
+            "QPushButton#aboutLinkButton:hover{color:#0067B8;"
+            "background:#EAF4FF;border-color:#0078D4;}"
+        )
+        self._btn_about.setFixedHeight(24)
+        layout.addWidget(
+            self._btn_about, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        self._btn_update_available = QPushButton("发现新版本")
+        self._btn_update_available.setObjectName("updateAvailableButton")
+        self._btn_update_available.setCursor(
+            Qt.CursorShape.PointingHandCursor)
+        self._btn_update_available.setToolTip(
+            "点击查看更新内容，并选择是否立即更新")
+        self._btn_update_available.setStyleSheet(
+            "QPushButton#updateAvailableButton{"
+            "background:#EAF4FF;color:#0067B8;border:1px solid #B7D9F5;"
+            "border-radius:12px;padding:0 11px;font-size:12px;"
+            "min-height:22px;max-height:24px;}"
+            "QPushButton#updateAvailableButton:hover{"
+            "background:#D9ECFF;border-color:#8CC4F0;}"
+            "QPushButton#updateAvailableButton:pressed{"
+            "background:#CBE4FB;}"
+        )
+        self._btn_update_available.setFixedHeight(24)
+        self._btn_update_available.hide()
+        layout.addWidget(
+            self._btn_update_available, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        self._tab_widget.setCornerWidget(
+            actions, Qt.Corner.TopRightCorner)
 
     def _build_extra_tabs(self):
         """延迟创建工具库、可选工具箱和自定义库 (避免首屏被阻塞)"""
@@ -455,24 +504,6 @@ class MainWindow(QMainWindow):
         self._lbl_stats.setStyleSheet("color:{};font-size:12px".format(TEXT_SECONDARY))
         lo.addWidget(self._lbl_stats)
         lo.addStretch()
-        self._btn_update_available = QPushButton("发现新版本")
-        self._btn_update_available.setObjectName("updateAvailableButton")
-        self._btn_update_available.setCursor(
-            Qt.CursorShape.PointingHandCursor)
-        self._btn_update_available.setFixedHeight(24)
-        self._btn_update_available.setToolTip(
-            "点击查看更新内容，并选择是否立即更新")
-        self._btn_update_available.setStyleSheet(
-            "QPushButton#updateAvailableButton{"
-            "background:#EAF4FF;color:#0067B8;border:1px solid #B7D9F5;"
-            "border-radius:11px;padding:1px 10px;font-size:12px;}"
-            "QPushButton#updateAvailableButton:hover{"
-            "background:#D9ECFF;border-color:#8CC4F0;}"
-            "QPushButton#updateAvailableButton:pressed{"
-            "background:#CBE4FB;}"
-        )
-        self._btn_update_available.hide()
-        lo.addWidget(self._btn_update_available)
         self._lbl_resource_usage = QLabel("内存 --  |  CPU --")
         self._lbl_resource_usage.setObjectName("processResourceUsage")
         self._lbl_resource_usage.setMinimumWidth(200)
@@ -658,17 +689,53 @@ class MainWindow(QMainWindow):
         )
         self.log_panel.text.setPlainText(msg)
 
-    def _start_update_check(self):
+    @Slot()
+    def _show_about(self):
+        dialog = AboutDialog(self)
+        if self._pending_update is not None:
+            dialog.set_result(
+                "发现新版本 V{}，请点击顶部提示查看".format(
+                    self._pending_update.version))
+        self._about_dialog = dialog
+        dialog.check_update_requested.connect(self._manual_check_update)
+        try:
+            dialog.exec()
+        finally:
+            self._about_dialog = None
+
+    def _manual_check_update(self):
+        self._start_update_check(manual=True)
+
+    def _start_update_check(self, manual=False):
+        if manual:
+            self.status_bar.showMessage("正在检查更新...", 2500)
+            if self._about_dialog is not None:
+                self._about_dialog.set_checking()
         if (not getattr(sys, "frozen", False)
                 and os.environ.get("ANHUTOOLBOX_FORCE_UPDATE") != "1"):
+            if manual:
+                self.status_bar.showMessage(
+                    "当前运行方式不执行在线更新检查", 4000)
+                if self._about_dialog is not None:
+                    self._about_dialog.set_result(
+                        "当前运行方式不执行在线更新检查")
             return
         if (self._update_check_worker is not None
                 and self._update_check_worker.isRunning()):
+            if manual:
+                self.status_bar.showMessage("正在检查更新，请稍候...", 2500)
+                if self._about_dialog is not None:
+                    self._about_dialog.set_result(
+                        "正在检查更新，请稍候...")
             return
         cleanup_update_cache()
         worker = UpdateCheckWorker(__version__, self)
-        worker.available.connect(self._on_update_available)
-        worker.failed.connect(lambda _message: None)
+        worker.available.connect(
+            lambda release: self._on_update_available(release, manual))
+        worker.up_to_date.connect(
+            lambda: self._on_update_up_to_date(manual))
+        worker.failed.connect(
+            lambda message: self._on_update_check_failed(message, manual))
         worker.finished.connect(self._clear_update_check_worker)
         self._update_check_worker = worker
         worker.start()
@@ -678,14 +745,41 @@ class MainWindow(QMainWindow):
         if worker is not None:
             worker.deleteLater()
 
-    def _on_update_available(self, release):
-        if cfg.get("update_skipped_version", "") == release.version:
+    def _on_update_available(self, release, manual=False):
+        if (not manual
+                and cfg.get("update_skipped_version", "") == release.version):
             self._clear_update_notice()
             return
         self._pending_update = release
         self._btn_update_available.setText(
             "发现新版本 V{}".format(release.version))
         self._btn_update_available.show()
+        if manual:
+            self.status_bar.showMessage(
+                "发现新版本 V{}，请点击顶部提示查看".format(
+                    release.version),
+                5000,
+            )
+        if self._about_dialog is not None:
+            self._about_dialog.set_result(
+                "发现新版本 V{}，请点击顶部提示查看".format(
+                    release.version))
+
+    def _on_update_up_to_date(self, manual=False):
+        if self._pending_update is not None:
+            self._clear_update_notice()
+        if manual:
+            self.status_bar.showMessage("当前已是最新版本", 4000)
+        if self._about_dialog is not None:
+            self._about_dialog.set_result("当前已是最新版本")
+
+    def _on_update_check_failed(self, _message, manual=False):
+        if manual:
+            self.status_bar.showMessage(
+                "检查更新失败，请检查网络连接后重试", 5000)
+        if self._about_dialog is not None:
+            self._about_dialog.set_result(
+                "检查更新失败，请检查网络连接后重试", error=True)
 
     def _clear_update_notice(self):
         self._pending_update = None
@@ -741,6 +835,7 @@ class MainWindow(QMainWindow):
         cfg.save()
 
     def _connect_signals(self):
+        self._btn_about.clicked.connect(self._show_about)
         self._btn_update_available.clicked.connect(self._prompt_for_update)
         self.sidebar.mode_changed.connect(self._on_mode_changed)
         self.sidebar.connect_clicked.connect(self._on_connect)
