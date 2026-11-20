@@ -197,6 +197,7 @@ class MainWindow(QMainWindow):
         self._has_dtr_rts = False       # 当前项目是否记录了 DTR/RTS 状态
         self._extra_tabs_built = False
         self._pending_update = None
+        self._downloaded_update = None
         self._about_dialog = None
 
         self._build_ui()
@@ -720,6 +721,20 @@ class MainWindow(QMainWindow):
                     self._about_dialog.set_result(
                         "当前运行方式不执行在线更新检查")
             return
+        if self._update_download_dialog is not None:
+            if manual:
+                self.status_bar.showMessage("更新包正在下载中...", 3000)
+                if self._about_dialog is not None:
+                    self._about_dialog.set_result("更新包正在下载中...")
+            return
+        if self._downloaded_update is not None:
+            if manual:
+                self.status_bar.showMessage(
+                    "更新包已下载，请点击顶部提示安装", 4000)
+                if self._about_dialog is not None:
+                    self._about_dialog.set_result(
+                        "更新包已下载，请点击顶部提示安装")
+            return
         if (self._update_check_worker is not None
                 and self._update_check_worker.isRunning()):
             if manual:
@@ -746,6 +761,8 @@ class MainWindow(QMainWindow):
             worker.deleteLater()
 
     def _on_update_available(self, release, manual=False):
+        if self._update_download_dialog is not None:
+            return
         if (not manual
                 and cfg.get("update_skipped_version", "") == release.version):
             self._clear_update_notice()
@@ -766,7 +783,8 @@ class MainWindow(QMainWindow):
                     release.version))
 
     def _on_update_up_to_date(self, manual=False):
-        if self._pending_update is not None:
+        if (self._pending_update is not None
+                and self._update_download_dialog is None):
             self._clear_update_notice()
         if manual:
             self.status_bar.showMessage("当前已是最新版本", 4000)
@@ -787,6 +805,15 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def _prompt_for_update(self):
+        if self._downloaded_update is not None:
+            self._prompt_install_downloaded_update()
+            return
+        if self._update_download_dialog is not None:
+            dialog = self._update_download_dialog
+            dialog.showNormal()
+            dialog.raise_()
+            dialog.activateWindow()
+            return
         release = self._pending_update
         if release is None:
             return
@@ -799,15 +826,74 @@ class MainWindow(QMainWindow):
             return
         if dialog.decision != "update":
             return
+        self._start_update_download(release)
+
+    def _start_update_download(self, release):
         download = UpdateDownloadDialog(release, self)
         self._update_download_dialog = download
-        try:
-            accepted = download.exec()
-        finally:
-            self._update_download_dialog = None
-        if accepted and download.download_path:
-            self._install_downloaded_update(
-                release, download.download_path)
+        self._btn_update_available.setText(
+            "正在下载 V{}".format(release.version))
+        self._btn_update_available.show()
+        download.background_requested.connect(
+            lambda: self._on_update_backgrounded(release))
+        download.accepted.connect(
+            lambda: self._on_update_download_ready(download))
+        download.rejected.connect(
+            lambda: self._on_update_download_cancelled(download))
+        download.finished.connect(download.deleteLater)
+        download.show()
+
+    def _on_update_backgrounded(self, release):
+        self._btn_update_available.setText(
+            "后台更新 V{}".format(release.version))
+        self._btn_update_available.show()
+        self.status_bar.showMessage(
+            "更新包正在后台下载，可点击顶部提示恢复进度", 5000)
+
+    def _on_update_download_ready(self, dialog):
+        if dialog is not self._update_download_dialog:
+            return
+        self._update_download_dialog = None
+        if dialog.download_path:
+            self._downloaded_update = (
+                dialog.release, dialog.download_path)
+            self._prompt_install_downloaded_update()
+
+    def _prompt_install_downloaded_update(self):
+        if self._downloaded_update is None:
+            return
+        release, installer_path = self._downloaded_update
+        if not os.path.isfile(installer_path):
+            self._downloaded_update = None
+            self._btn_update_available.setText(
+                "发现新版本 V{}".format(release.version))
+            show_error(
+                self, "更新包不存在",
+                "已下载的更新包不存在，请重新检查更新。")
+            return
+        install = ask_yes_no(
+            self,
+            "安装更新",
+            "更新包已下载完成。\n"
+            "是否立即安装新版本，并在安装完成后自动重新启动？",
+        )
+        if not install:
+            self._btn_update_available.setText(
+                "更新已下载，点击安装")
+            self.status_bar.showMessage(
+                "已暂缓安装，可点击顶部提示继续安装", 5000)
+            return
+        self._downloaded_update = None
+        self._install_downloaded_update(release, installer_path)
+
+    def _on_update_download_cancelled(self, dialog):
+        if dialog is not self._update_download_dialog:
+            return
+        self._update_download_dialog = None
+        if self._pending_update is not None:
+            self._btn_update_available.setText(
+                "发现新版本 V{}".format(self._pending_update.version))
+            self._btn_update_available.show()
 
     def _install_downloaded_update(self, release, installer_path):
         try:
@@ -821,6 +907,11 @@ class MainWindow(QMainWindow):
             show_error(
                 self, "更新失败",
                 "无法启动更新程序：\n{}".format(exc))
+            if self._pending_update is not None:
+                self._btn_update_available.setText(
+                    "发现新版本 V{}".format(
+                        self._pending_update.version))
+                self._btn_update_available.show()
             return
         self._save_current_project()
         self._save_global()

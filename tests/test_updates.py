@@ -20,7 +20,9 @@ from anhutoolbox.about_dialog import AboutDialog
 from anhutoolbox.main_window import (
     MainWindow, UPDATE_RECHECK_INTERVAL_MS,
 )
-from anhutoolbox.update_ui import UpdateAvailableDialog
+from anhutoolbox.update_ui import (
+    UpdateAvailableDialog, UpdateDownloadDialog,
+)
 from anhutoolbox.updates import (
     ReleaseInfo, UpdateCheckWorker, UpdateDownloadWorker,
     is_newer_version, parse_manifest, version_tuple,
@@ -95,6 +97,138 @@ class UpdateTests(unittest.TestCase):
             dialog.close()
             dialog.deleteLater()
             APP.processEvents()
+
+    def test_download_dialog_can_continue_in_background(self):
+        release = ReleaseInfo(
+            version="1.0.3",
+            installer_url=(
+                "https://github.com/Jinchoo-Zhu/AnhuToolbox/"
+                "releases/download/v1.0.3/AnhuToolbox_Setup_1.0.3.exe"
+            ),
+            sha256="f" * 64,
+            size=1024,
+        )
+        worker = mock.MagicMock()
+        worker.isRunning.return_value = False
+        with mock.patch(
+                "anhutoolbox.update_ui.UpdateDownloadWorker",
+                return_value=worker):
+            dialog = UpdateDownloadDialog(release)
+        backgrounded = []
+        dialog.background_requested.connect(lambda: backgrounded.append(1))
+        try:
+            self.assertEqual(dialog.background_button.text(), "后台更新")
+            dialog.show()
+            APP.processEvents()
+            dialog.background_button.click()
+            APP.processEvents()
+            self.assertTrue(dialog.isHidden())
+            self.assertEqual(backgrounded, [1])
+        finally:
+            dialog.reject()
+            dialog.deleteLater()
+            APP.processEvents()
+
+    def test_main_window_keeps_modeless_download_and_restores_it(self):
+        release = ReleaseInfo(
+            version="9.9.9",
+            installer_url=(
+                "https://github.com/Jinchoo-Zhu/AnhuToolbox/"
+                "releases/download/v9.9.9/AnhuToolbox_Setup_9.9.9.exe"
+            ),
+            sha256="a" * 64,
+            size=100,
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            with mock.patch(
+                    "anhutoolbox.hardware.collect_hardware_info",
+                    return_value={}):
+                window = MainWindow(temp)
+            try:
+                window._on_update_available(release, manual=True)
+                prompt = mock.MagicMock()
+                prompt.decision = "update"
+                download = mock.MagicMock()
+                download.release = release
+                installer_path = str(Path(temp) / "update.exe")
+                Path(installer_path).write_bytes(b"installer")
+                download.download_path = installer_path
+                with mock.patch(
+                        "anhutoolbox.main_window.UpdateAvailableDialog",
+                        return_value=prompt), mock.patch(
+                        "anhutoolbox.main_window.UpdateDownloadDialog",
+                        return_value=download):
+                    window._prompt_for_update()
+                self.assertIs(window._update_download_dialog, download)
+                download.show.assert_called_once()
+                window._on_update_backgrounded(release)
+                self.assertEqual(
+                    window._btn_update_available.text(),
+                    "后台更新 V9.9.9")
+                window._prompt_for_update()
+                download.showNormal.assert_called_once()
+                with mock.patch.object(
+                        window, "_install_downloaded_update") as install:
+                    with mock.patch(
+                            "anhutoolbox.main_window.ask_yes_no",
+                            return_value=True):
+                        window._on_update_download_ready(download)
+                install.assert_called_once_with(
+                    release, installer_path)
+                self.assertIsNone(window._update_download_dialog)
+            finally:
+                window.close()
+                window.deleteLater()
+                APP.processEvents()
+
+    def test_downloaded_update_waits_for_user_install_confirmation(self):
+        release = ReleaseInfo(
+            version="9.9.9",
+            installer_url=(
+                "https://github.com/Jinchoo-Zhu/AnhuToolbox/"
+                "releases/download/v9.9.9/AnhuToolbox_Setup_9.9.9.exe"
+            ),
+            sha256="a" * 64,
+            size=100,
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            installer_path = str(Path(temp) / "update.exe")
+            Path(installer_path).write_bytes(b"installer")
+            with mock.patch(
+                    "anhutoolbox.hardware.collect_hardware_info",
+                    return_value={}):
+                window = MainWindow(temp)
+            try:
+                window._on_update_available(release, manual=True)
+                download = mock.MagicMock()
+                download.release = release
+                download.download_path = installer_path
+                window._update_download_dialog = download
+                with mock.patch.object(
+                        window, "_install_downloaded_update") as install, \
+                        mock.patch(
+                            "anhutoolbox.main_window.ask_yes_no",
+                            return_value=False):
+                    window._on_update_download_ready(download)
+                install.assert_not_called()
+                self.assertEqual(
+                    window._downloaded_update,
+                    (release, installer_path))
+                self.assertEqual(
+                    window._btn_update_available.text(),
+                    "更新已下载，点击安装")
+                with mock.patch.object(
+                        window, "_install_downloaded_update") as install, \
+                        mock.patch(
+                            "anhutoolbox.main_window.ask_yes_no",
+                            return_value=True):
+                    window._prompt_for_update()
+                install.assert_called_once_with(release, installer_path)
+                self.assertIsNone(window._downloaded_update)
+            finally:
+                window.close()
+                window.deleteLater()
+                APP.processEvents()
 
     def test_version_comparison_and_manifest_validation(self):
         self.assertEqual(version_tuple("v1.2.3"), (1, 2, 3))

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """应用内更新提示和下载进度窗口。"""
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QDialog, QHBoxLayout, QLabel, QPlainTextEdit, QProgressBar,
@@ -71,6 +71,8 @@ class UpdateAvailableDialog(QDialog):
 
 
 class UpdateDownloadDialog(QDialog):
+    background_requested = Signal()
+
     def __init__(self, release, parent=None):
         super().__init__(parent)
         self.release = release
@@ -95,6 +97,10 @@ class UpdateDownloadDialog(QDialog):
 
         buttons = QHBoxLayout()
         buttons.addStretch()
+        self.background_button = QPushButton("后台更新")
+        self.background_button.setToolTip("隐藏下载窗口，继续在后台下载")
+        self.background_button.clicked.connect(self._move_to_background)
+        buttons.addWidget(self.background_button)
         self.cancel_button = QPushButton("取消")
         self.cancel_button.clicked.connect(self.reject)
         buttons.addWidget(self.cancel_button)
@@ -115,7 +121,7 @@ class UpdateDownloadDialog(QDialog):
 
     def _on_completed(self, path):
         self.download_path = path
-        self.status.setText("下载完成，即将关闭程序、安装并自动重启...")
+        self.status.setText("下载完成，请确认是否立即安装并自动重启...")
         self.progress.setValue(1000)
         self.cancel_button.setEnabled(False)
         self.accept()
@@ -123,8 +129,17 @@ class UpdateDownloadDialog(QDialog):
     def _on_failed(self, message):
         self.status.setText("下载失败：{}".format(message))
         self.status.setStyleSheet("color:#C42B1C")
+        self.background_button.hide()
         self.cancel_button.setText("关闭")
         self.cancel_button.setEnabled(True)
+        if self.isHidden() or self.isMinimized():
+            self.showNormal()
+            self.raise_()
+            self.activateWindow()
+
+    def _move_to_background(self):
+        self.hide()
+        self.background_requested.emit()
 
     def reject(self):
         if self.worker.isRunning():
