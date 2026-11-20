@@ -627,7 +627,7 @@ class MainWindow(QMainWindow):
             self._show_welcome()
 
     def _apply_legacy_settings_to_ui(self):
-        """还没有项目时的初始值: 沿用旧版 settings.json 里的连接/发送/显示参数"""
+        """还没有项目时的初始值: 沿用旧版的 settings.json 里的连接/发送/显示参数"""
         idx = COMM_MODE_INDEX.get(cfg.get("mode", "serial"), 0)
         self.sidebar._mode_group.button(idx).setChecked(True)
         self.sidebar._on_mode_changed(idx)
