@@ -29,6 +29,14 @@ class UpdateAvailableDialog(QDialog):
         root.addWidget(QLabel(
             "当前版本：V{}\n安装包大小：{:.1f} MB".format(
                 __version__, release.size / (1024 * 1024))))
+        restart_notice = QLabel(
+            "更新过程中程序会暂时关闭；安装完成后会自动重新启动新版本。")
+        restart_notice.setWordWrap(True)
+        restart_notice.setStyleSheet(
+            "QLabel{background:#EAF4FF;color:#005A9E;"
+            "border:1px solid #B7D9F5;border-radius:5px;padding:8px 10px;}"
+        )
+        root.addWidget(restart_notice)
 
         notes = QPlainTextEdit()
         notes.setReadOnly(True)
@@ -43,10 +51,10 @@ class UpdateAvailableDialog(QDialog):
             skip = QPushButton("跳过此版本")
             skip.clicked.connect(lambda: self._choose("skip"))
             buttons.addWidget(skip)
-        later = QPushButton("稍后提醒")
+        later = QPushButton("暂不更新")
         later.clicked.connect(lambda: self._choose("later"))
         buttons.addWidget(later)
-        update = QPushButton("立即更新")
+        update = QPushButton("立即更新并重启")
         update.setDefault(True)
         update.setStyleSheet(
             "QPushButton{background:#0078D4;color:white;border:none;"
@@ -107,7 +115,7 @@ class UpdateDownloadDialog(QDialog):
 
     def _on_completed(self, path):
         self.download_path = path
-        self.status.setText("下载完成，正在准备安装...")
+        self.status.setText("下载完成，即将关闭程序、安装并自动重启...")
         self.progress.setValue(1000)
         self.cancel_button.setEnabled(False)
         self.accept()

@@ -14,11 +14,12 @@ from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QLabel, QPushButton
 
 from anhutoolbox.main_window import (
     MainWindow, UPDATE_RECHECK_INTERVAL_MS,
 )
+from anhutoolbox.update_ui import UpdateAvailableDialog
 from anhutoolbox.updates import (
     ReleaseInfo, UpdateCheckWorker, UpdateDownloadWorker,
     is_newer_version, parse_manifest, version_tuple,
@@ -46,6 +47,34 @@ class _DownloadHandler(BaseHTTPRequestHandler):
 
 
 class UpdateTests(unittest.TestCase):
+    def test_update_prompt_explains_automatic_restart(self):
+        release = ReleaseInfo(
+            version="1.0.3",
+            installer_url=(
+                "https://github.com/Jinchoo-Zhu/AnhuToolbox/"
+                "releases/download/v1.0.3/AnhuToolbox_Setup_1.0.3.exe"
+            ),
+            sha256="d" * 64,
+            size=1024,
+        )
+        dialog = UpdateAvailableDialog(release)
+        try:
+            labels = [
+                label.text() for label in dialog.findChildren(QLabel)
+            ]
+            buttons = [
+                button.text() for button in dialog.findChildren(QPushButton)
+            ]
+            self.assertTrue(any(
+                "安装完成后会自动重新启动" in text for text in labels))
+            self.assertIn("暂不更新", buttons)
+            self.assertIn("跳过此版本", buttons)
+            self.assertIn("立即更新并重启", buttons)
+        finally:
+            dialog.close()
+            dialog.deleteLater()
+            APP.processEvents()
+
     def test_version_comparison_and_manifest_validation(self):
         self.assertEqual(version_tuple("v1.2.3"), (1, 2, 3))
         self.assertTrue(is_newer_version("1.0.1", "1.0.0"))
