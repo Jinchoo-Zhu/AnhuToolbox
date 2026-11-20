@@ -27,7 +27,9 @@ from anhutoolbox.updates import (
     ReleaseInfo, UpdateCheckWorker, UpdateDownloadWorker,
     is_newer_version, parse_manifest, version_tuple,
 )
-from anhutoolbox.version import __version__
+from anhutoolbox.version import (
+    UPDATE_MANIFEST_URL, UPDATE_MANIFEST_URLS, __version__,
+)
 from create_update_manifest import build_manifest
 import updater
 
@@ -40,6 +42,11 @@ class _DownloadHandler(BaseHTTPRequestHandler):
     payload = b"installer-bytes"
 
     def do_GET(self):
+        if self.path.startswith("/missing"):
+            self.send_response(404)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
         self.send_response(200)
         self.send_header("Content-Length", str(len(self.payload)))
         self.end_headers()
@@ -246,12 +253,73 @@ class UpdateTests(unittest.TestCase):
         }
         release = parse_manifest(payload)
         self.assertEqual(release.version, "1.0.1")
+        server_release = parse_manifest({
+            **payload,
+            "installer_url": (
+                "https://mcsgzy.online:8443/anhutoolbox/"
+                "releases/v1.0.1/AnhuToolbox_Setup_1.0.1.exe"
+            ),
+            "installer_urls": [
+                (
+                    "https://mcsgzy.online:8443/anhutoolbox/"
+                    "releases/v1.0.1/AnhuToolbox_Setup_1.0.1.exe"
+                ),
+                (
+                    "https://github.com/Jinchoo-Zhu/AnhuToolbox/"
+                    "releases/download/v1.0.1/"
+                    "AnhuToolbox_Setup_1.0.1.exe"
+                ),
+            ],
+        })
+        self.assertEqual(
+            server_release.installer_url,
+            "https://mcsgzy.online:8443/anhutoolbox/"
+            "releases/v1.0.1/AnhuToolbox_Setup_1.0.1.exe",
+        )
+        self.assertEqual(len(server_release.download_urls), 2)
+        with self.assertRaises(ValueError):
+            parse_manifest({
+                **payload,
+                "installer_urls": [
+                    (
+                        "https://mcsgzy.online:8443/anhutoolbox/"
+                        "releases/v1.0.1/"
+                        "AnhuToolbox_Setup_1.0.1.exe"
+                    ),
+                    (
+                        "https://gy.example/"
+                        "releases/v1.0.1/"
+                        "AnhuToolbox_Setup_1.0.1.exe"
+                    ),
+                ],
+            })
         with self.assertRaises(ValueError):
             parse_manifest({**payload, "installer_url": "http://evil.test/x.exe"})
+        with self.assertRaises(ValueError):
+            parse_manifest({
+                **payload,
+                "installer_url": (
+                    "https://mcsgzy.online:443/anhutoolbox/"
+                    "releases/v1.0.1/AnhuToolbox_Setup_1.0.1.exe"
+                ),
+            })
+        with self.assertRaises(ValueError):
+            parse_manifest({
+                **payload,
+                "installer_url": (
+                    "https://mcsgzy.online:8443/anhutoolbox/"
+                    "releases/../private.exe"
+                ),
+            })
         with self.assertRaises(ValueError):
             parse_manifest({**payload, "mandatory": "false"})
 
     def test_update_check_worker_uses_release_manifest(self):
+        self.assertEqual(
+            UPDATE_MANIFEST_URL,
+            "https://mcsgzy.online:8443/anhutoolbox/updates/latest.json",
+        )
+        self.assertEqual(len(UPDATE_MANIFEST_URLS), 2)
         payload = json.dumps({
             "version": "1.0.1",
             "installer_url": (
@@ -268,6 +336,34 @@ class UpdateTests(unittest.TestCase):
                 "anhutoolbox.updates._read_manifest", return_value=payload):
             worker.run()
         self.assertEqual(found[0].version, "1.0.1")
+
+    def test_update_check_worker_uses_highest_available_source(self):
+        def manifest(version, filename):
+            return json.dumps({
+                "version": version,
+                "installer_url": (
+                    "https://mcsgzy.online:8443/anhutoolbox/"
+                    f"releases/v{version}/{filename}"
+                ),
+                "sha256": "b" * 64,
+                "size": 456,
+            }).encode("utf-8")
+
+        def read_manifest(url):
+            if url == UPDATE_MANIFEST_URLS[0]:
+                raise RuntimeError("server unavailable")
+            if url == UPDATE_MANIFEST_URLS[1]:
+                return manifest("1.0.4", "AnhuToolbox_Setup_1.0.4.exe")
+            return manifest("1.0.3", "AnhuToolbox_Setup_1.0.3.exe")
+
+        worker = UpdateCheckWorker("1.0.3")
+        found = []
+        worker.available.connect(found.append)
+        with mock.patch(
+                "anhutoolbox.updates._read_manifest",
+                side_effect=read_manifest):
+            worker.run()
+        self.assertEqual(found[0].version, "1.0.4")
 
     def test_download_worker_verifies_hash_and_size(self):
         server = ThreadingHTTPServer(
@@ -300,6 +396,41 @@ class UpdateTests(unittest.TestCase):
             server.shutdown()
             server.server_close()
 
+    def test_download_worker_falls_back_to_secondary_source(self):
+        server = ThreadingHTTPServer(
+            ("127.0.0.1", 0), _DownloadHandler)
+        thread = threading.Thread(
+            target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            payload = _DownloadHandler.payload
+            release = ReleaseInfo(
+                version="1.0.4",
+                installer_url="http://127.0.0.1:{}/missing".format(
+                    server.server_address[1]),
+                installer_urls=(
+                    "http://127.0.0.1:{}/setup.exe".format(
+                        server.server_address[1]),
+                ),
+                sha256=hashlib.sha256(payload).hexdigest(),
+                size=len(payload),
+            )
+            with tempfile.TemporaryDirectory() as temp:
+                worker = UpdateDownloadWorker(release, temp)
+                completed = []
+                failed = []
+                worker.completed.connect(completed.append)
+                worker.failed.connect(failed.append)
+                worker.start()
+                self.assertTrue(worker.wait(5000))
+                APP.processEvents()
+                self.assertFalse(failed)
+                self.assertTrue(completed)
+                self.assertEqual(Path(completed[0]).read_bytes(), payload)
+        finally:
+            server.shutdown()
+            server.server_close()
+
     def test_release_manifest_builder_and_updater_hash(self):
         with tempfile.TemporaryDirectory() as temp:
             installer = (
@@ -310,9 +441,17 @@ class UpdateTests(unittest.TestCase):
             self.assertEqual(manifest["size"], installer.stat().st_size)
             self.assertEqual(
                 updater.sha256_file(installer), manifest["sha256"])
+            self.assertEqual(
+                manifest["installer_url"],
+                "https://mcsgzy.online:8443/anhutoolbox/"
+                f"releases/v{__version__}/"
+                f"AnhuToolbox_Setup_{__version__}.exe",
+            )
+            self.assertEqual(len(manifest["installer_urls"]), 2)
             self.assertIn(
-                f"/releases/download/v{__version__}/",
-                manifest["installer_url"])
+                "https://github.com/Jinchoo-Zhu/AnhuToolbox/",
+                manifest["installer_urls"][1],
+            )
 
     def test_updater_restarts_application_after_install(self):
         with tempfile.TemporaryDirectory() as temp:

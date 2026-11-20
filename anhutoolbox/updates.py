@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
-"""GitHub Release 更新检查、下载和更新器启动。"""
+"""自动更新检查、下载和更新器启动。"""
 
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -15,7 +16,8 @@ import httpx
 from PySide6.QtCore import QThread, Signal
 
 from .version import (
-    GITHUB_OWNER, GITHUB_REPO, UPDATE_MANIFEST_URL, __version__,
+    GITHUB_OWNER, GITHUB_REPO, UPDATE_MANIFEST_URL, UPDATE_MANIFEST_URLS,
+    UPDATE_SERVER_HOST, UPDATE_SERVER_PORT, __version__,
 )
 
 MAX_MANIFEST_BYTES = 64 * 1024
@@ -23,6 +25,19 @@ MAX_INSTALLER_BYTES = 2 * 1024 * 1024 * 1024
 USER_AGENT = "AnhuToolbox/{}".format(__version__)
 _VERSION_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
 _SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
+_TRUSTED_INSTALLER_TARGETS = (
+    (
+        UPDATE_SERVER_HOST,
+        UPDATE_SERVER_PORT,
+        "/anhutoolbox/releases/",
+    ),
+    (
+        "github.com",
+        443,
+        "/{}/{}/releases/download/".format(
+            GITHUB_OWNER, GITHUB_REPO).lower(),
+    ),
+)
 
 
 class UpdateError(RuntimeError):
@@ -38,6 +53,12 @@ class ReleaseInfo:
     notes: str = ""
     mandatory: bool = False
     manifest_url: str = UPDATE_MANIFEST_URL
+    installer_urls: tuple = ()
+
+    @property
+    def download_urls(self):
+        return tuple(dict.fromkeys(
+            url for url in (self.installer_url, *self.installer_urls) if url))
 
 
 def version_tuple(value):
@@ -47,22 +68,58 @@ def version_tuple(value):
     return tuple(int(part) for part in match.groups())
 
 
+def _is_trusted_installer_url(url):
+    try:
+        parsed = urllib.parse.urlsplit(str(url or "").strip())
+        port = parsed.port
+    except ValueError:
+        return False
+    if (
+        parsed.scheme.lower() != "https"
+        or parsed.username is not None
+        or parsed.password is not None
+        or not parsed.path.lower().endswith(".exe")
+    ):
+        return False
+    path = urllib.parse.unquote(parsed.path)
+    if ".." in path.split("/"):
+        return False
+    host = (parsed.hostname or "").lower()
+    for expected_host, expected_port, prefix in _TRUSTED_INSTALLER_TARGETS:
+        effective_port = port or 443
+        if (
+            host == expected_host
+            and effective_port == expected_port
+            and path.lower().startswith(prefix)
+        ):
+            return True
+    return False
+
+
 def parse_manifest(payload, manifest_url=UPDATE_MANIFEST_URL):
     if not isinstance(payload, dict):
         raise ValueError("更新清单必须是 JSON 对象")
     version = str(payload.get("version") or "").strip()
     version_tuple(version)
-    installer_url = str(payload.get("installer_url") or "").strip()
-    parsed = urllib.parse.urlsplit(installer_url)
-    expected_prefix = "/{}/{}/releases/download/".format(
-        GITHUB_OWNER, GITHUB_REPO).lower()
-    if (
-        parsed.scheme.lower() != "https"
-        or parsed.netloc.lower() != "github.com"
-        or not parsed.path.lower().startswith(expected_prefix)
-        or not parsed.path.lower().endswith(".exe")
-    ):
-        raise ValueError("安装包地址不是受信任的 GitHub Release")
+    installer_urls = []
+    single_url = payload.get("installer_url")
+    if single_url not in (None, ""):
+        if not isinstance(single_url, str):
+            raise ValueError("installer_url 必须是字符串")
+        installer_urls.append(single_url.strip())
+    multiple_urls = payload.get("installer_urls")
+    if multiple_urls is not None:
+        if not isinstance(multiple_urls, list) or len(multiple_urls) > 5:
+            raise ValueError("installer_urls 必须是最多 5 项的数组")
+        for url in multiple_urls:
+            if not isinstance(url, str):
+                raise ValueError("installer_urls 只能包含字符串")
+            installer_urls.append(url.strip())
+    installer_urls = list(dict.fromkeys(url for url in installer_urls if url))
+    if not installer_urls:
+        raise ValueError("更新清单缺少安装包地址")
+    if not all(_is_trusted_installer_url(url) for url in installer_urls):
+        raise ValueError("安装包地址包含不受信任的发布源")
     sha256 = str(payload.get("sha256") or "").strip().lower()
     if not _SHA256_RE.fullmatch(sha256):
         raise ValueError("更新清单 SHA-256 格式错误")
@@ -78,7 +135,8 @@ def parse_manifest(payload, manifest_url=UPDATE_MANIFEST_URL):
         raise ValueError("mandatory 必须是布尔值")
     return ReleaseInfo(
         version=version.lstrip("vV"),
-        installer_url=installer_url,
+        installer_url=installer_urls[0],
+        installer_urls=tuple(installer_urls),
         sha256=sha256,
         size=size,
         notes=notes,
@@ -138,17 +196,29 @@ class UpdateCheckWorker(QThread):
         self._current_version = current_version
 
     def run(self):
-        try:
-            import json
-            raw = _read_manifest(UPDATE_MANIFEST_URL)
-            release = parse_manifest(json.loads(raw.decode("utf-8")))
-            if is_newer_version(release.version, self._current_version):
-                self.available.emit(release)
-            else:
-                self.up_to_date.emit()
-        except Exception as exc:
-            if not self.isInterruptionRequested():
-                self.failed.emit(str(exc))
+        releases = []
+        errors = []
+        for manifest_url in UPDATE_MANIFEST_URLS:
+            if self.isInterruptionRequested():
+                return
+            try:
+                raw = _read_manifest(manifest_url)
+                payload = json.loads(raw.decode("utf-8"))
+                releases.append(parse_manifest(payload, manifest_url))
+            except Exception as exc:
+                errors.append(str(exc))
+        if self.isInterruptionRequested():
+            return
+        if not releases:
+            self.failed.emit(
+                "所有更新源均不可用：{}".format(
+                    "；".join(errors[-2:]) or "未知错误"))
+            return
+        release = max(releases, key=lambda item: version_tuple(item.version))
+        if is_newer_version(release.version, self._current_version):
+            self.available.emit(release)
+        else:
+            self.up_to_date.emit()
 
     def stop(self):
         self.requestInterruption()
@@ -192,8 +262,6 @@ class UpdateDownloadWorker(QThread):
             re.sub(r"[^0-9A-Za-z._-]", "_", self._release.version))
         target = os.path.join(self._directory, name)
         part = target + ".part"
-        total = 0
-        digest = hashlib.sha256()
         client = None
         try:
             client = httpx.Client(
@@ -202,31 +270,30 @@ class UpdateDownloadWorker(QThread):
                 timeout=httpx.Timeout(120.0, connect=10.0),
             )
             self._client = client
-            with client.stream(
-                    "GET", self._release.installer_url) as response:
-                response.raise_for_status()
-                with open(part, "wb") as output:
-                    for chunk in response.iter_bytes(256 * 1024):
-                        if self._cancel.is_set():
-                            raise UpdateError("更新下载已取消")
-                        total += len(chunk)
-                        if total > self._release.size:
-                            raise UpdateError("下载文件超过清单声明大小")
-                        output.write(chunk)
-                        digest.update(chunk)
-                        self.progress.emit(total, self._release.size)
-            if total != self._release.size:
-                raise UpdateError("下载文件大小与清单不一致")
-            if digest.hexdigest().lower() != self._release.sha256:
-                raise UpdateError("安装包 SHA-256 校验失败")
-            os.replace(part, target)
-            self.completed.emit(target)
+            errors = []
+            for index, url in enumerate(self._release.download_urls, 1):
+                if self._cancel.is_set():
+                    break
+                try:
+                    self._download_from(client, url, part)
+                except Exception as exc:
+                    try:
+                        if os.path.exists(part):
+                            os.remove(part)
+                    except OSError:
+                        pass
+                    if self._cancel.is_set():
+                        break
+                    errors.append("源{}：{}".format(index, exc))
+                    continue
+                os.replace(part, target)
+                self.completed.emit(target)
+                return
+            if not self._cancel.is_set():
+                self.failed.emit(
+                    "所有下载源均失败：{}".format(
+                        "；".join(errors) or "没有可用下载地址"))
         except Exception as exc:
-            try:
-                if os.path.exists(part):
-                    os.remove(part)
-            except OSError:
-                pass
             if not self._cancel.is_set():
                 self.failed.emit(str(exc))
         finally:
@@ -236,6 +303,26 @@ class UpdateDownloadWorker(QThread):
                     client.close()
                 except Exception:
                     pass
+
+    def _download_from(self, client, url, part):
+        total = 0
+        digest = hashlib.sha256()
+        with client.stream("GET", url) as response:
+            response.raise_for_status()
+            with open(part, "wb") as output:
+                for chunk in response.iter_bytes(256 * 1024):
+                    if self._cancel.is_set():
+                        raise UpdateError("更新下载已取消")
+                    total += len(chunk)
+                    if total > self._release.size:
+                        raise UpdateError("下载文件超过清单声明大小")
+                    output.write(chunk)
+                    digest.update(chunk)
+                    self.progress.emit(total, self._release.size)
+        if total != self._release.size:
+            raise UpdateError("下载文件大小与清单不一致")
+        if digest.hexdigest().lower() != self._release.sha256:
+            raise UpdateError("安装包 SHA-256 校验失败")
 
 
 def launch_updater(app_dir, app_path, installer_path, release):

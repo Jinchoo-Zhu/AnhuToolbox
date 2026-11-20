@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""为 GitHub Release 生成 latest.json 并检查版本一致性。"""
+"""生成自建更新服务器的 latest.json 并检查版本一致性。"""
 
 import argparse
 import hashlib
@@ -8,7 +8,9 @@ import re
 import urllib.parse
 from pathlib import Path
 
-from anhutoolbox.version import GITHUB_OWNER, GITHUB_REPO, __version__
+from anhutoolbox.version import (
+    GITHUB_OWNER, GITHUB_REPO, UPDATE_RELEASE_BASE_URL, __version__,
+)
 
 
 def _sha256(path):
@@ -48,12 +50,15 @@ def build_manifest(root, installer_path, version, notes="", mandatory=False):
         raise FileNotFoundError(installer_path)
     tag = "v{}".format(version)
     filename = urllib.parse.quote(installer_path.name)
-    url = (
+    server_url = "{}/{}/{}".format(
+        UPDATE_RELEASE_BASE_URL, tag, filename)
+    github_url = (
         "https://github.com/{}/{}/releases/download/{}/{}"
     ).format(GITHUB_OWNER, GITHUB_REPO, tag, filename)
     return {
         "version": version,
-        "installer_url": url,
+        "installer_url": server_url,
+        "installer_urls": [server_url, github_url],
         "sha256": _sha256(installer_path),
         "size": installer_path.stat().st_size,
         "notes": str(notes or ""),
