@@ -112,6 +112,57 @@ class UpdateTests(unittest.TestCase):
             dialog.deleteLater()
             APP.processEvents()
 
+    def test_about_dialog_toolbox_install_button_states(self):
+        dialog = AboutDialog(toolbox_installed=False)
+        requested = []
+        dialog.install_toolbox_requested.connect(
+            lambda: requested.append(1))
+        try:
+            self.assertTrue(dialog.toolbox_button.isEnabled())
+            self.assertEqual(dialog.toolbox_button.text(), "安装工具箱")
+            dialog.toolbox_button.click()
+            self.assertEqual(requested, [1])
+        finally:
+            dialog.close()
+            dialog.deleteLater()
+            APP.processEvents()
+
+        installed = AboutDialog(toolbox_installed=True)
+        try:
+            self.assertFalse(installed.toolbox_button.isEnabled())
+            self.assertEqual(
+                installed.toolbox_button.text(), "已安装工具箱")
+        finally:
+            installed.close()
+            installed.deleteLater()
+            APP.processEvents()
+
+    def test_about_dialog_updates_directly_from_update_button(self):
+        release = ReleaseInfo(
+            version="1.0.6",
+            installer_url=(
+                "https://mcsgzy.online:8443/anhutoolbox/"
+                "releases/v1.0.6/AnhuToolbox_Setup_1.0.6.exe"
+            ),
+            sha256="d" * 64,
+            size=1024,
+        )
+        dialog = AboutDialog()
+        requested = []
+        dialog.update_requested.connect(requested.append)
+        try:
+            dialog.set_update_available(release)
+            self.assertEqual(
+                dialog.check_button.text(), "更新到 V1.0.6")
+            self.assertIn(
+                "可直接在此处更新", dialog.status.text())
+            dialog.check_button.click()
+            self.assertEqual(requested, [release])
+        finally:
+            dialog.close()
+            dialog.deleteLater()
+            APP.processEvents()
+
     def test_update_prompt_explains_automatic_restart(self):
         release = ReleaseInfo(
             version="1.0.3",
@@ -219,6 +270,41 @@ class UpdateTests(unittest.TestCase):
                     release, installer_path)
                 self.assertIsNone(window._update_download_dialog)
             finally:
+                window.close()
+                window.deleteLater()
+                APP.processEvents()
+
+    def test_main_window_starts_update_from_about(self):
+        release = ReleaseInfo(
+            version="1.0.6",
+            installer_url=(
+                "https://mcsgzy.online:8443/anhutoolbox/"
+                "releases/v1.0.6/AnhuToolbox_Setup_1.0.6.exe"
+            ),
+            sha256="d" * 64,
+            size=1024,
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            with mock.patch(
+                    "anhutoolbox.hardware.collect_hardware_info",
+                    return_value={}):
+                window = MainWindow(temp)
+            try:
+                about = mock.MagicMock()
+                window._about_dialog = about
+                started = []
+                with mock.patch.object(
+                        window, "_start_update_download",
+                        side_effect=lambda item: started.append(item)), \
+                        mock.patch(
+                            "anhutoolbox.main_window.QTimer.singleShot",
+                            side_effect=lambda _delay, callback: callback()):
+                    window._start_update_from_about(release)
+                about.accept.assert_called_once()
+                self.assertEqual(started, [release])
+                self.assertEqual(window._pending_update, release)
+            finally:
+                window._about_dialog = None
                 window.close()
                 window.deleteLater()
                 APP.processEvents()
@@ -505,6 +591,7 @@ class UpdateTests(unittest.TestCase):
                 "--sha256", "a" * 64,
                 "--app", app_path,
                 "--log", log_path,
+                "--merge-tasks", "installtoolbox",
             ]
             with mock.patch.object(sys, "argv", argv), mock.patch.object(
                     updater, "wait_for_process", return_value=True), \
@@ -520,6 +607,48 @@ class UpdateTests(unittest.TestCase):
                 run_installer.return_value.returncode = 0
                 self.assertEqual(updater.main(), 0)
             start_application.assert_called_once_with(app_path)
+            self.assertIn(
+                "/MERGETASKS=installtoolbox",
+                run_installer.call_args.args[0],
+            )
+
+    def test_downloaded_toolbox_uses_installer_task(self):
+        release = ReleaseInfo(
+            version="1.0.5",
+            installer_url=(
+                "https://mcsgzy.online:8443/anhutoolbox/"
+                "releases/v1.0.5/AnhuToolbox_Setup_1.0.5.exe"
+            ),
+            sha256="a" * 64,
+            size=100,
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            installer_path = str(Path(temp) / "setup.exe")
+            Path(installer_path).write_bytes(b"installer")
+            with mock.patch(
+                    "anhutoolbox.hardware.collect_hardware_info",
+                    return_value={}):
+                window = MainWindow(temp)
+            try:
+                with mock.patch(
+                        "anhutoolbox.main_window.launch_updater") as launch, \
+                        mock.patch.object(
+                            window, "_save_current_project"), \
+                        mock.patch.object(window, "_save_global"), \
+                        mock.patch.object(window, "close"):
+                    window._install_downloaded_toolbox(
+                        release, installer_path)
+                launch.assert_called_once_with(
+                    os.path.dirname(os.path.abspath(sys.executable)),
+                    os.path.abspath(sys.executable),
+                    installer_path,
+                    release,
+                    merge_tasks="installtoolbox",
+                )
+            finally:
+                window.close()
+                window.deleteLater()
+                APP.processEvents()
 
     def test_packaging_contains_updater_and_close_applications(self):
         updater_spec = (ROOT / "AnhuUpdater.spec").read_text(encoding="utf-8")

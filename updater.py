@@ -63,6 +63,7 @@ def main():
     parser.add_argument("--sha256", required=True)
     parser.add_argument("--app", required=True)
     parser.add_argument("--log", required=True)
+    parser.add_argument("--merge-tasks", default="")
     args = parser.parse_args()
 
     os.makedirs(os.path.dirname(args.log), exist_ok=True)
@@ -76,17 +77,23 @@ def main():
         start_application(args.app)
         return 1
     try:
+        if args.merge_tasks not in ("", "installtoolbox"):
+            raise RuntimeError("unsupported installer tasks")
         actual_hash = sha256_file(args.installer)
         if actual_hash != args.sha256.lower():
             raise RuntimeError("installer SHA-256 mismatch")
+        installer_args = [
+            args.installer,
+            "/VERYSILENT",
+            "/SUPPRESSMSGBOXES",
+            "/NORESTART",
+            "/CLOSEAPPLICATIONS",
+        ]
+        if args.merge_tasks:
+            installer_args.append(
+                "/MERGETASKS={}".format(args.merge_tasks))
         result = subprocess.run(
-            [
-                args.installer,
-                "/VERYSILENT",
-                "/SUPPRESSMSGBOXES",
-                "/NORESTART",
-                "/CLOSEAPPLICATIONS",
-            ],
+            installer_args,
             creationflags=CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
         logging.info("installer exit code=%s", result.returncode)

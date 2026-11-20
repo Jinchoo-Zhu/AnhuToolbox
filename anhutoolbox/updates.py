@@ -193,6 +193,7 @@ def _read_manifest(url):
 
 class UpdateCheckWorker(QThread):
     available = Signal(object)
+    release_found = Signal(object)
     up_to_date = Signal()
     failed = Signal(str)
 
@@ -220,6 +221,7 @@ class UpdateCheckWorker(QThread):
                     "；".join(errors[-2:]) or "未知错误"))
             return
         release = max(releases, key=lambda item: version_tuple(item.version))
+        self.release_found.emit(release)
         if is_newer_version(release.version, self._current_version):
             self.available.emit(release)
         else:
@@ -330,7 +332,8 @@ class UpdateDownloadWorker(QThread):
             raise UpdateError("安装包 SHA-256 校验失败")
 
 
-def launch_updater(app_dir, app_path, installer_path, release):
+def launch_updater(
+        app_dir, app_path, installer_path, release, merge_tasks=""):
     helper = os.path.join(app_dir, "AnhuUpdater.exe")
     if not os.path.isfile(helper):
         raise UpdateError("缺少更新器 AnhuUpdater.exe")
@@ -351,6 +354,8 @@ def launch_updater(app_dir, app_path, installer_path, release):
         "--app", app_path,
         "--log", os.path.join(directory, "updater.log"),
     ]
+    if merge_tasks:
+        command.extend(["--merge-tasks", merge_tasks])
     flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
     subprocess.Popen(command, cwd=directory, creationflags=flags)
     return True

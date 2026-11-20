@@ -198,6 +198,8 @@ class MainWindow(QMainWindow):
         self._extra_tabs_built = False
         self._pending_update = None
         self._downloaded_update = None
+        self._downloaded_toolbox = None
+        self._download_purpose = None
         self._about_dialog = None
 
         self._build_ui()
@@ -693,17 +695,82 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def _show_about(self):
-        dialog = AboutDialog(self)
+        tools_dir = os.path.join(self._base_dir, "tools")
+        dialog = AboutDialog(
+            self,
+            toolbox_installed=toolbox.is_toolbox_available(tools_dir),
+        )
         if self._pending_update is not None:
-            dialog.set_result(
-                "发现新版本 V{}，请点击顶部提示查看".format(
-                    self._pending_update.version))
+            dialog.set_update_available(self._pending_update)
         self._about_dialog = dialog
         dialog.check_update_requested.connect(self._manual_check_update)
+        dialog.update_requested.connect(self._start_update_from_about)
+        dialog.install_toolbox_requested.connect(
+            self._request_toolbox_install)
         try:
             dialog.exec()
         finally:
             self._about_dialog = None
+
+    def _start_update_from_about(self, release):
+        self._pending_update = release
+        if self._about_dialog is not None:
+            self._about_dialog.accept()
+        QTimer.singleShot(
+            0, lambda: self._start_update_download(release))
+
+    def _request_toolbox_install(self):
+        if (not getattr(sys, "frozen", False)
+                and os.environ.get("ANHUTOOLBOX_FORCE_UPDATE") != "1"):
+            if self._about_dialog is not None:
+                self._about_dialog.set_toolbox_unavailable(
+                    "当前运行方式不能安装工具箱，请使用安装版程序")
+            return
+        if self._update_download_dialog is not None:
+            self._update_download_dialog.showNormal()
+            self._update_download_dialog.raise_()
+            self._update_download_dialog.activateWindow()
+            return
+        if (self._update_check_worker is not None
+                and self._update_check_worker.isRunning()):
+            if self._about_dialog is not None:
+                self._about_dialog.set_toolbox_unavailable(
+                    "正在检查更新，请稍后再安装工具箱")
+            return
+        if self._about_dialog is not None:
+            self._about_dialog.set_toolbox_preparing()
+        cleanup_update_cache()
+        worker = UpdateCheckWorker(__version__, self)
+        worker.release_found.connect(self._on_toolbox_release_found)
+        worker.failed.connect(self._on_toolbox_release_failed)
+        worker.finished.connect(self._clear_update_check_worker)
+        self._update_check_worker = worker
+        worker.start()
+
+    def _on_toolbox_release_found(self, release):
+        dialog = self._about_dialog
+        if dialog is None:
+            return
+        size_mb = release.size / (1024 * 1024)
+        install = ask_yes_no(
+            dialog,
+            "安装安护工具箱",
+            "安装工具箱需要下载完整安装包（约 {:.1f} MB），"
+            "安装期间程序会关闭，完成后自动重新启动。\n"
+            "是否继续？".format(size_mb),
+        )
+        if not install:
+            dialog.set_toolbox_ready("已取消安装安护工具箱")
+            return
+        dialog.accept()
+        QTimer.singleShot(
+            0, lambda: self._start_update_download(
+                release, purpose="toolbox"))
+
+    def _on_toolbox_release_failed(self, _message):
+        if self._about_dialog is not None:
+            self._about_dialog.set_toolbox_unavailable(
+                "获取工具箱安装包失败，请检查网络后重试")
 
     def _manual_check_update(self):
         self._start_update_check(manual=True)
@@ -735,6 +802,14 @@ class MainWindow(QMainWindow):
                 if self._about_dialog is not None:
                     self._about_dialog.set_result(
                         "更新包已下载，请点击顶部提示安装")
+            return
+        if self._downloaded_toolbox is not None:
+            if manual:
+                self.status_bar.showMessage(
+                    "工具箱安装包已下载，请点击顶部提示安装", 4000)
+                if self._about_dialog is not None:
+                    self._about_dialog.set_result(
+                        "工具箱安装包已下载，请点击顶部提示安装")
             return
         if (self._update_check_worker is not None
                 and self._update_check_worker.isRunning()):
@@ -773,15 +848,17 @@ class MainWindow(QMainWindow):
             "发现新版本 V{}".format(release.version))
         self._btn_update_available.show()
         if manual:
-            self.status_bar.showMessage(
-                "发现新版本 V{}，请点击顶部提示查看".format(
-                    release.version),
-                5000,
-            )
+            if self._about_dialog is not None:
+                message = (
+                    "发现新版本 V{}，可直接在关于窗口更新".format(
+                        release.version))
+            else:
+                message = (
+                    "发现新版本 V{}，请点击顶部提示查看".format(
+                        release.version))
+            self.status_bar.showMessage(message, 5000)
         if self._about_dialog is not None:
-            self._about_dialog.set_result(
-                "发现新版本 V{}，请点击顶部提示查看".format(
-                    release.version))
+            self._about_dialog.set_update_available(release)
 
     def _on_update_up_to_date(self, manual=False):
         if (self._pending_update is not None
@@ -806,6 +883,9 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def _prompt_for_update(self):
+        if self._downloaded_toolbox is not None:
+            self._prompt_install_downloaded_toolbox()
+            return
         if self._downloaded_update is not None:
             self._prompt_install_downloaded_update()
             return
@@ -829,14 +909,19 @@ class MainWindow(QMainWindow):
             return
         self._start_update_download(release)
 
-    def _start_update_download(self, release):
-        download = UpdateDownloadDialog(release, self)
+    def _start_update_download(self, release, purpose="update"):
+        download = UpdateDownloadDialog(
+            release, self, purpose=purpose)
         self._update_download_dialog = download
-        self._btn_update_available.setText(
-            "正在下载 V{}".format(release.version))
+        download.download_purpose = purpose
+        if purpose == "toolbox":
+            self._btn_update_available.setText("正在下载工具箱")
+        else:
+            self._btn_update_available.setText(
+                "正在下载 V{}".format(release.version))
         self._btn_update_available.show()
         download.background_requested.connect(
-            lambda: self._on_update_backgrounded(release))
+            lambda: self._on_update_backgrounded(release, purpose))
         download.accepted.connect(
             lambda: self._on_update_download_ready(download))
         download.rejected.connect(
@@ -844,21 +929,33 @@ class MainWindow(QMainWindow):
         download.finished.connect(download.deleteLater)
         download.show()
 
-    def _on_update_backgrounded(self, release):
-        self._btn_update_available.setText(
-            "后台更新 V{}".format(release.version))
+    def _on_update_backgrounded(self, release, purpose="update"):
+        if purpose == "toolbox":
+            self._btn_update_available.setText("后台安装工具箱")
+        else:
+            self._btn_update_available.setText(
+                "后台更新 V{}".format(release.version))
         self._btn_update_available.show()
-        self.status_bar.showMessage(
-            "更新包正在后台下载，可点击顶部提示恢复进度", 5000)
+        if purpose == "toolbox":
+            self.status_bar.showMessage(
+                "工具箱安装包正在后台下载，可点击顶部提示恢复进度", 5000)
+        else:
+            self.status_bar.showMessage(
+                "更新包正在后台下载，可点击顶部提示恢复进度", 5000)
 
     def _on_update_download_ready(self, dialog):
         if dialog is not self._update_download_dialog:
             return
         self._update_download_dialog = None
         if dialog.download_path:
-            self._downloaded_update = (
-                dialog.release, dialog.download_path)
-            self._prompt_install_downloaded_update()
+            if getattr(dialog, "download_purpose", "update") == "toolbox":
+                self._downloaded_toolbox = (
+                    dialog.release, dialog.download_path)
+                self._prompt_install_downloaded_toolbox()
+            else:
+                self._downloaded_update = (
+                    dialog.release, dialog.download_path)
+                self._prompt_install_downloaded_update()
 
     def _prompt_install_downloaded_update(self):
         if self._downloaded_update is None:
@@ -887,14 +984,70 @@ class MainWindow(QMainWindow):
         self._downloaded_update = None
         self._install_downloaded_update(release, installer_path)
 
+    def _prompt_install_downloaded_toolbox(self):
+        if self._downloaded_toolbox is None:
+            return
+        release, installer_path = self._downloaded_toolbox
+        if not os.path.isfile(installer_path):
+            self._downloaded_toolbox = None
+            self._btn_update_available.hide()
+            show_error(
+                self, "工具箱安装包不存在",
+                "已下载的工具箱安装包不存在，请重新安装工具箱。")
+            return
+        install = ask_yes_no(
+            self,
+            "安装安护工具箱",
+            "工具箱安装包已下载完成。\n"
+            "是否立即安装，并在安装完成后自动重新启动？",
+        )
+        if not install:
+            self._btn_update_available.setText(
+                "工具箱已下载，点击安装")
+            self.status_bar.showMessage(
+                "已暂缓安装工具箱，可点击顶部提示继续安装", 5000)
+            return
+        self._downloaded_toolbox = None
+        self._install_downloaded_toolbox(release, installer_path)
+
     def _on_update_download_cancelled(self, dialog):
         if dialog is not self._update_download_dialog:
             return
         self._update_download_dialog = None
+        if getattr(dialog, "download_purpose", "update") == "toolbox":
+            if self._pending_update is not None:
+                self._btn_update_available.setText(
+                    "发现新版本 V{}".format(
+                        self._pending_update.version))
+                self._btn_update_available.show()
+            else:
+                self._btn_update_available.hide()
+            return
         if self._pending_update is not None:
             self._btn_update_available.setText(
                 "发现新版本 V{}".format(self._pending_update.version))
             self._btn_update_available.show()
+
+    def _install_downloaded_toolbox(self, release, installer_path):
+        try:
+            launch_updater(
+                os.path.dirname(os.path.abspath(sys.executable)),
+                os.path.abspath(sys.executable),
+                installer_path,
+                release,
+                merge_tasks="installtoolbox",
+            )
+        except Exception as exc:
+            show_error(
+                self, "安装工具箱失败",
+                "无法启动工具箱安装程序：\n{}".format(exc))
+            self._btn_update_available.setText(
+                "工具箱已下载，点击安装")
+            self._btn_update_available.show()
+            return
+        self._save_current_project()
+        self._save_global()
+        self.close()
 
     def _install_downloaded_update(self, release, installer_path):
         try:

@@ -73,18 +73,24 @@ class UpdateAvailableDialog(QDialog):
 class UpdateDownloadDialog(QDialog):
     background_requested = Signal()
 
-    def __init__(self, release, parent=None):
+    def __init__(self, release, parent=None, purpose="update"):
         super().__init__(parent)
         self.release = release
+        self.purpose = purpose
         self.download_path = None
-        self.setWindowTitle("下载更新")
+        self.setWindowTitle(
+            "安装工具箱" if purpose == "toolbox" else "下载更新")
         self.setMinimumWidth(480)
         root = QVBoxLayout(self)
         root.setContentsMargins(20, 18, 20, 18)
         root.setSpacing(12)
 
-        self.status = QLabel("正在下载 Anhu 百宝箱 {}...".format(
-            release.version))
+        if purpose == "toolbox":
+            self.status = QLabel(
+                "正在下载安护工具箱安装包 V{}...".format(release.version))
+        else:
+            self.status = QLabel("正在下载 Anhu 百宝箱 {}...".format(
+                release.version))
         root.addWidget(self.status)
         self.progress = QProgressBar()
         self.progress.setRange(0, 1000)
