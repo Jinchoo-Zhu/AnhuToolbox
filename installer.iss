@@ -14,7 +14,7 @@
 ;     用户自定义库清单 tools.user.json 始终保留。
 
 #define MyAppName "Anhu百宝箱"
-#define MyAppVersion "1.0.4"
+#define MyAppVersion "1.0.5"
 #define MyAppPublisher "Anhu"
 #define MyAppExeName "Anhu百宝箱.exe"
 

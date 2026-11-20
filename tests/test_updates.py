@@ -14,6 +14,7 @@ from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PySide6.QtCore import QPoint
 from PySide6.QtWidgets import QApplication, QLabel, QPushButton
 
 from anhutoolbox.about_dialog import AboutDialog
@@ -57,6 +58,40 @@ class _DownloadHandler(BaseHTTPRequestHandler):
 
 
 class UpdateTests(unittest.TestCase):
+    def test_header_keeps_about_after_update_notice(self):
+        release = ReleaseInfo(
+            version="1.0.4",
+            installer_url=(
+                "https://mcsgzy.online:8443/anhutoolbox/"
+                "releases/v1.0.4/AnhuToolbox_Setup_1.0.4.exe"
+            ),
+            sha256="d" * 64,
+            size=1024,
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            with mock.patch(
+                    "anhutoolbox.hardware.collect_hardware_info",
+                    return_value={}):
+                window = MainWindow(temp)
+            try:
+                window.resize(1600, 900)
+                window.show()
+                APP.processEvents()
+                about_before = window._btn_about.mapTo(
+                    window, QPoint(0, 0))
+                window._on_update_available(release)
+                APP.processEvents()
+                about_after = window._btn_about.mapTo(
+                    window, QPoint(0, 0))
+                update_pos = window._btn_update_available.mapTo(
+                    window, QPoint(0, 0))
+                self.assertEqual(about_before.x(), about_after.x())
+                self.assertLess(update_pos.x(), about_after.x())
+            finally:
+                window.close()
+                window.deleteLater()
+                APP.processEvents()
+
     def test_about_dialog_contains_version_and_manual_check(self):
         dialog = AboutDialog()
         try:
@@ -255,10 +290,7 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual(release.version, "1.0.1")
         server_release = parse_manifest({
             **payload,
-            "installer_url": (
-                "https://mcsgzy.online:8443/anhutoolbox/"
-                "releases/v1.0.1/AnhuToolbox_Setup_1.0.1.exe"
-            ),
+            "installer_url": payload["installer_url"],
             "installer_urls": [
                 (
                     "https://mcsgzy.online:8443/anhutoolbox/"
@@ -277,6 +309,11 @@ class UpdateTests(unittest.TestCase):
             "releases/v1.0.1/AnhuToolbox_Setup_1.0.1.exe",
         )
         self.assertEqual(len(server_release.download_urls), 2)
+        self.assertEqual(
+            server_release.download_urls[0],
+            "https://mcsgzy.online:8443/anhutoolbox/"
+            "releases/v1.0.1/AnhuToolbox_Setup_1.0.1.exe",
+        )
         with self.assertRaises(ValueError):
             parse_manifest({
                 **payload,
@@ -443,11 +480,13 @@ class UpdateTests(unittest.TestCase):
                 updater.sha256_file(installer), manifest["sha256"])
             self.assertEqual(
                 manifest["installer_url"],
-                "https://mcsgzy.online:8443/anhutoolbox/"
-                f"releases/v{__version__}/"
+                "https://github.com/Jinchoo-Zhu/AnhuToolbox/"
+                f"releases/download/v{__version__}/"
                 f"AnhuToolbox_Setup_{__version__}.exe",
             )
             self.assertEqual(len(manifest["installer_urls"]), 2)
+            self.assertTrue(manifest["installer_urls"][0].startswith(
+                "https://mcsgzy.online:8443/anhutoolbox/releases/"))
             self.assertIn(
                 "https://github.com/Jinchoo-Zhu/AnhuToolbox/",
                 manifest["installer_urls"][1],

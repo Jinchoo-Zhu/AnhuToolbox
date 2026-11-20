@@ -366,8 +366,7 @@ class MainWindow(QMainWindow):
             "background:#EAF4FF;border-color:#0078D4;}"
         )
         self._btn_about.setFixedHeight(24)
-        layout.addWidget(
-            self._btn_about, 0, Qt.AlignmentFlag.AlignVCenter)
+        self._btn_about.setFixedWidth(48)
 
         self._btn_update_available = QPushButton("发现新版本")
         self._btn_update_available.setObjectName("updateAvailableButton")
@@ -389,6 +388,8 @@ class MainWindow(QMainWindow):
         self._btn_update_available.hide()
         layout.addWidget(
             self._btn_update_available, 0, Qt.AlignmentFlag.AlignVCenter)
+        layout.addWidget(
+            self._btn_about, 0, Qt.AlignmentFlag.AlignVCenter)
 
         self._tab_widget.setCornerWidget(
             actions, Qt.Corner.TopRightCorner)

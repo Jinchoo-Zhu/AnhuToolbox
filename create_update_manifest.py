@@ -57,7 +57,9 @@ def build_manifest(root, installer_path, version, notes="", mandatory=False):
     ).format(GITHUB_OWNER, GITHUB_REPO, tag, filename)
     return {
         "version": version,
-        "installer_url": server_url,
+        # 1.0.3 只接受 GitHub Release 地址；保留旧字段供其升级。
+        "installer_url": github_url,
+        # 1.0.4 起优先使用自建服务器，并回退到 GitHub。
         "installer_urls": [server_url, github_url],
         "sha256": _sha256(installer_path),
         "size": installer_path.stat().st_size,

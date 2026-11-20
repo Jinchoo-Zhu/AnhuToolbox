@@ -101,12 +101,15 @@ def parse_manifest(payload, manifest_url=UPDATE_MANIFEST_URL):
         raise ValueError("更新清单必须是 JSON 对象")
     version = str(payload.get("version") or "").strip()
     version_tuple(version)
+    legacy_url = ""
     installer_urls = []
     single_url = payload.get("installer_url")
     if single_url not in (None, ""):
         if not isinstance(single_url, str):
             raise ValueError("installer_url 必须是字符串")
-        installer_urls.append(single_url.strip())
+        legacy_url = single_url.strip()
+        if legacy_url and not _is_trusted_installer_url(legacy_url):
+            raise ValueError("installer_url 不是受信任的发布源")
     multiple_urls = payload.get("installer_urls")
     if multiple_urls is not None:
         if not isinstance(multiple_urls, list) or len(multiple_urls) > 5:
@@ -116,6 +119,8 @@ def parse_manifest(payload, manifest_url=UPDATE_MANIFEST_URL):
                 raise ValueError("installer_urls 只能包含字符串")
             installer_urls.append(url.strip())
     installer_urls = list(dict.fromkeys(url for url in installer_urls if url))
+    if not installer_urls and legacy_url:
+        installer_urls = [legacy_url]
     if not installer_urls:
         raise ValueError("更新清单缺少安装包地址")
     if not all(_is_trusted_installer_url(url) for url in installer_urls):
