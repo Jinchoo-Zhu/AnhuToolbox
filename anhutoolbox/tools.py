@@ -37,8 +37,8 @@ from .panels import _save_rule_label
 from .styles import _find_assets_dir
 from .table_actions import apply_data_table_style
 from .ui_tokens import (
-    CONTROL_HEIGHT, HTTP_TABLE_STYLE, ICON_SIZE, SPACE_LG, SPACE_MD,
-    SPACE_SM, TABLE_ROW_HEIGHT, TOOL_PAGE_STYLE,
+    COLOR_DANGER, CONTROL_HEIGHT, HTTP_TABLE_STYLE, ICON_SIZE, SPACE_LG,
+    SPACE_MD, SPACE_SM, TABLE_ROW_HEIGHT, TOOL_PAGE_STYLE,
 )
 
 
@@ -2677,6 +2677,7 @@ class NetworkTool(QWidget):
         self._capture_file_proc = None
         self._capture_detail_proc = None
         self._capture_interface_proc = None
+        self._capture_interface_recheck_after_failure = False
         self._capture_temp_path = ""
         self._capture_save_path = ""
         self._capture_running = False
@@ -2698,11 +2699,11 @@ class NetworkTool(QWidget):
         self._capture_display_records = 0
         self._capture_display_bytes = 0
         self._capture_waiting_for_npcap = False
-        self._capture_npcap_deadline = 0.0
-        self._capture_npcap_retry_timer = QTimer(self)
-        self._capture_npcap_retry_timer.setSingleShot(True)
-        self._capture_npcap_retry_timer.timeout.connect(
-            self._retry_npcap_detection)
+        self._capture_npcap_installer = None
+        self._capture_npcap_monitor_timer = QTimer(self)
+        self._capture_npcap_monitor_timer.setInterval(250)
+        self._capture_npcap_monitor_timer.timeout.connect(
+            self._monitor_npcap_installer)
         self._build()
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._drain_queue)
@@ -2849,9 +2850,11 @@ class NetworkTool(QWidget):
         self._btn_install_npcap = _secondary_button("安装抓包驱动")
         self._btn_install_npcap.clicked.connect(self._install_npcap)
         self._btn_install_npcap.hide()
-        form.addWidget(
-            self._btn_install_npcap, 3, 2,
-            Qt.AlignmentFlag.AlignRight)
+        self._capture_driver_hint = QLabel("抓包驱动不可用")
+        self._capture_driver_hint.setWordWrap(False)
+        self._capture_driver_hint.setStyleSheet(
+            "color: {}; font-size: 12px;".format(COLOR_DANGER))
+        self._capture_driver_hint.hide()
 
         filter_label = _field_label("抓包过滤(BPF)")
         form.addWidget(filter_label, 1, 0)
@@ -2903,6 +2906,10 @@ class NetworkTool(QWidget):
         self._btn_capture_save.clicked.connect(self._save_capture)
         button_row.addWidget(self._btn_capture_save)
         button_row.addStretch()
+        button_row.addWidget(
+            self._capture_driver_hint, 0,
+            Qt.AlignmentFlag.AlignVCenter)
+        button_row.addWidget(self._btn_install_npcap)
         self._capture_status = _badge("未开始")
         button_row.addWidget(self._capture_status)
         control.body.addLayout(button_row)
@@ -2996,26 +3003,46 @@ class NetworkTool(QWidget):
     def _set_capture_status(self, text, tone="default"):
         self._capture_status.setText(text)
         _set_tone(self._capture_status, tone)
+        self._capture_status.show()
+
+    def _show_capture_driver_hint(self, text):
+        self._capture_driver_hint.setText(text)
+        self._capture_driver_hint.show()
+        self._capture_status.hide()
 
     def _refresh_capture_interfaces(self):
+        self._start_capture_interface_refresh()
+
+    def _recheck_capture_driver_after_failure(self):
+        self._start_capture_interface_refresh(after_capture_failure=True)
+
+    def _start_capture_interface_refresh(
+            self, after_capture_failure=False):
         if (
             self._capture_interface_proc is not None
             and self._capture_interface_proc.state()
             != QProcess.ProcessState.NotRunning
         ):
             return
+        self._capture_interface_recheck_after_failure = bool(
+            after_capture_failure)
         self._capture_interface.clear()
         self._btn_capture_refresh.setEnabled(False)
         self._btn_capture_start.setEnabled(False)
         if not self._capture_waiting_for_npcap:
             self._btn_install_npcap.hide()
+            self._capture_driver_hint.hide()
         if not self._capture_engine_ready():
+            self._capture_interface_recheck_after_failure = False
             self._set_capture_status("抓包引擎缺失", "error")
             show_warning(
                 self, "抓包引擎缺失",
                 "未找到内置的 TShark/Dumpcap 运行文件。")
             return
-        self._set_capture_status("正在检测网卡", "primary")
+        if self._capture_waiting_for_npcap:
+            self._show_capture_driver_hint("正在检测抓包驱动")
+        else:
+            self._set_capture_status("正在检测网卡", "primary")
         process = QProcess(self)
         process.setWorkingDirectory(str(self._capture_engine_dir))
         process.setProcessChannelMode(
@@ -3029,6 +3056,9 @@ class NetworkTool(QWidget):
         process.start(self._capture_program(), ["-D"])
 
     def _on_capture_interfaces_finished(self, process, exit_code):
+        recheck_after_failure = (
+            self._capture_interface_recheck_after_failure)
+        self._capture_interface_recheck_after_failure = False
         stdout = bytes(process.readAllStandardOutput()).decode(
             "utf-8", errors="replace")
         stderr = bytes(process.readAllStandardError()).decode(
@@ -3039,15 +3069,19 @@ class NetworkTool(QWidget):
         interfaces = parse_tshark_interfaces(stdout)
         if exit_code == 0 and interfaces:
             self._capture_waiting_for_npcap = False
-            self._capture_npcap_retry_timer.stop()
+            self._capture_driver_hint.hide()
             for interface in interfaces:
                 self._capture_interface.addItem(
                     "{}  ({})".format(
                         interface["name"], interface["device"]),
                     interface["device"],
                 )
-            self._set_capture_status(
-                "已发现 {} 个网卡".format(len(interfaces)), "success")
+            if recheck_after_failure:
+                self._set_capture_status("抓包异常结束", "error")
+            else:
+                self._set_capture_status(
+                    "已发现 {} 个网卡".format(len(interfaces)),
+                    "success")
             self._btn_capture_refresh.setEnabled(True)
             self._btn_capture_start.setEnabled(True)
             self._btn_install_npcap.setEnabled(True)
@@ -3055,57 +3089,61 @@ class NetworkTool(QWidget):
             self._btn_install_npcap.hide()
             return
         message = stderr.strip() or "未发现可用网卡"
-        self._set_capture_status("抓包驱动不可用", "error")
+        self._show_capture_driver_hint(
+            "抓包驱动已卸载或不可用"
+            if recheck_after_failure else "抓包驱动不可用")
         self._capture_detail.setPlainText(message)
         self._btn_capture_refresh.setEnabled(False)
         self._btn_capture_start.setEnabled(False)
         if npcap_installer_path(self._base_dir) is not None:
             self._btn_install_npcap.show()
-            if self._capture_waiting_for_npcap:
-                self._btn_install_npcap.setEnabled(False)
-                self._btn_install_npcap.setText("等待安装驱动")
-                if time.monotonic() < self._capture_npcap_deadline:
-                    self._capture_npcap_retry_timer.start(2000)
-                else:
-                    self._capture_waiting_for_npcap = False
-                    self._btn_install_npcap.setEnabled(True)
-                    self._btn_install_npcap.setText("安装抓包驱动")
-                    self._set_capture_status(
-                        "Npcap 安装尚未完成，请稍后重试", "error")
+            self._btn_install_npcap.setEnabled(True)
+            self._btn_install_npcap.setText("安装抓包驱动")
 
     def _on_capture_interfaces_error(self, process):
+        recheck_after_failure = (
+            self._capture_interface_recheck_after_failure)
+        self._capture_interface_recheck_after_failure = False
         if self._capture_interface_proc is process:
             self._capture_interface_proc = None
         process.deleteLater()
-        self._set_capture_status("抓包引擎启动失败", "error")
+        if recheck_after_failure:
+            self._show_capture_driver_hint("抓包驱动已卸载或不可用")
+        else:
+            self._set_capture_status("抓包引擎启动失败", "error")
         self._btn_capture_refresh.setEnabled(False)
         self._btn_capture_start.setEnabled(False)
 
     def _install_npcap(self):
-        if not launch_npcap_installer(self._base_dir):
+        installer = launch_npcap_installer(self._base_dir)
+        if installer is None:
             show_error(
                 self, "无法启动安装程序",
                 "未找到 Npcap 安装文件，或以管理员身份启动失败。")
             return
+        self._capture_npcap_installer = installer
         self._capture_waiting_for_npcap = True
-        self._capture_npcap_deadline = time.monotonic() + 300
         self._btn_install_npcap.setEnabled(False)
         self._btn_install_npcap.setText("等待安装驱动")
         self._btn_capture_refresh.setEnabled(False)
         self._btn_capture_start.setEnabled(False)
-        self._set_capture_status(
-            "请完成 Npcap 安装，程序会自动检测驱动", "primary")
-        self._capture_npcap_retry_timer.start(2000)
+        self._show_capture_driver_hint(
+            "请完成驱动安装，完成后自动检测")
+        self._capture_npcap_monitor_timer.start()
 
-    def _retry_npcap_detection(self):
-        if (
-            not self._capture_waiting_for_npcap
-            or time.monotonic() >= self._capture_npcap_deadline
-        ):
-            self._capture_waiting_for_npcap = False
-            self._btn_install_npcap.setEnabled(True)
-            self._btn_install_npcap.setText("安装抓包驱动")
+    def _monitor_npcap_installer(self):
+        installer = self._capture_npcap_installer
+        if installer is None:
+            self._capture_npcap_monitor_timer.stop()
             return
+        if installer.is_running():
+            return
+        self._capture_npcap_monitor_timer.stop()
+        installer.close()
+        self._capture_npcap_installer = None
+        self._capture_waiting_for_npcap = False
+        self._btn_install_npcap.setEnabled(True)
+        self._btn_install_npcap.setText("安装抓包驱动")
         self._refresh_capture_interfaces()
 
     def _start_capture(self):
@@ -3258,6 +3296,7 @@ class NetworkTool(QWidget):
         self._capture_detail.setPlainText(
             "抓包文件写入失败：\n" + (error or "Dumpcap 已停止"))
         self._set_capture_status("抓包文件写入失败", "error")
+        self._recheck_capture_driver_after_failure()
 
     def _on_capture_process_error(self, process):
         if self._capture_proc is process:
@@ -3610,6 +3649,7 @@ class NetworkTool(QWidget):
             "已停止  {} 包".format(self._capture_count), "success")
 
     def _on_capture_finished(self, process, exit_code):
+        user_stopped = self._capture_stopping
         if self._capture_proc is process:
             self._capture_proc = None
         file_process = self._capture_file_proc
@@ -3632,14 +3672,15 @@ class NetworkTool(QWidget):
         self._btn_capture_clear.setEnabled(True)
         self._btn_capture_refresh.setEnabled(True)
         self._chk_capture_save.setEnabled(True)
-        if self._capture_stopping or exit_code == 0:
+        if user_stopped:
             self._set_capture_status(
                 "已停止  {} 包".format(self._capture_count), "success")
         else:
             error = self._capture_stderr_buffer.strip()
-            self._set_capture_status("抓包失败", "error")
+            self._set_capture_status("抓包异常结束", "error")
             if error:
                 self._capture_detail.setPlainText(error[-20000:])
+            self._recheck_capture_driver_after_failure()
         process.deleteLater()
 
     # ---------- 端口扫描 ----------
@@ -4009,7 +4050,10 @@ class NetworkTool(QWidget):
         """停止持续任务、抓包进程和扫描任务。"""
         self._stop_ping()
         if self._include_capture:
-            self._capture_npcap_retry_timer.stop()
+            self._capture_npcap_monitor_timer.stop()
+            if self._capture_npcap_installer is not None:
+                self._capture_npcap_installer.close()
+                self._capture_npcap_installer = None
             self._capture_detail_timeout_timer.stop()
             self._stop_capture()
             for process in (

@@ -145,18 +145,75 @@ def npcap_installer_path(base_dir=None):
     return installers[0] if installers else None
 
 
+class _ShellExecuteInfo(ctypes.Structure):
+    _fields_ = [
+        ("cbSize", ctypes.c_ulong),
+        ("fMask", ctypes.c_ulong),
+        ("hwnd", ctypes.c_void_p),
+        ("lpVerb", ctypes.c_wchar_p),
+        ("lpFile", ctypes.c_wchar_p),
+        ("lpParameters", ctypes.c_wchar_p),
+        ("lpDirectory", ctypes.c_wchar_p),
+        ("nShow", ctypes.c_int),
+        ("hInstApp", ctypes.c_void_p),
+        ("lpIDList", ctypes.c_void_p),
+        ("lpClass", ctypes.c_wchar_p),
+        ("hkeyClass", ctypes.c_void_p),
+        ("dwHotKey", ctypes.c_ulong),
+        ("hIcon", ctypes.c_void_p),
+        ("hProcess", ctypes.c_void_p),
+    ]
+
+
+class NpcapInstallerSession:
+    """Track an elevated Npcap installer process until it exits."""
+
+    def __init__(self, handle):
+        self._handle = handle
+
+    def is_running(self):
+        if not self._handle or os.name != "nt":
+            return False
+        kernel32 = ctypes.windll.kernel32
+        kernel32.WaitForSingleObject.argtypes = [
+            ctypes.c_void_p, ctypes.c_ulong]
+        kernel32.WaitForSingleObject.restype = ctypes.c_ulong
+        result = kernel32.WaitForSingleObject(self._handle, 0)
+        return int(result) == 0x00000102
+
+    def close(self):
+        if not self._handle:
+            return
+        handle = self._handle
+        self._handle = None
+        if os.name == "nt":
+            kernel32 = ctypes.windll.kernel32
+            kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+            kernel32.CloseHandle(handle)
+
+    def __del__(self):
+        try:
+            self.close()
+        except Exception:
+            pass
+
+
 def launch_npcap_installer(base_dir=None):
     installer = npcap_installer_path(base_dir)
     if installer is None or not installer.is_file():
-        return False
+        return None
     if os.name != "nt":
-        return False
-    result = ctypes.windll.shell32.ShellExecuteW(
-        None,
-        "runas",
-        str(installer),
-        None,
-        str(installer.parent),
-        1,
-    )
-    return int(result) > 32
+        return None
+    shell32 = ctypes.windll.shell32
+    shell32.ShellExecuteExW.argtypes = [ctypes.POINTER(_ShellExecuteInfo)]
+    shell32.ShellExecuteExW.restype = ctypes.c_bool
+    info = _ShellExecuteInfo()
+    info.cbSize = ctypes.sizeof(info)
+    info.fMask = 0x00000040  # SEE_MASK_NOCLOSEPROCESS
+    info.lpVerb = "runas"
+    info.lpFile = str(installer)
+    info.lpDirectory = str(installer.parent)
+    info.nShow = 1  # SW_SHOWNORMAL
+    if not shell32.ShellExecuteExW(ctypes.byref(info)) or not info.hProcess:
+        return None
+    return NpcapInstallerSession(info.hProcess)

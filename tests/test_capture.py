@@ -304,6 +304,183 @@ class CaptureTests(unittest.TestCase):
             self.assertFalse(tool._btn_capture_refresh.isEnabled())
             self.assertFalse(tool._btn_capture_start.isEnabled())
             self.assertFalse(tool._btn_install_npcap.isHidden())
+            self.assertFalse(tool._capture_driver_hint.isHidden())
+            self.assertEqual(
+                tool._capture_driver_hint.text(), "抓包驱动不可用")
+            self.assertTrue(tool._capture_status.isHidden())
+
+            capture.resize(1100, 720)
+            capture.show()
+            APP.processEvents()
+            hint_geometry = tool._capture_driver_hint.geometry()
+            button_geometry = tool._btn_install_npcap.geometry()
+            start_geometry = tool._btn_capture_start.geometry()
+            self.assertLessEqual(
+                hint_geometry.center().y(), button_geometry.center().y() + 1)
+            self.assertGreaterEqual(
+                hint_geometry.center().y(), button_geometry.center().y() - 1)
+            self.assertLessEqual(
+                hint_geometry.right(), button_geometry.left())
+            self.assertLessEqual(
+                button_geometry.center().y(), start_geometry.center().y() + 1)
+            self.assertGreaterEqual(
+                button_geometry.center().y(), start_geometry.center().y() - 1)
+        finally:
+            capture.stop_tasks()
+            capture.deleteLater()
+            APP.processEvents()
+
+    def test_capture_driver_success_hides_install_controls(self):
+        capture = PacketCaptureTool()
+        tool = capture._capture_tool
+        process = mock.MagicMock()
+        process.readAllStandardOutput.return_value = (
+            b"1. \\Device\\NPF_TEST (Ethernet)\n")
+        process.readAllStandardError.return_value = b""
+        tool._capture_interface_proc = process
+        tool._capture_waiting_for_npcap = True
+        tool._btn_install_npcap.show()
+        tool._show_capture_driver_hint("抓包驱动不可用")
+        try:
+            tool._on_capture_interfaces_finished(process, 0)
+            self.assertFalse(tool._capture_waiting_for_npcap)
+            self.assertTrue(tool._btn_install_npcap.isHidden())
+            self.assertTrue(tool._capture_driver_hint.isHidden())
+            self.assertFalse(tool._capture_status.isHidden())
+            self.assertEqual(tool._capture_interface.count(), 1)
+        finally:
+            capture.stop_tasks()
+            capture.deleteLater()
+            APP.processEvents()
+
+    def test_cancelled_npcap_installer_restores_button(self):
+        capture = PacketCaptureTool()
+        tool = capture._capture_tool
+
+        class FakeInstaller:
+            running = True
+            closed = False
+
+            def is_running(self):
+                return self.running
+
+            def close(self):
+                self.closed = True
+
+        installer = FakeInstaller()
+        try:
+            with mock.patch(
+                    "anhutoolbox.tools.launch_npcap_installer",
+                    return_value=installer):
+                tool._install_npcap()
+            self.assertTrue(tool._capture_waiting_for_npcap)
+            self.assertFalse(tool._btn_install_npcap.isEnabled())
+            self.assertEqual(
+                tool._btn_install_npcap.text(), "等待安装驱动")
+
+            installer.running = False
+            with mock.patch.object(
+                    tool, "_refresh_capture_interfaces") as refresh:
+                tool._monitor_npcap_installer()
+            self.assertTrue(installer.closed)
+            self.assertFalse(tool._capture_waiting_for_npcap)
+            self.assertTrue(tool._btn_install_npcap.isEnabled())
+            self.assertEqual(
+                tool._btn_install_npcap.text(), "安装抓包驱动")
+            refresh.assert_called_once_with()
+        finally:
+            capture.stop_tasks()
+            capture.deleteLater()
+            APP.processEvents()
+
+    def test_unexpected_capture_exit_rechecks_driver(self):
+        capture = PacketCaptureTool()
+        tool = capture._capture_tool
+        process = mock.MagicMock()
+        process.readAllStandardOutput.return_value = b""
+        process.readAllStandardError.return_value = b""
+        tool._capture_proc = process
+        tool._capture_running = True
+        tool._capture_stopping = False
+        tool._capture_stdout_buffer = ""
+        tool._capture_stderr_buffer = (
+            "tshark: The NPF driver isn't running.")
+        try:
+            with mock.patch.object(
+                    tool,
+                    "_recheck_capture_driver_after_failure",
+                    ) as recheck:
+                tool._on_capture_finished(process, 1)
+            recheck.assert_called_once_with()
+            self.assertEqual(tool._capture_status.text(), "抓包异常结束")
+            self.assertIn(
+                "NPF driver", tool._capture_detail.toPlainText())
+        finally:
+            capture.stop_tasks()
+            capture.deleteLater()
+            APP.processEvents()
+
+    def test_driver_recheck_reports_uninstalled_driver(self):
+        capture = PacketCaptureTool()
+        tool = capture._capture_tool
+        process = mock.MagicMock()
+        process.readAllStandardOutput.return_value = b""
+        process.readAllStandardError.return_value = (
+            b"tshark: The NPF driver isn't running.")
+        tool._capture_interface_proc = process
+        tool._capture_interface_recheck_after_failure = True
+        try:
+            tool._on_capture_interfaces_finished(process, 1)
+            self.assertEqual(
+                tool._capture_driver_hint.text(),
+                "抓包驱动已卸载或不可用")
+            self.assertFalse(tool._btn_capture_start.isEnabled())
+            self.assertFalse(tool._btn_capture_refresh.isEnabled())
+            self.assertFalse(tool._btn_install_npcap.isHidden())
+        finally:
+            capture.stop_tasks()
+            capture.deleteLater()
+            APP.processEvents()
+
+    def test_driver_recheck_keeps_abnormal_exit_status_when_ready(self):
+        capture = PacketCaptureTool()
+        tool = capture._capture_tool
+        process = mock.MagicMock()
+        process.readAllStandardOutput.return_value = (
+            b"1. \\Device\\NPF_TEST (Ethernet)\n")
+        process.readAllStandardError.return_value = b""
+        tool._capture_interface_proc = process
+        tool._capture_interface_recheck_after_failure = True
+        try:
+            tool._on_capture_interfaces_finished(process, 0)
+            self.assertEqual(tool._capture_status.text(), "抓包异常结束")
+            self.assertTrue(tool._btn_capture_start.isEnabled())
+            self.assertTrue(tool._btn_capture_refresh.isEnabled())
+        finally:
+            capture.stop_tasks()
+            capture.deleteLater()
+            APP.processEvents()
+
+    def test_capture_file_failure_rechecks_driver(self):
+        capture = PacketCaptureTool()
+        tool = capture._capture_tool
+        tool._capture_running = True
+        tool._capture_file_stderr_buffer = (
+            "dumpcap: The NPF driver isn't running.")
+        try:
+            with (
+                mock.patch.object(tool, "_stop_capture") as stop_capture,
+                mock.patch.object(
+                    tool, "_recheck_capture_driver_after_failure"
+                    ) as recheck,
+            ):
+                tool._on_capture_file_failed()
+            stop_capture.assert_called_once_with()
+            recheck.assert_called_once_with()
+            self.assertEqual(
+                tool._capture_status.text(), "抓包文件写入失败")
+            self.assertIn(
+                "NPF driver", tool._capture_detail.toPlainText())
         finally:
             capture.stop_tasks()
             capture.deleteLater()
