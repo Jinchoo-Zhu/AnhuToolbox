@@ -14,7 +14,7 @@
 ;     用户自定义库清单 tools.user.json 始终保留。
 
 #define MyAppName "Anhu百宝箱"
-#define MyAppVersion "1.0.6"
+#define MyAppVersion "1.0.7"
 #define MyAppPublisher "Anhu"
 #define MyAppExeName "Anhu百宝箱.exe"
 
@@ -81,6 +81,51 @@ begin
   DelTree(AddBackslash(ToolsDir) + '海康工具', True, True, True);
 end;
 
+function IsNpcapInstalled(): Boolean;
+begin
+  Result :=
+    RegKeyExists(HKLM, 'SOFTWARE\Npcap') or
+    RegKeyExists(HKLM, 'SOFTWARE\WOW6432Node\Npcap') or
+    RegKeyExists(HKCU, 'SOFTWARE\Npcap');
+end;
+
+procedure InstallNpcapIfNeeded();
+var
+  Installer: String;
+  ResultCode: Integer;
+begin
+  // 自动更新必须保持静默；缺少驱动时由抓包页面提示用户安装。
+  if WizardSilent() or IsNpcapInstalled() then
+    exit;
+
+  Installer := ExpandConstant(
+    '{app}\lib\capture\npcap\npcap-1.89.exe');
+  if not FileExists(Installer) then
+    exit;
+
+  if MsgBox(
+      '抓包功能需要安装 Npcap 网络驱动。' + #13#10#13#10 +
+      '是否现在安装 Npcap？' + #13#10 +
+      '安装完成后，主安装程序会继续完成。',
+      mbConfirmation, MB_YESNO) <> IDYES then
+    exit;
+
+  WizardForm.StatusLabel.Caption := '正在等待 Npcap 安装完成...';
+  if not ShellExec(
+      'runas', Installer, '', '', SW_SHOWNORMAL,
+      ewWaitUntilTerminated, ResultCode) then
+  begin
+    MsgBox('无法启动 Npcap 安装程序，请稍后从抓包页面重试。',
+      mbError, MB_OK);
+    exit;
+  end;
+
+  if ResultCode <> 0 then
+    MsgBox(
+      'Npcap 安装未完成。百宝箱仍可安装，但抓包功能需要 Npcap。',
+      mbInformation, MB_OK);
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   StateFile: String;
@@ -98,6 +143,8 @@ begin
       RemoveOfficialToolboxFiles();
       SaveStringToFile(StateFile, '0', False);
     end;
+
+    InstallNpcapIfNeeded();
   end;
 end;
 

@@ -34,7 +34,8 @@ from anhutoolbox.secrets_guard import contains_sensitive_values
 from anhutoolbox.process_metrics import ProcessMetrics, ProcessUsage
 from anhutoolbox.tools import (
     AmountTool, BaseTool, ChecksumTool, DiffTool, EncodeTool, HardwareInfoPage,
-    JsonTool, NetworkTool, QRTool, RegexTool, SortTool, TimestampTool,
+    JsonTool, NetworkTool, PacketCaptureTool, QRTool, RegexTool, SortTool,
+    TimestampTool,
 )
 from anhutoolbox.workers import (
     SerialReadWorker, TCPClientWorker, TCPServerWorker,
@@ -260,7 +261,7 @@ class ToolTests(unittest.TestCase):
         page_classes = (
             HardwareInfoPage, TimestampTool, BaseTool, EncodeTool,
             ChecksumTool, AmountTool, JsonTool, RegexTool, DiffTool,
-            SortTool, QRTool, NetworkTool,
+            SortTool, QRTool, NetworkTool, PacketCaptureTool,
         )
         for page_class in page_classes:
             page = page_class()

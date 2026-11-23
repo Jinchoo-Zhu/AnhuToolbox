@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """AnhuToolbox 实用工具集: 时间戳转换 / 二维码生成 / JSON美化 / 进制转换"""
 
-import io, os, json, re, zipfile, time
+import io, os, json, re, shutil, tempfile, zipfile, time
+from collections import OrderedDict
 from datetime import datetime
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from PySide6.QtWidgets import (
@@ -11,10 +12,12 @@ from PySide6.QtWidgets import (
     QGridLayout, QFileDialog, QApplication,
     QGraphicsOpacityEffect,
     QFrame, QStackedWidget, QButtonGroup, QSplitter, QTabWidget,
-    QSizePolicy,
+    QSizePolicy, QTableView, QHeaderView, QAbstractItemView, QCheckBox,
+    QScrollBar,
 )
 from PySide6.QtCore import (
     Qt, QTimer, QRect, QSize, QPropertyAnimation, QAbstractAnimation, Signal,
+    QProcess, QAbstractTableModel, QModelIndex,
 )
 from PySide6.QtGui import (
     QColor, QFont, QIcon, QImage, QKeySequence, QPixmap, QShortcut,
@@ -23,11 +26,19 @@ from PySide6.QtGui import (
 
 from . import hardware
 from . import toolbox
+from .capture import (
+    build_dumpcap_capture_args, build_tshark_capture_args,
+    capture_resource_dirs, launch_npcap_installer, npcap_installer_path,
+    parse_packet_fields, parse_tshark_interfaces,
+)
 from .dialogs import show_error, show_information, show_success, show_warning
+from .log_writer import AUTO_CLEAR_BYTES, AUTO_CLEAR_RECORDS
+from .panels import _save_rule_label
 from .styles import _find_assets_dir
+from .table_actions import apply_data_table_style
 from .ui_tokens import (
-    CONTROL_HEIGHT, ICON_SIZE, SPACE_LG, SPACE_MD, SPACE_SM,
-    TOOL_PAGE_STYLE,
+    CONTROL_HEIGHT, HTTP_TABLE_STYLE, ICON_SIZE, SPACE_LG, SPACE_MD,
+    SPACE_SM, TABLE_ROW_HEIGHT, TOOL_PAGE_STYLE,
 )
 
 
@@ -2170,7 +2181,10 @@ class ChecksumTool(QWidget):
 class SystemInfoTool(QWidget):
     """工具箱页 -- 左侧分类导航(硬件信息 + 外置工具) + 右侧内嵌内容, 无弹窗"""
 
-    def __init__(self, base_dir=None):
+    def __init__(
+            self, base_dir=None, include_capture=False,
+            page_title="网络检测",
+            page_subtitle="检查主机连通性、开放端口和局域网内存活设备。"):
         super().__init__()
         self._base_dir = base_dir
         self._tools = []
@@ -2493,16 +2507,152 @@ class HardwareInfoPage(QWidget):
 # ============================================================
 #  Ping + 端口扫描工具
 # ============================================================
-class NetworkTool(QWidget):
-    """Ping / 端口扫描 / 网段扫描工具 (后台线程 + 队列, 不阻塞 UI)"""
+_INVALID_MODEL_INDEX = QModelIndex()
 
+
+class CaptureTableModel(QAbstractTableModel):
+    """Compact packet-summary model for high-rate capture display."""
+
+    HEADERS = ["序号", "时间", "源地址", "目标地址", "协议", "长度", "信息"]
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._packets = []
+
+    def rowCount(self, parent=_INVALID_MODEL_INDEX):
+        return 0 if parent.isValid() else len(self._packets)
+
+    def columnCount(self, parent=_INVALID_MODEL_INDEX):
+        return 0 if parent.isValid() else len(self.HEADERS)
+
+    def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):
+        if (
+            role == Qt.ItemDataRole.DisplayRole
+            and orientation == Qt.Orientation.Horizontal
+            and 0 <= section < len(self.HEADERS)
+        ):
+            return self.HEADERS[section]
+        return None
+
+    def data(self, index, role=Qt.ItemDataRole.DisplayRole):
+        if not index.isValid() or not 0 <= index.row() < len(self._packets):
+            return None
+        packet = self._packets[index.row()]
+        values = (
+            str(packet["number"]),
+            "{:.6f}".format(packet["time"]),
+            packet["source"],
+            packet["destination"],
+            packet["protocol"],
+            str(packet["length"]),
+            packet["info"],
+        )
+        if role == Qt.ItemDataRole.DisplayRole:
+            return values[index.column()]
+        if role == Qt.ItemDataRole.ToolTipRole and index.column() == 6:
+            return values[index.column()]
+        if role == Qt.ItemDataRole.TextAlignmentRole:
+            if index.column() in (0, 5):
+                return int(
+                    Qt.AlignmentFlag.AlignCenter)
+            if index.column() == 1:
+                return int(
+                    Qt.AlignmentFlag.AlignRight
+                    | Qt.AlignmentFlag.AlignVCenter)
+            return int(
+                Qt.AlignmentFlag.AlignLeft
+                | Qt.AlignmentFlag.AlignVCenter)
+        return None
+
+    def append_packets(self, packets):
+        if not packets:
+            return
+        first = len(self._packets)
+        self.beginInsertRows(
+            QModelIndex(), first, first + len(packets) - 1)
+        self._packets.extend(packets)
+        self.endInsertRows()
+
+    def clear(self):
+        if not self._packets:
+            return
+        self.beginResetModel()
+        self._packets.clear()
+        self.endResetModel()
+
+    def packet_at(self, row):
+        if 0 <= row < len(self._packets):
+            return self._packets[row]
+        return None
+
+
+class CapturePacketView(QWidget):
+    """Packet table with a vertical scrollbar aligned below the header."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        self.table = QTableView()
+        self.table.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        header = self.table.horizontalHeader()
+        header.setFixedHeight(TABLE_ROW_HEIGHT)
+        layout.addWidget(self.table, 1)
+
+        scroll_host = QWidget()
+        scroll_layout = QVBoxLayout(scroll_host)
+        scroll_layout.setContentsMargins(0, 0, 0, 0)
+        scroll_layout.setSpacing(0)
+        scroll_layout.addSpacing(TABLE_ROW_HEIGHT)
+        self.scrollbar = QScrollBar(Qt.Orientation.Vertical)
+        self.scrollbar.setFixedWidth(8)
+        self.scrollbar.setStyleSheet(
+            "QScrollBar:vertical{background:#F3F4F6;width:8px;"
+            "margin:0;border:none;border-radius:4px;}"
+            "QScrollBar::handle:vertical{background:#C7CBD1;"
+            "min-height:30px;border-radius:4px;}"
+            "QScrollBar::handle:vertical:hover{background:#AEB4BC;}"
+            "QScrollBar::add-line:vertical,"
+            "QScrollBar::sub-line:vertical{height:0;border:none;"
+            "background:transparent;}"
+            "QScrollBar::add-page:vertical,"
+            "QScrollBar::sub-page:vertical{background:transparent;}"
+        )
+        self.scrollbar.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        scroll_layout.addWidget(self.scrollbar, 1)
+        layout.addWidget(scroll_host)
+
+        internal = self.table.verticalScrollBar()
+        internal.rangeChanged.connect(self._sync_range)
+        internal.valueChanged.connect(self.scrollbar.setValue)
+        self.scrollbar.valueChanged.connect(internal.setValue)
+        self.scrollbar.hide()
+
+    def _sync_range(self, minimum, maximum):
+        internal = self.table.verticalScrollBar()
+        self.scrollbar.setRange(minimum, maximum)
+        self.scrollbar.setPageStep(internal.pageStep())
+        self.scrollbar.setSingleStep(internal.singleStep())
+        self.scrollbar.setVisible(maximum > minimum)
+
+
+class NetworkTool(QWidget):
+    """Ping / 抓包 / 端口扫描 / 网段扫描工具。"""
+
+    MAX_PAUSED_PACKET_BYTES = 16 * 1024 * 1024
     COMMON_PORTS = [
         21, 22, 23, 25, 53, 80, 110, 135, 139, 143, 443, 445,
         993, 995, 1433, 1521, 3306, 3389, 5432, 5900, 6379,
         8000, 8080, 8443, 8888, 9000, 9200, 27017
     ]
 
-    def __init__(self):
+    def __init__(
+            self, base_dir=None, include_capture=False,
+            page_title="网络检测",
+            page_subtitle="检查主机连通性、开放端口和局域网内存活设备。"):
         super().__init__()
         import queue as _queue
         import threading
@@ -2516,6 +2666,43 @@ class NetworkTool(QWidget):
         self._scan_cancel = threading.Event()
         self._executor = None
         self._ping_proc = None
+        self._base_dir = base_dir or os.path.dirname(
+            os.path.dirname(os.path.abspath(__file__)))
+        self._include_capture = bool(include_capture)
+        self._page_title = str(page_title)
+        self._page_subtitle = str(page_subtitle)
+        self._capture_engine_dir, self._capture_npcap_dir = (
+            capture_resource_dirs(self._base_dir))
+        self._capture_proc = None
+        self._capture_file_proc = None
+        self._capture_detail_proc = None
+        self._capture_interface_proc = None
+        self._capture_temp_path = ""
+        self._capture_save_path = ""
+        self._capture_running = False
+        self._capture_stopping = False
+        self._capture_paused = False
+        self._capture_buffer = []
+        self._capture_paused_packets = []
+        self._capture_paused_bytes = 0
+        self._capture_selected_frame = None
+        self._capture_detail_cache = OrderedDict()
+        self._capture_detail_timed_out_frame = None
+        self._capture_detail_timeout_timer = QTimer(self)
+        self._capture_detail_timeout_timer.setSingleShot(True)
+        self._capture_detail_timeout_timer.timeout.connect(
+            self._on_capture_detail_timeout)
+        self._capture_count = 0
+        self._capture_bytes = 0
+        self._capture_dropped = 0
+        self._capture_display_records = 0
+        self._capture_display_bytes = 0
+        self._capture_waiting_for_npcap = False
+        self._capture_npcap_deadline = 0.0
+        self._capture_npcap_retry_timer = QTimer(self)
+        self._capture_npcap_retry_timer.setSingleShot(True)
+        self._capture_npcap_retry_timer.timeout.connect(
+            self._retry_npcap_detection)
         self._build()
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._drain_queue)
@@ -2524,16 +2711,22 @@ class NetworkTool(QWidget):
     def _build(self):
         body = _tool_page(
             self,
-            "网络检测",
-            "检查主机连通性、开放端口和局域网内存活设备。",
+            self._page_title,
+            self._page_subtitle,
         )
 
         self._network_tabs = QTabWidget()
         self._network_tabs.setObjectName("toolTabs")
         self._network_tabs.setDocumentMode(True)
         self._network_tabs.addTab(self._build_ping_page(), "Ping")
+        if self._include_capture:
+            self._network_tabs.addTab(
+                self._build_capture_page(), "抓包分析")
         self._network_tabs.addTab(self._build_port_page(), "端口扫描")
         self._network_tabs.addTab(self._build_lan_page(), "网段扫描")
+        if self._include_capture:
+            self._network_tabs.currentChanged.connect(
+                self._on_network_tab_changed)
         body.addWidget(self._network_tabs, stretch=1)
 
     # ---------- Ping ----------
@@ -2628,6 +2821,826 @@ class NetworkTool(QWidget):
         self._btn_ping.setText("Ping")
         if proc is not None:
             self._ping_output.appendPlainText(">>> 已停止")
+
+    # ---------- 抓包 ----------
+    def _build_capture_page(self):
+        w = QWidget()
+        w.setObjectName("toolTabPage")
+        lo = QVBoxLayout(w)
+        lo.setContentsMargins(SPACE_MD, SPACE_MD, SPACE_MD, SPACE_MD)
+        lo.setSpacing(SPACE_MD)
+
+        control = ToolCard(
+            "抓包参数", "选择网卡并设置 BPF 抓包过滤器")
+        form = QGridLayout()
+        form.setHorizontalSpacing(SPACE_SM)
+        form.setVerticalSpacing(SPACE_SM)
+        form.setColumnStretch(1, 1)
+
+        interface_label = _field_label("网卡")
+        form.addWidget(interface_label, 0, 0)
+        self._capture_interface = QComboBox()
+        self._capture_interface.setMinimumWidth(320)
+        form.addWidget(self._capture_interface, 0, 1)
+        self._btn_capture_refresh = _secondary_button("刷新网卡")
+        self._btn_capture_refresh.clicked.connect(
+            self._refresh_capture_interfaces)
+        form.addWidget(self._btn_capture_refresh, 0, 2)
+        self._btn_install_npcap = _secondary_button("安装抓包驱动")
+        self._btn_install_npcap.clicked.connect(self._install_npcap)
+        self._btn_install_npcap.hide()
+        form.addWidget(
+            self._btn_install_npcap, 3, 2,
+            Qt.AlignmentFlag.AlignRight)
+
+        filter_label = _field_label("抓包过滤(BPF)")
+        form.addWidget(filter_label, 1, 0)
+        self._capture_filter = QLineEdit()
+        self._capture_filter.setPlaceholderText(
+            "可留空，例如 host 192.168.2.188 and tcp port 9090")
+        self._capture_filter.setToolTip(
+            "BPF 抓包过滤器，决定哪些数据包写入 pcapng 文件")
+        self._capture_filter.returnPressed.connect(self._start_capture)
+        form.addWidget(self._capture_filter, 1, 1, 1, 2)
+
+        display_label = _field_label("显示过滤")
+        form.addWidget(display_label, 2, 0)
+        self._capture_display_filter = QLineEdit()
+        self._capture_display_filter.setPlaceholderText(
+            "可留空，例如 ip.addr == 192.168.2.188 && tcp.port == 9090")
+        self._capture_display_filter.setToolTip(
+            "Wireshark 显示过滤器，只影响页面中显示的数据包")
+        self._capture_display_filter.returnPressed.connect(
+            self._start_capture)
+        form.addWidget(self._capture_display_filter, 2, 1, 1, 2)
+        control.body.addLayout(form)
+
+        button_row = QHBoxLayout()
+        button_row.setSpacing(SPACE_SM)
+        self._btn_capture_start = _primary_button("开始抓包")
+        self._btn_capture_start.setFixedWidth(112)
+        self._btn_capture_start.clicked.connect(self._start_capture)
+        button_row.addWidget(self._btn_capture_start)
+        self._btn_capture_stop = _secondary_button("停止")
+        self._btn_capture_stop.setFixedWidth(88)
+        self._btn_capture_stop.setEnabled(False)
+        self._btn_capture_stop.clicked.connect(self._stop_capture)
+        button_row.addWidget(self._btn_capture_stop)
+        self._chk_capture_pause = QCheckBox("页面暂停")
+        self._chk_capture_pause.toggled.connect(
+            self._on_capture_pause)
+        button_row.addWidget(self._chk_capture_pause)
+        self._chk_capture_save = QCheckBox("保存到文件")
+        self._chk_capture_save.toggled.connect(
+            self._on_capture_save_toggle)
+        button_row.addWidget(self._chk_capture_save)
+        self._lbl_capture_save_rule = _save_rule_label()
+        self._btn_capture_clear = _secondary_button("清空列表")
+        self._btn_capture_clear.clicked.connect(self._clear_capture)
+        button_row.addWidget(self._btn_capture_clear)
+        self._btn_capture_save = _secondary_button(
+            "保存 pcapng", "http_save.svg")
+        self._btn_capture_save.clicked.connect(self._save_capture)
+        button_row.addWidget(self._btn_capture_save)
+        button_row.addStretch()
+        self._capture_status = _badge("未开始")
+        button_row.addWidget(self._capture_status)
+        control.body.addLayout(button_row)
+        control.body.addWidget(self._lbl_capture_save_rule)
+        lo.addWidget(control)
+
+        self._capture_model = CaptureTableModel(self)
+        self._capture_view = CapturePacketView()
+        self._capture_table = self._capture_view.table
+        self._capture_table.setModel(self._capture_model)
+        apply_data_table_style(self._capture_table)
+        self._capture_table.setStyleSheet(
+            HTTP_TABLE_STYLE.replace("QTableWidget", "QTableView"))
+        self._capture_table.setWordWrap(False)
+        self._capture_table.setEditTriggers(
+            QAbstractItemView.EditTrigger.NoEditTriggers)
+        self._capture_table.setSelectionBehavior(
+            QAbstractItemView.SelectionBehavior.SelectRows)
+        self._capture_table.setSelectionMode(
+            QAbstractItemView.SelectionMode.SingleSelection)
+        self._capture_table.setAlternatingRowColors(False)
+        header = self._capture_table.horizontalHeader()
+        header.setMinimumHeight(TABLE_ROW_HEIGHT)
+        self._capture_table.verticalHeader().setDefaultSectionSize(
+            TABLE_ROW_HEIGHT)
+        self._capture_table.verticalHeader().setMinimumSectionSize(
+            TABLE_ROW_HEIGHT)
+        header.setStretchLastSection(True)
+        for column in (1, 4, 5):
+            header.setSectionResizeMode(
+                column, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        self._capture_table.setColumnWidth(0, 60)
+        for column in (2, 3):
+            self._capture_table.setColumnWidth(column, 170)
+        self._capture_table.selectionModel().selectionChanged.connect(
+            self._on_capture_selection_changed)
+        table_card = ToolCard(
+            "数据包", "点击数据包查看协议详情和十六进制内容")
+        self._btn_capture_detail_toggle = _secondary_button("展开详情")
+        self._btn_capture_detail_toggle.setCheckable(True)
+        self._btn_capture_detail_toggle.setFixedHeight(28)
+        self._btn_capture_detail_toggle.toggled.connect(
+            self._set_capture_detail_visible)
+        table_card.add_header_widget(self._btn_capture_detail_toggle)
+        table_card.body.addWidget(self._capture_view, 1)
+
+        self._capture_detail = QPlainTextEdit()
+        _code_editor(self._capture_detail, readonly=True)
+        self._capture_detail.setPlaceholderText(
+            "选择数据包后显示协议详情")
+        detail_card = ToolCard("数据包详情")
+        self._capture_detail_card = detail_card
+        detail_card.body.addWidget(self._capture_detail, 1)
+
+        splitter = QSplitter(Qt.Vertical)
+        splitter.setChildrenCollapsible(False)
+        splitter.setHandleWidth(7)
+        splitter.addWidget(table_card)
+        splitter.addWidget(detail_card)
+        splitter.setSizes([520, 260])
+        lo.addWidget(splitter, 1)
+        self._capture_splitter = splitter
+        self._set_capture_detail_visible(False)
+        return w
+
+    def _set_capture_detail_visible(self, visible):
+        visible = bool(visible)
+        self._capture_detail_card.setVisible(visible)
+        self._btn_capture_detail_toggle.blockSignals(True)
+        self._btn_capture_detail_toggle.setChecked(visible)
+        self._btn_capture_detail_toggle.blockSignals(False)
+        self._btn_capture_detail_toggle.setText(
+            "收起详情" if visible else "展开详情")
+        if visible:
+            self._capture_splitter.setSizes([520, 260])
+
+    def _on_network_tab_changed(self, index):
+        if index == 1 and self._capture_interface.count() == 0:
+            self._refresh_capture_interfaces()
+
+    def _capture_program(self):
+        return str(self._capture_engine_dir / "tshark.exe")
+
+    def _capture_engine_ready(self):
+        return (
+            (self._capture_engine_dir / "tshark.exe").is_file()
+            and (self._capture_engine_dir / "dumpcap.exe").is_file()
+        )
+
+    def _set_capture_status(self, text, tone="default"):
+        self._capture_status.setText(text)
+        _set_tone(self._capture_status, tone)
+
+    def _refresh_capture_interfaces(self):
+        if (
+            self._capture_interface_proc is not None
+            and self._capture_interface_proc.state()
+            != QProcess.ProcessState.NotRunning
+        ):
+            return
+        self._capture_interface.clear()
+        self._btn_capture_refresh.setEnabled(False)
+        self._btn_capture_start.setEnabled(False)
+        if not self._capture_waiting_for_npcap:
+            self._btn_install_npcap.hide()
+        if not self._capture_engine_ready():
+            self._set_capture_status("抓包引擎缺失", "error")
+            show_warning(
+                self, "抓包引擎缺失",
+                "未找到内置的 TShark/Dumpcap 运行文件。")
+            return
+        self._set_capture_status("正在检测网卡", "primary")
+        process = QProcess(self)
+        process.setWorkingDirectory(str(self._capture_engine_dir))
+        process.setProcessChannelMode(
+            QProcess.ProcessChannelMode.SeparateChannels)
+        process.finished.connect(
+            lambda code, _status: self._on_capture_interfaces_finished(
+                process, code))
+        process.errorOccurred.connect(
+            lambda _error: self._on_capture_interfaces_error(process))
+        self._capture_interface_proc = process
+        process.start(self._capture_program(), ["-D"])
+
+    def _on_capture_interfaces_finished(self, process, exit_code):
+        stdout = bytes(process.readAllStandardOutput()).decode(
+            "utf-8", errors="replace")
+        stderr = bytes(process.readAllStandardError()).decode(
+            "utf-8", errors="replace")
+        process.deleteLater()
+        if self._capture_interface_proc is process:
+            self._capture_interface_proc = None
+        interfaces = parse_tshark_interfaces(stdout)
+        if exit_code == 0 and interfaces:
+            self._capture_waiting_for_npcap = False
+            self._capture_npcap_retry_timer.stop()
+            for interface in interfaces:
+                self._capture_interface.addItem(
+                    "{}  ({})".format(
+                        interface["name"], interface["device"]),
+                    interface["device"],
+                )
+            self._set_capture_status(
+                "已发现 {} 个网卡".format(len(interfaces)), "success")
+            self._btn_capture_refresh.setEnabled(True)
+            self._btn_capture_start.setEnabled(True)
+            self._btn_install_npcap.setEnabled(True)
+            self._btn_install_npcap.setText("安装抓包驱动")
+            self._btn_install_npcap.hide()
+            return
+        message = stderr.strip() or "未发现可用网卡"
+        self._set_capture_status("抓包驱动不可用", "error")
+        self._capture_detail.setPlainText(message)
+        self._btn_capture_refresh.setEnabled(False)
+        self._btn_capture_start.setEnabled(False)
+        if npcap_installer_path(self._base_dir) is not None:
+            self._btn_install_npcap.show()
+            if self._capture_waiting_for_npcap:
+                self._btn_install_npcap.setEnabled(False)
+                self._btn_install_npcap.setText("等待安装驱动")
+                if time.monotonic() < self._capture_npcap_deadline:
+                    self._capture_npcap_retry_timer.start(2000)
+                else:
+                    self._capture_waiting_for_npcap = False
+                    self._btn_install_npcap.setEnabled(True)
+                    self._btn_install_npcap.setText("安装抓包驱动")
+                    self._set_capture_status(
+                        "Npcap 安装尚未完成，请稍后重试", "error")
+
+    def _on_capture_interfaces_error(self, process):
+        if self._capture_interface_proc is process:
+            self._capture_interface_proc = None
+        process.deleteLater()
+        self._set_capture_status("抓包引擎启动失败", "error")
+        self._btn_capture_refresh.setEnabled(False)
+        self._btn_capture_start.setEnabled(False)
+
+    def _install_npcap(self):
+        if not launch_npcap_installer(self._base_dir):
+            show_error(
+                self, "无法启动安装程序",
+                "未找到 Npcap 安装文件，或以管理员身份启动失败。")
+            return
+        self._capture_waiting_for_npcap = True
+        self._capture_npcap_deadline = time.monotonic() + 300
+        self._btn_install_npcap.setEnabled(False)
+        self._btn_install_npcap.setText("等待安装驱动")
+        self._btn_capture_refresh.setEnabled(False)
+        self._btn_capture_start.setEnabled(False)
+        self._set_capture_status(
+            "请完成 Npcap 安装，程序会自动检测驱动", "primary")
+        self._capture_npcap_retry_timer.start(2000)
+
+    def _retry_npcap_detection(self):
+        if (
+            not self._capture_waiting_for_npcap
+            or time.monotonic() >= self._capture_npcap_deadline
+        ):
+            self._capture_waiting_for_npcap = False
+            self._btn_install_npcap.setEnabled(True)
+            self._btn_install_npcap.setText("安装抓包驱动")
+            return
+        self._refresh_capture_interfaces()
+
+    def _start_capture(self):
+        if self._capture_running:
+            return
+        if not self._capture_engine_ready():
+            show_warning(
+                self, "抓包引擎缺失",
+                "未找到内置的 TShark/Dumpcap 运行文件。")
+            return
+        device = self._capture_interface.currentData()
+        if not device:
+            self._refresh_capture_interfaces()
+            return
+        capture_filter = self._capture_filter.text().strip()
+        display_filter = self._capture_display_filter.text().strip()
+        if self._chk_capture_save.isChecked():
+            if not self._capture_save_path:
+                show_warning(
+                    self, "未选择保存文件",
+                    "请先开启“保存到文件”并选择 pcapng 路径。")
+                return
+            path = self._capture_save_path
+        else:
+            try:
+                fd, path = tempfile.mkstemp(
+                    prefix="anhutoolbox_capture_", suffix=".pcapng")
+                os.close(fd)
+            except OSError as exc:
+                show_error(self, "无法创建抓包文件", str(exc))
+                return
+        self._capture_temp_path = path
+        args = build_tshark_capture_args(
+            device,
+            path,
+            capture_filter=capture_filter,
+            display_filter=display_filter,
+            write_output=not bool(display_filter),
+        )
+        self._capture_file_proc = None
+        if display_filter:
+            file_process = QProcess(self)
+            file_process.setWorkingDirectory(str(self._capture_engine_dir))
+            file_process.setProcessChannelMode(
+                QProcess.ProcessChannelMode.SeparateChannels)
+            file_process.readyReadStandardError.connect(
+                lambda: self._on_capture_file_stderr(file_process))
+            file_process.finished.connect(
+                lambda code, _status: self._on_capture_file_finished(
+                    file_process, code))
+            file_process.errorOccurred.connect(
+                lambda _error: self._on_capture_file_error(file_process))
+            self._capture_file_proc = file_process
+            file_process.start(
+                str(self._capture_engine_dir / "dumpcap.exe"),
+                build_dumpcap_capture_args(
+                    device, path, capture_filter),
+            )
+        process = QProcess(self)
+        process.setWorkingDirectory(str(self._capture_engine_dir))
+        process.setProcessChannelMode(
+            QProcess.ProcessChannelMode.SeparateChannels)
+        process.readyReadStandardOutput.connect(
+            lambda: self._on_capture_stdout(process))
+        process.readyReadStandardError.connect(
+            lambda: self._on_capture_stderr(process))
+        process.finished.connect(
+            lambda code, _status: self._on_capture_finished(
+                process, code))
+        process.errorOccurred.connect(
+            lambda _error: self._on_capture_process_error(process))
+        self._capture_proc = process
+        self._capture_running = True
+        self._capture_stopping = False
+        self._capture_stdout_buffer = ""
+        self._capture_stderr_buffer = ""
+        self._capture_file_stderr_buffer = ""
+        self._capture_buffer.clear()
+        self._capture_paused_packets.clear()
+        self._capture_paused_bytes = 0
+        self._capture_count = 0
+        self._capture_bytes = 0
+        self._capture_dropped = 0
+        self._capture_display_records = 0
+        self._capture_display_bytes = 0
+        self._capture_model.clear()
+        self._capture_detail.clear()
+        self._capture_selected_frame = None
+        self._capture_detail_cache.clear()
+        self._capture_detail_timed_out_frame = None
+        self._capture_detail_timeout_timer.stop()
+        self._btn_capture_start.setEnabled(False)
+        self._btn_capture_stop.setEnabled(True)
+        self._btn_capture_clear.setEnabled(False)
+        self._btn_capture_refresh.setEnabled(False)
+        self._chk_capture_save.setEnabled(False)
+        self._set_capture_status("正在抓包", "success")
+        process.start(self._capture_program(), args)
+
+    def _on_capture_stdout(self, process):
+        text = bytes(process.readAllStandardOutput()).decode(
+            "utf-8", errors="replace")
+        self._capture_stdout_buffer += text
+        lines = self._capture_stdout_buffer.splitlines(keepends=True)
+        self._capture_stdout_buffer = ""
+        for line in lines:
+            if line.endswith(("\n", "\r")):
+                packet = parse_packet_fields(line)
+                if packet:
+                    self._capture_buffer.append(packet)
+            else:
+                self._capture_stdout_buffer = line
+
+    def _on_capture_stderr(self, process):
+        text = bytes(process.readAllStandardError()).decode(
+            "utf-8", errors="replace")
+        self._capture_stderr_buffer += text
+        if len(self._capture_stderr_buffer) > 20000:
+            self._capture_stderr_buffer = (
+                self._capture_stderr_buffer[-20000:])
+
+    def _on_capture_file_stderr(self, process):
+        text = bytes(process.readAllStandardError()).decode(
+            "utf-8", errors="replace")
+        self._capture_file_stderr_buffer += text
+        if len(self._capture_file_stderr_buffer) > 20000:
+            self._capture_file_stderr_buffer = (
+                self._capture_file_stderr_buffer[-20000:])
+
+    def _on_capture_file_error(self, process):
+        if self._capture_file_proc is process:
+            self._capture_file_stderr_buffer += process.errorString()
+            if process.error() == QProcess.ProcessError.FailedToStart:
+                self._capture_file_proc = None
+                process.deleteLater()
+                self._on_capture_file_failed()
+
+    def _on_capture_file_finished(self, process, exit_code):
+        if self._capture_file_proc is process:
+            self._capture_file_proc = None
+        process.deleteLater()
+        if self._capture_stopping:
+            return
+        if self._capture_running and exit_code != 0:
+            self._on_capture_file_failed()
+
+    def _on_capture_file_failed(self):
+        error = self._capture_file_stderr_buffer.strip()
+        self._stop_capture()
+        self._capture_detail.setPlainText(
+            "抓包文件写入失败：\n" + (error or "Dumpcap 已停止"))
+        self._set_capture_status("抓包文件写入失败", "error")
+
+    def _on_capture_process_error(self, process):
+        if self._capture_proc is process:
+            self._capture_stderr_buffer += process.errorString()
+            if process.error() == QProcess.ProcessError.FailedToStart:
+                self._capture_proc = None
+                self._capture_running = False
+                self._btn_capture_start.setEnabled(True)
+                self._btn_capture_stop.setEnabled(False)
+                self._btn_capture_clear.setEnabled(True)
+                self._btn_capture_refresh.setEnabled(True)
+                self._chk_capture_save.setEnabled(True)
+                self._set_capture_status("抓包引擎启动失败", "error")
+                process.deleteLater()
+                file_process = self._capture_file_proc
+                if (
+                    file_process is not None
+                    and file_process.state()
+                    != QProcess.ProcessState.NotRunning
+                ):
+                    file_process.kill()
+                    file_process.waitForFinished(500)
+
+    def _flush_capture_packets(self):
+        if not self._capture_buffer:
+            return
+        packets, self._capture_buffer = self._capture_buffer, []
+        visible_packets = []
+        for packet in packets:
+            if self._capture_paused:
+                size = len(str(packet.get("info") or "")) + 256
+                if (
+                    self._capture_paused_bytes + size
+                    > self.MAX_PAUSED_PACKET_BYTES
+                ):
+                    self._capture_dropped += 1
+                else:
+                    self._capture_paused_packets.append(packet)
+                    self._capture_paused_bytes += size
+                continue
+            visible_packets.append(packet)
+        self._append_capture_packets(visible_packets)
+
+    def _append_capture_packet(self, packet):
+        self._append_capture_packets([packet])
+
+    def _append_capture_packets(self, packets):
+        if not packets:
+            return
+        self._capture_model.append_packets(packets)
+        digits = max(
+            3,
+            max(len(str(int(packet["number"]))) for packet in packets),
+        )
+        required_width = (
+            self._capture_table.fontMetrics().horizontalAdvance(
+                "9" * digits) + 24
+        )
+        if self._capture_table.columnWidth(0) < required_width:
+            self._capture_table.setColumnWidth(0, required_width)
+        self._capture_count += len(packets)
+        self._capture_bytes += sum(
+            int(packet["length"]) for packet in packets)
+        self._capture_display_records += len(packets)
+        self._capture_display_bytes += sum(
+            512 + int(packet["length"]) + len(str(packet["info"]))
+            for packet in packets
+        )
+        if self._capture_model.rowCount() > 0:
+            self._capture_table.scrollToBottom()
+        self._set_capture_status(
+            "抓包中  {} 包 / {}".format(
+                self._capture_count,
+                self._format_capture_bytes(self._capture_bytes)),
+            "success",
+        )
+        self._clear_capture_if_save_limit_reached()
+
+    @staticmethod
+    def _format_capture_bytes(value):
+        size = max(0, int(value))
+        if size >= 1024 ** 3:
+            return "{:.2f} GB".format(size / (1024 ** 3))
+        if size >= 1024 ** 2:
+            return "{:.2f} MB".format(size / (1024 ** 2))
+        if size >= 1024:
+            return "{:.1f} KB".format(size / 1024)
+        return "{} B".format(size)
+
+    def _on_capture_pause(self, checked):
+        self._capture_paused = bool(checked)
+        if not checked and self._capture_paused_packets:
+            pending, self._capture_paused_packets = (
+                self._capture_paused_packets, [])
+            self._capture_paused_bytes = 0
+            for packet in pending:
+                self._append_capture_packet(packet)
+            self._set_capture_status(
+                "抓包中  {} 包 / {}".format(
+                    self._capture_count,
+                    self._format_capture_bytes(self._capture_bytes)),
+                "success",
+            )
+
+    def _on_capture_save_toggle(self, checked):
+        if self._capture_running:
+            self._chk_capture_save.blockSignals(True)
+            self._chk_capture_save.setChecked(
+                bool(self._capture_save_path))
+            self._chk_capture_save.blockSignals(False)
+            show_warning(
+                self, "抓包进行中",
+                "请先停止抓包，再修改保存设置。")
+            return
+        if not checked:
+            self._capture_save_path = ""
+            self._set_capture_status("保存到文件已关闭")
+            return
+        directory = os.path.join(self._base_dir, "log")
+        try:
+            os.makedirs(directory, exist_ok=True)
+        except OSError:
+            directory = os.getcwd()
+        default_path = os.path.join(
+            directory,
+            "AnhuToolbox_capture_{}.pcapng".format(
+                time.strftime("%Y%m%d_%H%M%S")),
+        )
+        path, _ = QFileDialog.getSaveFileName(
+            self, "保存抓包文件", default_path,
+            "Wireshark 抓包文件 (*.pcapng);;所有文件 (*.*)",
+        )
+        if not path:
+            self._chk_capture_save.blockSignals(True)
+            self._chk_capture_save.setChecked(False)
+            self._chk_capture_save.blockSignals(False)
+            self._capture_save_path = ""
+            return
+        self._capture_save_path = path
+        self._set_capture_status(
+            "保存到文件已开启：{}".format(path), "primary")
+
+    def _clear_capture_if_save_limit_reached(self):
+        if (
+            not self._chk_capture_save.isChecked()
+            or not self._capture_save_path
+        ):
+            return
+        if (
+            self._capture_display_records < AUTO_CLEAR_RECORDS
+            and self._capture_display_bytes < AUTO_CLEAR_BYTES
+        ):
+            return
+        self._capture_model.clear()
+        self._capture_detail.clear()
+        self._capture_detail_cache.clear()
+        self._capture_detail_timed_out_frame = None
+        self._capture_selected_frame = None
+        self._capture_display_records = 0
+        self._capture_display_bytes = 0
+        self._set_capture_status(
+            "页面已清空，文件继续保存  {} 包".format(
+                self._capture_count),
+            "success",
+        )
+
+    def _clear_capture(self):
+        if self._capture_running:
+            return
+        self._capture_model.clear()
+        self._capture_detail.clear()
+        self._capture_count = 0
+        self._capture_bytes = 0
+        self._capture_dropped = 0
+        self._capture_paused_packets.clear()
+        self._capture_paused_bytes = 0
+        self._capture_display_records = 0
+        self._capture_display_bytes = 0
+        self._set_capture_status("列表已清空")
+
+    def _save_capture(self):
+        if self._capture_running:
+            show_warning(
+                self, "抓包进行中",
+                "请先停止抓包，再保存 pcapng 文件。")
+            return
+        if not self._capture_temp_path or not os.path.isfile(
+                self._capture_temp_path):
+            show_warning(self, "没有可保存的数据", "请先开始并抓取数据包。")
+            return
+        default_path = os.path.join(
+            os.getcwd(),
+            "AnhuToolbox_capture_{}.pcapng".format(
+                time.strftime("%Y%m%d_%H%M%S")),
+        )
+        path, _ = QFileDialog.getSaveFileName(
+            self, "保存抓包文件", default_path,
+            "Wireshark 抓包文件 (*.pcapng);;所有文件 (*.*)",
+        )
+        if not path:
+            return
+        try:
+            shutil.copy2(self._capture_temp_path, path)
+        except OSError as exc:
+            show_error(self, "保存失败", str(exc))
+            return
+        show_success(self, "保存成功", "抓包文件已保存到：\n" + path)
+
+    def _on_capture_selection_changed(self, *_args):
+        rows = self._capture_table.selectionModel().selectedRows()
+        if not rows:
+            return
+        packet = self._capture_model.packet_at(rows[0].row())
+        if packet is None:
+            return
+        try:
+            frame = int(packet["number"])
+        except ValueError:
+            return
+        if frame == self._capture_selected_frame:
+            return
+        self._capture_selected_frame = frame
+        QTimer.singleShot(80, lambda: self._load_capture_detail(frame))
+
+    def _load_capture_detail(self, frame):
+        if (
+            not frame
+            or not self._capture_temp_path
+            or not os.path.isfile(self._capture_temp_path)
+        ):
+            return
+        previous = self._capture_detail_proc
+        if previous is not None and previous.state() != QProcess.ProcessState.NotRunning:
+            previous.kill()
+            previous.waitForFinished(300)
+        self._capture_detail_timeout_timer.stop()
+        self._capture_detail_timed_out_frame = None
+        cached = self._capture_detail_cache.get(frame)
+        if cached is not None:
+            self._capture_detail_cache.move_to_end(frame)
+            self._capture_detail.setPlainText(cached)
+            return
+        process = QProcess(self)
+        process.setWorkingDirectory(str(self._capture_engine_dir))
+        process.setProcessChannelMode(
+            QProcess.ProcessChannelMode.MergedChannels)
+        process.finished.connect(
+            lambda code, _status: self._on_capture_detail_finished(
+                process, frame, code))
+        process.errorOccurred.connect(
+            lambda _error: self._on_capture_detail_error(process))
+        self._capture_detail_proc = process
+        self._capture_detail.setPlainText("正在加载数据包 #{}...".format(frame))
+        self._capture_detail_timeout_timer.start(8000)
+        process.start(self._capture_program(), [
+            "-r", self._capture_temp_path,
+            "-Y", "frame.number=={}".format(frame),
+            "-n", "-V", "-x",
+        ])
+
+    def _on_capture_detail_finished(self, process, frame, exit_code):
+        self._capture_detail_timeout_timer.stop()
+        output = bytes(process.readAll()).decode(
+            "utf-8", errors="replace")
+        process.deleteLater()
+        if self._capture_detail_proc is process:
+            self._capture_detail_proc = None
+        if self._capture_selected_frame != frame:
+            return
+        if self._capture_detail_timed_out_frame == frame:
+            self._capture_detail_timed_out_frame = None
+            self._capture_detail.setPlainText(
+                "数据包详情加载超时。\n"
+                "抓包文件较大时，可先停止抓包后再查看详情。")
+            return
+        if exit_code == 0 and output:
+            detail = output[:2 * 1024 * 1024]
+            self._capture_detail_cache[frame] = detail
+            self._capture_detail_cache.move_to_end(frame)
+            while len(self._capture_detail_cache) > 50:
+                self._capture_detail_cache.popitem(last=False)
+            self._capture_detail.setPlainText(detail)
+        else:
+            message = (
+                output.strip()
+                or "未找到第 {} 个数据包。\n"
+                "抓包仍在写入或文件尚未刷新，可停止抓包后重试。".format(
+                    frame)
+            )
+            self._capture_detail.setPlainText(
+                "无法读取数据包详情：\n" + message)
+
+    def _on_capture_detail_error(self, process):
+        self._capture_detail_timeout_timer.stop()
+        if self._capture_detail_proc is process:
+            self._capture_detail_proc = None
+        process.deleteLater()
+        self._capture_detail.setPlainText("抓包详情进程启动失败")
+
+    def _on_capture_detail_timeout(self):
+        process = self._capture_detail_proc
+        frame = self._capture_selected_frame
+        if process is None or frame is None:
+            return
+        self._capture_detail_timed_out_frame = frame
+        if process.state() != QProcess.ProcessState.NotRunning:
+            process.kill()
+            process.waitForFinished(300)
+
+    def _stop_capture(self):
+        if not self._capture_running and self._capture_proc is None:
+            return
+        self._capture_stopping = True
+        self._btn_capture_stop.setEnabled(False)
+        self._set_capture_status("正在停止...", "primary")
+        processes = (self._capture_proc, self._capture_file_proc)
+        for process in processes:
+            if (
+                process is not None
+                and process.state() != QProcess.ProcessState.NotRunning
+            ):
+                process.terminate()
+        deadline = time.monotonic() + 0.3
+        while (
+            time.monotonic() < deadline
+            and any(
+                process is not None
+                and process.state() != QProcess.ProcessState.NotRunning
+                for process in processes
+            )
+        ):
+            QApplication.processEvents()
+            time.sleep(0.01)
+        for process in processes:
+            if (
+                process is not None
+                and process.state() != QProcess.ProcessState.NotRunning
+            ):
+                process.kill()
+                process.waitForFinished(150)
+        QApplication.processEvents()
+        self._capture_running = False
+        self._capture_stopping = False
+        self._btn_capture_start.setEnabled(True)
+        self._btn_capture_stop.setEnabled(False)
+        self._btn_capture_clear.setEnabled(True)
+        self._btn_capture_refresh.setEnabled(True)
+        self._chk_capture_save.setEnabled(True)
+        self._set_capture_status(
+            "已停止  {} 包".format(self._capture_count), "success")
+
+    def _on_capture_finished(self, process, exit_code):
+        if self._capture_proc is process:
+            self._capture_proc = None
+        file_process = self._capture_file_proc
+        if (
+            not self._capture_stopping
+            and file_process is not None
+            and file_process.state() != QProcess.ProcessState.NotRunning
+        ):
+            self._capture_stopping = True
+            file_process.terminate()
+            if not file_process.waitForFinished(1200):
+                file_process.kill()
+                file_process.waitForFinished(500)
+            self._capture_stopping = False
+        self._capture_running = False
+        self._on_capture_stdout(process)
+        self._flush_capture_packets()
+        self._btn_capture_start.setEnabled(True)
+        self._btn_capture_stop.setEnabled(False)
+        self._btn_capture_clear.setEnabled(True)
+        self._btn_capture_refresh.setEnabled(True)
+        self._chk_capture_save.setEnabled(True)
+        if self._capture_stopping or exit_code == 0:
+            self._set_capture_status(
+                "已停止  {} 包".format(self._capture_count), "success")
+        else:
+            error = self._capture_stderr_buffer.strip()
+            self._set_capture_status("抓包失败", "error")
+            if error:
+                self._capture_detail.setPlainText(error[-20000:])
+        process.deleteLater()
 
     # ---------- 端口扫描 ----------
     def _build_port_page(self):
@@ -2935,6 +3948,7 @@ class NetworkTool(QWidget):
 
     # ---------- 结果回传 ----------
     def _drain_queue(self):
+        self._flush_capture_packets()
         try:
             while True:
                 msg = self._queue.get_nowait()
@@ -2992,8 +4006,25 @@ class NetworkTool(QWidget):
         self._btn_lan.setEnabled(True)
 
     def stop_tasks(self):
-        """停止持续 Ping，并取消尚未完成的端口/网段扫描。"""
+        """停止持续任务、抓包进程和扫描任务。"""
         self._stop_ping()
+        if self._include_capture:
+            self._capture_npcap_retry_timer.stop()
+            self._capture_detail_timeout_timer.stop()
+            self._stop_capture()
+            for process in (
+                    self._capture_file_proc,
+                    self._capture_detail_proc,
+                    self._capture_interface_proc):
+                if (
+                    process is not None
+                    and process.state() != QProcess.ProcessState.NotRunning
+                ):
+                    process.kill()
+                    process.waitForFinished(500)
+            self._capture_detail_proc = None
+            self._capture_interface_proc = None
+            self._capture_file_proc = None
         self._scan_cancel.set()
         self._scan_run += 1
         self._scan_running = False
@@ -3001,3 +4032,39 @@ class NetworkTool(QWidget):
             self._executor.shutdown(wait=False, cancel_futures=True)
             self._executor = None
         self._timer.stop()
+
+
+class PacketCaptureTool(QWidget):
+    """Independent packet-capture workspace backed by the bundled TShark."""
+
+    def __init__(self, base_dir=None):
+        super().__init__()
+        self.setObjectName("toolPage")
+        self.setStyleSheet(TOOL_PAGE_STYLE)
+        self._interfaces_initialized = False
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        self._capture_tool = NetworkTool(
+            base_dir,
+            include_capture=True,
+            page_title="抓包分析",
+            page_subtitle="抓取、过滤、查看并保存网络数据包。",
+        )
+        tabs = self._capture_tool._network_tabs
+        for index in reversed(range(tabs.count())):
+            if tabs.tabText(index) != "抓包分析":
+                tabs.removeTab(index)
+        tabs.setStyleSheet("QTabWidget::pane{border:none;}")
+        tabs.tabBar().hide()
+        layout.addWidget(self._capture_tool)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self._interfaces_initialized:
+            self._interfaces_initialized = True
+            QTimer.singleShot(
+                0, self._capture_tool._refresh_capture_interfaces)
+
+    def stop_tasks(self):
+        self._capture_tool.stop_tasks()

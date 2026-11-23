@@ -1,3 +1,4 @@
+[CmdletBinding(PositionalBinding = $false)]
 param(
     [string]$Notes = "",
     [string]$NotesFile = "",
@@ -60,7 +61,13 @@ $manifestArgs = @(
     "--output", (Join-Path $PSScriptRoot "installer\latest.json")
 )
 if ($NotesFile) {
-    $manifestArgs += @("--notes-file", (Resolve-Path -LiteralPath $NotesFile).Path)
+    if (-not (Test-Path -LiteralPath $NotesFile -PathType Leaf)) {
+        throw "NotesFile does not exist: $NotesFile. Use -Notes `"text`" for inline release notes."
+    }
+    $manifestArgs += @(
+        "--notes-file",
+        (Resolve-Path -LiteralPath $NotesFile).Path
+    )
 } elseif ($Notes) {
     $manifestArgs += @("--notes", $Notes)
 }

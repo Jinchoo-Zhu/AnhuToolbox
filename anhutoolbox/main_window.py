@@ -18,7 +18,11 @@ from .protocol_workers import MQTTWorker, WebSocketWorker
 from .protocol_pages import HTTPPage, MQTTPage, WebSocketPage
 from .process_metrics import ProcessMetrics
 from .stream_views import StreamPage
-from .tools import TimestampTool, QRTool, JsonTool, BaseTool, RegexTool, DiffTool, SortTool, EncodeTool, ChecksumTool, AmountTool, HardwareInfoPage, NetworkTool
+from .tools import (
+    TimestampTool, QRTool, JsonTool, BaseTool, RegexTool, DiffTool, SortTool,
+    EncodeTool, ChecksumTool, AmountTool, HardwareInfoPage, NetworkTool,
+    PacketCaptureTool,
+)
 from .styles import (GLOBAL_STYLE, STATUS_BAR_STYLE, BG_SIDEBAR, BORDER,
                      TEXT_PRIMARY, TEXT_SECONDARY, prepare_menu)
 from . import settings as cfg
@@ -59,13 +63,14 @@ LIBRARY_GROUPS = [
         ("qr", "二维码生成"),
     ]),
     ("网络工具", [
-        ("network", "Ping/端口扫描/网段扫描"),
+        ("network", "Ping | 端口扫描 | 网段扫描"),
+        ("capture", "抓包分析"),
     ]),
 ]
 
 # 工具库默认展示顺序 (与分组一致)
 LIBRARY_ORDER = ["hardware", "timestamp", "base", "encode", "checksum", "amount",
-                 "json", "regex", "diff", "sort", "qr", "network"]
+                 "json", "regex", "diff", "sort", "qr", "network", "capture"]
 
 COMM_MODE_INDEX = {
     "serial": 0,
@@ -414,7 +419,8 @@ class MainWindow(QMainWindow):
             "diff": DiffTool(),
             "sort": SortTool(),
             "qr": QRTool(),
-            "network": NetworkTool(),
+            "network": NetworkTool(self._base_dir),
+            "capture": PacketCaptureTool(self._base_dir),
         }
         self._library_stack = QStackedWidget()
         for key in LIBRARY_ORDER:
@@ -2357,6 +2363,9 @@ class MainWindow(QMainWindow):
             network = self._library_pages.get("network")
             if network is not None:
                 network.stop_tasks()
+            capture = self._library_pages.get("capture")
+            if capture is not None:
+                capture.stop_tasks()
             timestamp = self._library_pages.get("timestamp")
             if timestamp is not None:
                 timestamp.stop_timer()

@@ -30,9 +30,26 @@ def _verify_external_tools():
     return os.path.dirname(tools_root)
 
 
+def _verify_capture_runtime():
+    root = os.path.dirname(os.path.abspath(SPEC))
+    engine = os.path.join(root, "capture", "engine")
+    npcap = os.path.join(root, "capture", "npcap")
+    required = [
+        os.path.join(engine, "tshark.exe"),
+        os.path.join(engine, "dumpcap.exe"),
+        os.path.join(engine, "libwireshark.dll"),
+        os.path.join(engine, "COPYING.txt"),
+        os.path.join(npcap, "npcap-1.89.exe"),
+    ]
+    missing = [path for path in required if not os.path.isfile(path)]
+    if missing:
+        raise SystemExit("抓包运行时资源不完整：" + "; ".join(missing))
+
+
 # 构建前仍校验第三方资源完整性，但不再把官方工具打进 exe。
 # installer.iss 会根据任务选择把它们复制到安装目录的 tools\。
 _verify_external_tools()
+_verify_capture_runtime()
 VERSION_FILE = os.path.join(
     os.path.dirname(os.path.abspath(SPEC)), "version_info.txt")
 
@@ -69,7 +86,11 @@ a = Analysis(
            ('anhutoolbox/assets/dialog_success.png', 'anhutoolbox/assets'),
            ('anhutoolbox/assets/dialog_question.png', 'anhutoolbox/assets'),
            # Qt 中文翻译: 让「新建项目」这类内置对话框的按钮显示 确定/取消
-           ('anhutoolbox/assets/qtbase_zh_CN.qm', 'anhutoolbox/assets')],
+           ('anhutoolbox/assets/qtbase_zh_CN.qm', 'anhutoolbox/assets'),
+           # 抓包页面使用内置 TShark 引擎；最终位于 lib\capture\engine。
+           ('capture/engine', 'capture/engine'),
+           # Npcap 安装资源；最终位于 lib\capture\npcap。
+           ('capture/npcap', 'capture/npcap')],
     hiddenimports=['h2', 'hpack', 'hyperframe'],
     hookspath=[],
     hooksconfig={},
