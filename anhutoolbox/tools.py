@@ -2539,8 +2539,8 @@ class CaptureTableModel(QAbstractTableModel):
             return None
         packet = self._packets[index.row()]
         values = (
-            str(packet["number"]),
-            "{:.6f}".format(packet["time"]),
+            str(packet.get("display_number", packet["number"])),
+            self.format_time(packet["time"]),
             packet["source"],
             packet["destination"],
             packet["protocol"],
@@ -2552,17 +2552,26 @@ class CaptureTableModel(QAbstractTableModel):
         if role == Qt.ItemDataRole.ToolTipRole and index.column() == 6:
             return values[index.column()]
         if role == Qt.ItemDataRole.TextAlignmentRole:
-            if index.column() in (0, 5):
+            if index.column() in (0, 1, 5):
                 return int(
                     Qt.AlignmentFlag.AlignCenter)
-            if index.column() == 1:
-                return int(
-                    Qt.AlignmentFlag.AlignRight
-                    | Qt.AlignmentFlag.AlignVCenter)
             return int(
                 Qt.AlignmentFlag.AlignLeft
                 | Qt.AlignmentFlag.AlignVCenter)
         return None
+
+    @staticmethod
+    def format_time(value):
+        return "{:.6f}".format(value)
+
+    def max_display_number(self):
+        return max(
+            (
+                int(packet.get("display_number", packet["number"]))
+                for packet in self._packets
+            ),
+            default=0,
+        )
 
     def append_packets(self, packets):
         if not packets:
@@ -2686,9 +2695,11 @@ class NetworkTool(QWidget):
         self._capture_buffer = []
         self._capture_paused_packets = []
         self._capture_paused_bytes = 0
+        self._capture_session_frame_base = 0
         self._capture_selected_frame = None
+        self._capture_selected_path = ""
         self._capture_detail_cache = OrderedDict()
-        self._capture_detail_timed_out_frame = None
+        self._capture_detail_timed_out_key = None
         self._capture_detail_timeout_timer = QTimer(self)
         self._capture_detail_timeout_timer.setSingleShot(True)
         self._capture_detail_timeout_timer.timeout.connect(
@@ -2938,9 +2949,18 @@ class NetworkTool(QWidget):
         self._capture_table.verticalHeader().setMinimumSectionSize(
             TABLE_ROW_HEIGHT)
         header.setStretchLastSection(True)
-        for column in (1, 4, 5):
+        for column in (4, 5):
             header.setSectionResizeMode(
                 column, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        self._capture_table.setColumnWidth(
+            1,
+            max(
+                96,
+                self._capture_table.fontMetrics().horizontalAdvance(
+                    "000000.000000") + 28,
+            ),
+        )
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
         self._capture_table.setColumnWidth(0, 60)
         for column in (2, 3):
@@ -3218,23 +3238,12 @@ class NetworkTool(QWidget):
         self._capture_proc = process
         self._capture_running = True
         self._capture_stopping = False
+        self._capture_session_frame_base = (
+            self._capture_model.max_display_number())
         self._capture_stdout_buffer = ""
         self._capture_stderr_buffer = ""
         self._capture_file_stderr_buffer = ""
         self._capture_buffer.clear()
-        self._capture_paused_packets.clear()
-        self._capture_paused_bytes = 0
-        self._capture_count = 0
-        self._capture_bytes = 0
-        self._capture_dropped = 0
-        self._capture_display_records = 0
-        self._capture_display_bytes = 0
-        self._capture_model.clear()
-        self._capture_detail.clear()
-        self._capture_selected_frame = None
-        self._capture_detail_cache.clear()
-        self._capture_detail_timed_out_frame = None
-        self._capture_detail_timeout_timer.stop()
         self._btn_capture_start.setEnabled(False)
         self._btn_capture_stop.setEnabled(True)
         self._btn_capture_clear.setEnabled(False)
@@ -3244,8 +3253,12 @@ class NetworkTool(QWidget):
         process.start(self._capture_program(), args)
 
     def _on_capture_stdout(self, process):
+        if self._capture_proc is not process:
+            return
         text = bytes(process.readAllStandardOutput()).decode(
             "utf-8", errors="replace")
+        if self._capture_stopping:
+            return
         self._capture_stdout_buffer += text
         lines = self._capture_stdout_buffer.splitlines(keepends=True)
         self._capture_stdout_buffer = ""
@@ -3253,11 +3266,18 @@ class NetworkTool(QWidget):
             if line.endswith(("\n", "\r")):
                 packet = parse_packet_fields(line)
                 if packet:
+                    frame = int(packet["number"])
+                    packet["frame_number"] = frame
+                    packet["display_number"] = (
+                        self._capture_session_frame_base + frame)
+                    packet["capture_path"] = self._capture_temp_path
                     self._capture_buffer.append(packet)
             else:
                 self._capture_stdout_buffer = line
 
     def _on_capture_stderr(self, process):
+        if self._capture_proc is not process:
+            return
         text = bytes(process.readAllStandardError()).decode(
             "utf-8", errors="replace")
         self._capture_stderr_buffer += text
@@ -3266,6 +3286,8 @@ class NetworkTool(QWidget):
                 self._capture_stderr_buffer[-20000:])
 
     def _on_capture_file_stderr(self, process):
+        if self._capture_file_proc is not process:
+            return
         text = bytes(process.readAllStandardError()).decode(
             "utf-8", errors="replace")
         self._capture_file_stderr_buffer += text
@@ -3282,8 +3304,11 @@ class NetworkTool(QWidget):
                 self._on_capture_file_failed()
 
     def _on_capture_file_finished(self, process, exit_code):
-        if self._capture_file_proc is process:
-            self._capture_file_proc = None
+        if self._capture_file_proc is not process:
+            process.deleteLater()
+            return
+        self._on_capture_file_stderr(process)
+        self._capture_file_proc = None
         process.deleteLater()
         if self._capture_stopping:
             return
@@ -3321,6 +3346,9 @@ class NetworkTool(QWidget):
                     file_process.waitForFinished(500)
 
     def _flush_capture_packets(self):
+        if self._capture_stopping:
+            self._capture_buffer.clear()
+            return
         if not self._capture_buffer:
             return
         packets, self._capture_buffer = self._capture_buffer, []
@@ -3357,6 +3385,16 @@ class NetworkTool(QWidget):
         )
         if self._capture_table.columnWidth(0) < required_width:
             self._capture_table.setColumnWidth(0, required_width)
+        required_time_width = (
+            max(
+                self._capture_table.fontMetrics().horizontalAdvance(
+                    self._capture_model.format_time(packet["time"]))
+                for packet in packets
+            )
+            + 28
+        )
+        if self._capture_table.columnWidth(1) < required_time_width:
+            self._capture_table.setColumnWidth(1, required_time_width)
         self._capture_count += len(packets)
         self._capture_bytes += sum(
             int(packet["length"]) for packet in packets)
@@ -3453,8 +3491,9 @@ class NetworkTool(QWidget):
         self._capture_model.clear()
         self._capture_detail.clear()
         self._capture_detail_cache.clear()
-        self._capture_detail_timed_out_frame = None
+        self._capture_detail_timed_out_key = None
         self._capture_selected_frame = None
+        self._capture_selected_path = ""
         self._capture_display_records = 0
         self._capture_display_bytes = 0
         self._set_capture_status(
@@ -3468,11 +3507,16 @@ class NetworkTool(QWidget):
             return
         self._capture_model.clear()
         self._capture_detail.clear()
+        self._capture_detail_cache.clear()
         self._capture_count = 0
         self._capture_bytes = 0
         self._capture_dropped = 0
         self._capture_paused_packets.clear()
         self._capture_paused_bytes = 0
+        self._capture_selected_frame = None
+        self._capture_selected_path = ""
+        self._capture_detail_timed_out_key = None
+        self._capture_session_frame_base = 0
         self._capture_display_records = 0
         self._capture_display_bytes = 0
         self._set_capture_status("列表已清空")
@@ -3513,30 +3557,38 @@ class NetworkTool(QWidget):
         if packet is None:
             return
         try:
-            frame = int(packet["number"])
-        except ValueError:
+            frame = int(packet.get("frame_number", packet["number"]))
+        except (KeyError, TypeError, ValueError):
             return
-        if frame == self._capture_selected_frame:
-            return
-        self._capture_selected_frame = frame
-        QTimer.singleShot(80, lambda: self._load_capture_detail(frame))
-
-    def _load_capture_detail(self, frame):
+        path = packet.get("capture_path") or self._capture_temp_path
         if (
-            not frame
-            or not self._capture_temp_path
-            or not os.path.isfile(self._capture_temp_path)
+            frame == self._capture_selected_frame
+            and path == self._capture_selected_path
         ):
             return
+        self._capture_selected_frame = frame
+        self._capture_selected_path = path
+        QTimer.singleShot(
+            80, lambda: self._load_capture_detail(frame, path))
+
+    def _load_capture_detail(self, frame, path=None):
+        path = path or self._capture_temp_path
+        if (
+            not frame
+            or not path
+            or not os.path.isfile(path)
+        ):
+            return
+        detail_key = (path, frame)
         previous = self._capture_detail_proc
         if previous is not None and previous.state() != QProcess.ProcessState.NotRunning:
             previous.kill()
             previous.waitForFinished(300)
         self._capture_detail_timeout_timer.stop()
-        self._capture_detail_timed_out_frame = None
-        cached = self._capture_detail_cache.get(frame)
+        self._capture_detail_timed_out_key = None
+        cached = self._capture_detail_cache.get(detail_key)
         if cached is not None:
-            self._capture_detail_cache.move_to_end(frame)
+            self._capture_detail_cache.move_to_end(detail_key)
             self._capture_detail.setPlainText(cached)
             return
         process = QProcess(self)
@@ -3545,37 +3597,42 @@ class NetworkTool(QWidget):
             QProcess.ProcessChannelMode.MergedChannels)
         process.finished.connect(
             lambda code, _status: self._on_capture_detail_finished(
-                process, frame, code))
+                process, frame, path, code))
         process.errorOccurred.connect(
             lambda _error: self._on_capture_detail_error(process))
         self._capture_detail_proc = process
         self._capture_detail.setPlainText("正在加载数据包 #{}...".format(frame))
         self._capture_detail_timeout_timer.start(8000)
         process.start(self._capture_program(), [
-            "-r", self._capture_temp_path,
+            "-r", path,
             "-Y", "frame.number=={}".format(frame),
             "-n", "-V", "-x",
         ])
 
-    def _on_capture_detail_finished(self, process, frame, exit_code):
+    def _on_capture_detail_finished(
+            self, process, frame, path, exit_code):
         self._capture_detail_timeout_timer.stop()
         output = bytes(process.readAll()).decode(
             "utf-8", errors="replace")
         process.deleteLater()
         if self._capture_detail_proc is process:
             self._capture_detail_proc = None
-        if self._capture_selected_frame != frame:
+        detail_key = (path, frame)
+        if (
+            self._capture_selected_frame != frame
+            or self._capture_selected_path != path
+        ):
             return
-        if self._capture_detail_timed_out_frame == frame:
-            self._capture_detail_timed_out_frame = None
+        if self._capture_detail_timed_out_key == detail_key:
+            self._capture_detail_timed_out_key = None
             self._capture_detail.setPlainText(
                 "数据包详情加载超时。\n"
                 "抓包文件较大时，可先停止抓包后再查看详情。")
             return
         if exit_code == 0 and output:
             detail = output[:2 * 1024 * 1024]
-            self._capture_detail_cache[frame] = detail
-            self._capture_detail_cache.move_to_end(frame)
+            self._capture_detail_cache[detail_key] = detail
+            self._capture_detail_cache.move_to_end(detail_key)
             while len(self._capture_detail_cache) > 50:
                 self._capture_detail_cache.popitem(last=False)
             self._capture_detail.setPlainText(detail)
@@ -3599,9 +3656,10 @@ class NetworkTool(QWidget):
     def _on_capture_detail_timeout(self):
         process = self._capture_detail_proc
         frame = self._capture_selected_frame
-        if process is None or frame is None:
+        path = self._capture_selected_path
+        if process is None or frame is None or not path:
             return
-        self._capture_detail_timed_out_frame = frame
+        self._capture_detail_timed_out_key = (path, frame)
         if process.state() != QProcess.ProcessState.NotRunning:
             process.kill()
             process.waitForFinished(300)
@@ -3638,6 +3696,10 @@ class NetworkTool(QWidget):
                 process.kill()
                 process.waitForFinished(150)
         QApplication.processEvents()
+        if self._capture_proc is processes[0]:
+            self._capture_proc = None
+        if self._capture_file_proc is processes[1]:
+            self._capture_file_proc = None
         self._capture_running = False
         self._capture_stopping = False
         self._btn_capture_start.setEnabled(True)
@@ -3649,9 +3711,13 @@ class NetworkTool(QWidget):
             "已停止  {} 包".format(self._capture_count), "success")
 
     def _on_capture_finished(self, process, exit_code):
+        if self._capture_proc is not process:
+            process.deleteLater()
+            return
         user_stopped = self._capture_stopping
-        if self._capture_proc is process:
-            self._capture_proc = None
+        self._on_capture_stdout(process)
+        self._on_capture_stderr(process)
+        self._capture_proc = None
         file_process = self._capture_file_proc
         if (
             not self._capture_stopping
@@ -3665,7 +3731,6 @@ class NetworkTool(QWidget):
                 file_process.waitForFinished(500)
             self._capture_stopping = False
         self._capture_running = False
-        self._on_capture_stdout(process)
         self._flush_capture_packets()
         self._btn_capture_start.setEnabled(True)
         self._btn_capture_stop.setEnabled(False)
