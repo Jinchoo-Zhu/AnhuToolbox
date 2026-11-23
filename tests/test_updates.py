@@ -57,6 +57,40 @@ class _DownloadHandler(BaseHTTPRequestHandler):
         pass
 
 
+class _RangeDownloadHandler(BaseHTTPRequestHandler):
+    payload = b"0123456789abcdef"
+    calls = 0
+    ranges = []
+
+    def do_GET(self):
+        type(self).calls += 1
+        range_header = self.headers.get("Range")
+        type(self).ranges.append(range_header)
+        start = 0
+        if range_header:
+            start = int(range_header.split("=", 1)[1].split("-", 1)[0])
+        body = self.payload[start:]
+        self.send_response(206 if range_header else 200)
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Length", str(len(body)))
+        if range_header:
+            self.send_header(
+                "Content-Range",
+                "bytes {}-{}/{}".format(
+                    start, len(self.payload) - 1, len(self.payload)),
+            )
+        self.end_headers()
+        if type(self).calls == 1:
+            self.wfile.write(body[:10])
+            self.wfile.flush()
+            self.close_connection = True
+            return
+        self.wfile.write(body)
+
+    def log_message(self, format, *args):
+        pass
+
+
 class UpdateTests(unittest.TestCase):
     def test_header_keeps_about_after_update_notice(self):
         release = ReleaseInfo(
@@ -592,6 +626,43 @@ class UpdateTests(unittest.TestCase):
                 self.assertFalse(failed)
                 self.assertTrue(completed)
                 self.assertEqual(Path(completed[0]).read_bytes(), payload)
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def test_download_worker_resumes_truncated_response(self):
+        _RangeDownloadHandler.calls = 1
+        _RangeDownloadHandler.ranges = []
+        server = ThreadingHTTPServer(
+            ("127.0.0.1", 0), _RangeDownloadHandler)
+        thread = threading.Thread(
+            target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            payload = _RangeDownloadHandler.payload
+            release = ReleaseInfo(
+                version="1.0.5",
+                installer_url="http://127.0.0.1:{}/setup.exe".format(
+                    server.server_address[1]),
+                sha256=hashlib.sha256(payload).hexdigest(),
+                size=len(payload),
+            )
+            with tempfile.TemporaryDirectory() as temp:
+                part = Path(temp) / "AnhuToolbox_Setup_1.0.5.exe.part"
+                part.write_bytes(payload[:10])
+                worker = UpdateDownloadWorker(release, temp)
+                completed = []
+                failed = []
+                worker.completed.connect(completed.append)
+                worker.failed.connect(failed.append)
+                worker.start()
+                self.assertTrue(worker.wait(5000))
+                APP.processEvents()
+                self.assertFalse(failed)
+                self.assertTrue(completed)
+                self.assertEqual(Path(completed[0]).read_bytes(), payload)
+                self.assertEqual(
+                    _RangeDownloadHandler.ranges, ["bytes=10-"])
         finally:
             server.shutdown()
             server.server_close()

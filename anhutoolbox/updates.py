@@ -300,11 +300,6 @@ class UpdateDownloadWorker(QThread):
                     try:
                         self._download_from(client, url, part)
                     except Exception as exc:
-                        try:
-                            if os.path.exists(part):
-                                os.remove(part)
-                        except OSError:
-                            pass
                         if self._cancel.is_set():
                             break
                         errors.append(
@@ -335,11 +330,41 @@ class UpdateDownloadWorker(QThread):
                     pass
 
     def _download_from(self, client, url, part):
-        total = 0
-        digest = hashlib.sha256()
-        with client.stream("GET", url) as response:
+        offset = os.path.getsize(part) if os.path.isfile(part) else 0
+        if offset > self._release.size:
+            os.remove(part)
+            offset = 0
+        if offset == self._release.size:
+            if _hash_file(part).lower() == self._release.sha256:
+                self.progress.emit(self._release.size, self._release.size)
+                return
+            os.remove(part)
+            offset = 0
+        headers = {}
+        if offset:
+            headers["Range"] = "bytes={}-".format(offset)
+        with client.stream("GET", url, headers=headers) as response:
+            if response.status_code == 416:
+                try:
+                    os.remove(part)
+                except OSError:
+                    pass
+                raise UpdateError("续传位置无效，已重置下载")
             response.raise_for_status()
-            with open(part, "wb") as output:
+            append = bool(offset and response.status_code == 206)
+            if offset and not append:
+                offset = 0
+            if response.status_code == 206:
+                content_range = response.headers.get("Content-Range", "")
+                if not content_range.lower().startswith(
+                        "bytes {}-".format(offset).lower()):
+                    try:
+                        os.remove(part)
+                    except OSError:
+                        pass
+                    raise UpdateError("服务器返回的续传范围不正确")
+            total = offset
+            with open(part, "ab" if append else "wb") as output:
                 for chunk in response.iter_bytes(256 * 1024):
                     if self._cancel.is_set():
                         raise UpdateError("更新下载已取消")
@@ -347,13 +372,12 @@ class UpdateDownloadWorker(QThread):
                     if total > self._release.size:
                         raise UpdateError("下载文件超过清单声明大小")
                     output.write(chunk)
-                    digest.update(chunk)
                     self.progress.emit(total, self._release.size)
         if total != self._release.size:
             raise UpdateError(
                 "下载文件大小与清单不一致（收到 {}，应为 {}）".format(
                     total, self._release.size))
-        if digest.hexdigest().lower() != self._release.sha256:
+        if _hash_file(part).lower() != self._release.sha256:
             raise UpdateError("安装包 SHA-256 校验失败")
 
 
