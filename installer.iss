@@ -70,7 +70,7 @@ Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#MyAppName}}
 [Code]
 var
   OptionalDependenciesPage: TWizardPage;
-  OptionalDependenciesList: TNewCheckListBox;
+  NpcapDependencyCheckBox: TNewCheckBox;
 
 procedure RemoveOfficialToolboxFiles();
 var
@@ -103,20 +103,17 @@ begin
     '可选运行组件',
     '选择需要启用的扩展功能组件；不需要可以跳过，之后仍可从对应功能页补装。');
 
-  OptionalDependenciesList := TNewCheckListBox.Create(
+  NpcapDependencyCheckBox := TNewCheckBox.Create(
     OptionalDependenciesPage);
-  with OptionalDependenciesList do
+  with NpcapDependencyCheckBox do
   begin
-    Parent := OptionalDependenciesPage.Surface;
+    Left := 0;
+    Top := 0;
     Width := OptionalDependenciesPage.SurfaceWidth;
-    Height := OptionalDependenciesPage.SurfaceHeight;
-    BorderStyle := bsNone;
-    ParentColor := True;
-    Flat := True;
-    AddCheckBox(
-      '安装抓包工具 Npcap',
-      '', 0, False, True, False, True, nil);
-    ItemIndex := -1;
+    Height := ScaleY(17);
+    Caption := '安装抓包工具 Npcap';
+    Checked := False;
+    Parent := OptionalDependenciesPage.Surface;
   end;
 
   if RegQueryDWordValue(
@@ -124,15 +121,14 @@ begin
       'Software\AnhuToolbox\InstallOptions',
       'InstallNpcap',
       PreviousSelection) then
-    OptionalDependenciesList.Checked[0] := PreviousSelection <> 0;
-  OptionalDependenciesList.ItemIndex := -1;
+    NpcapDependencyCheckBox.Checked := PreviousSelection <> 0;
 end;
 
 function NpcapInstallSelected(): Boolean;
 begin
   Result :=
-    (OptionalDependenciesList <> nil) and
-    OptionalDependenciesList.Checked[0];
+    (NpcapDependencyCheckBox <> nil) and
+    NpcapDependencyCheckBox.Checked;
 end;
 
 function InstallNpcapIfNeeded(): Boolean;

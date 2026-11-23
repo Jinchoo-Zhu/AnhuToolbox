@@ -982,7 +982,9 @@ class OptionalToolboxTests(unittest.TestCase):
         )
         self.assertNotIn("抓包分析需要", installer)
         self.assertIn(
-            "OptionalDependenciesList.ItemIndex := -1;", installer)
+            "NpcapDependencyCheckBox := TNewCheckBox.Create(", installer)
+        self.assertIn("NpcapDependencyCheckBox.Checked", installer)
+        self.assertNotIn("OptionalDependenciesList", installer)
         self.assertIn("function NpcapInstallSelected(): Boolean;", installer)
         self.assertIn("if not NpcapInstallSelected() then", installer)
         self.assertIn(
