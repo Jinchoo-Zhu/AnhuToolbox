@@ -269,6 +269,19 @@ class UpdateDownloadWorker(QThread):
             re.sub(r"[^0-9A-Za-z._-]", "_", self._release.version))
         target = os.path.join(self._directory, name)
         part = target + ".part"
+        if os.path.isfile(target):
+            try:
+                if (
+                    os.path.getsize(target) == self._release.size
+                    and _hash_file(target).lower() == self._release.sha256
+                ):
+                    self.progress.emit(
+                        self._release.size, self._release.size)
+                    self.completed.emit(target)
+                    return
+                os.remove(target)
+            except OSError:
+                pass
         client = None
         try:
             client = httpx.Client(
@@ -281,21 +294,31 @@ class UpdateDownloadWorker(QThread):
             for index, url in enumerate(self._release.download_urls, 1):
                 if self._cancel.is_set():
                     break
-                try:
-                    self._download_from(client, url, part)
-                except Exception as exc:
-                    try:
-                        if os.path.exists(part):
-                            os.remove(part)
-                    except OSError:
-                        pass
+                for attempt in range(2):
                     if self._cancel.is_set():
                         break
-                    errors.append("源{}：{}".format(index, exc))
-                    continue
-                os.replace(part, target)
-                self.completed.emit(target)
-                return
+                    try:
+                        self._download_from(client, url, part)
+                    except Exception as exc:
+                        try:
+                            if os.path.exists(part):
+                                os.remove(part)
+                        except OSError:
+                            pass
+                        if self._cancel.is_set():
+                            break
+                        errors.append(
+                            "源{}第{}次：{}".format(
+                                index, attempt + 1, exc))
+                        if attempt == 0:
+                            self.msleep(500)
+                            continue
+                        break
+                    os.replace(part, target)
+                    self.completed.emit(target)
+                    return
+                if self._cancel.is_set():
+                    break
             if not self._cancel.is_set():
                 self.failed.emit(
                     "所有下载源均失败：{}".format(
@@ -327,7 +350,9 @@ class UpdateDownloadWorker(QThread):
                     digest.update(chunk)
                     self.progress.emit(total, self._release.size)
         if total != self._release.size:
-            raise UpdateError("下载文件大小与清单不一致")
+            raise UpdateError(
+                "下载文件大小与清单不一致（收到 {}，应为 {}）".format(
+                    total, self._release.size))
         if digest.hexdigest().lower() != self._release.sha256:
             raise UpdateError("安装包 SHA-256 校验失败")
 

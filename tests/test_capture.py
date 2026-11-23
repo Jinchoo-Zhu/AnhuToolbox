@@ -59,7 +59,7 @@ class CaptureTests(unittest.TestCase):
                 "length": 66,
                 "info": "test",
             }])
-            for column in (0, 1, 5):
+            for column in range(6):
                 alignment = model.data(
                     model.index(0, column),
                     Qt.ItemDataRole.TextAlignmentRole,
@@ -68,6 +68,16 @@ class CaptureTests(unittest.TestCase):
                     int(alignment),
                     int(Qt.AlignmentFlag.AlignCenter),
                 )
+            info_alignment = model.data(
+                model.index(0, 6),
+                Qt.ItemDataRole.TextAlignmentRole,
+            )
+            self.assertEqual(
+                int(info_alignment),
+                int(
+                    Qt.AlignmentFlag.AlignLeft
+                    | Qt.AlignmentFlag.AlignVCenter),
+            )
         finally:
             capture.stop_tasks()
             capture.deleteLater()
@@ -202,12 +212,50 @@ class CaptureTests(unittest.TestCase):
                     side_effect=AssertionError("cache was not used")):
                 tool._load_capture_detail(18)
             self.assertEqual(
-                tool._capture_detail.toPlainText(), "cached detail")
+                tool._capture_detail.toPlainText(),
+                "页面序号: 18\n"
+                "抓包文件帧号: 18\n\n"
+                "cached detail",
+            )
         finally:
             try:
                 os.remove(path)
             except OSError:
                 pass
+            capture.stop_tasks()
+            capture.deleteLater()
+            APP.processEvents()
+
+    def test_capture_detail_distinguishes_page_and_file_frame_numbers(self):
+        capture = PacketCaptureTool()
+        tool = capture._capture_tool
+        try:
+            detail = tool._format_capture_detail(
+                216, 153, "Frame 153: Packet")
+            self.assertEqual(
+                detail,
+                "页面序号: 216\n"
+                "抓包文件帧号: 153\n\n"
+                "Frame 153: Packet",
+            )
+        finally:
+            capture.stop_tasks()
+            capture.deleteLater()
+            APP.processEvents()
+
+    def test_capture_detail_always_labels_number_source(self):
+        capture = PacketCaptureTool()
+        tool = capture._capture_tool
+        try:
+            detail = tool._format_capture_detail(
+                79, 79, "Frame 79: Packet")
+            self.assertEqual(
+                detail,
+                "页面序号: 79\n"
+                "抓包文件帧号: 79\n\n"
+                "Frame 79: Packet",
+            )
+        finally:
             capture.stop_tasks()
             capture.deleteLater()
             APP.processEvents()
@@ -230,6 +278,34 @@ class CaptureTests(unittest.TestCase):
                 tool._capture_model.format_time(123456.123456))
             self.assertGreaterEqual(
                 tool._capture_table.columnWidth(1), expected + 20)
+        finally:
+            capture.stop_tasks()
+            capture.deleteLater()
+            APP.processEvents()
+
+    def test_capture_protocol_and_length_columns_fit_content(self):
+        capture = PacketCaptureTool()
+        tool = capture._capture_tool
+        try:
+            tool._append_capture_packet({
+                "number": 1,
+                "time": 1.0,
+                "source": "192.0.2.1",
+                "destination": "192.0.2.2",
+                "protocol": "TEST-PROTOCOL",
+                "length": 65535,
+                "info": "test",
+            })
+            APP.processEvents()
+            metrics = tool._capture_table.fontMetrics()
+            self.assertGreaterEqual(
+                tool._capture_table.columnWidth(4),
+                metrics.horizontalAdvance("TEST-PROTOCOL") + 20,
+            )
+            self.assertGreaterEqual(
+                tool._capture_table.columnWidth(5),
+                metrics.horizontalAdvance("65535") + 20,
+            )
         finally:
             capture.stop_tasks()
             capture.deleteLater()
@@ -281,6 +357,10 @@ class CaptureTests(unittest.TestCase):
             self.assertIn(
                 ("old-capture.pcapng", 3), tool._capture_detail_cache)
             self.assertEqual(tool._capture_session_frame_base, 12)
+            self.assertTrue(
+                tool._capture_status.text().startswith("抓包中"))
+            self.assertNotEqual(
+                tool._capture_status.text(), "正在抓包")
 
             fake_process.readAllStandardOutput.return_value = (
                 b'"1"\t"0.500000"\t"192.0.2.3"\t""\t'
@@ -376,11 +456,15 @@ class CaptureTests(unittest.TestCase):
         tool._capture_proc = main_process
         tool._capture_file_proc = file_process
         tool._capture_running = True
+        tool._capture_count = 5
+        tool._capture_bytes = 1024
         try:
             tool._stop_capture()
             self.assertIsNone(tool._capture_proc)
             self.assertIsNone(tool._capture_file_proc)
             self.assertFalse(tool._capture_running)
+            self.assertEqual(
+                tool._capture_status.text(), "已停止  5 包 / 1.0 KB")
         finally:
             capture.stop_tasks()
             capture.deleteLater()
@@ -460,6 +544,43 @@ class CaptureTests(unittest.TestCase):
             self.assertEqual(tool._capture_model.rowCount(), 0)
             self.assertEqual(tool._capture_display_records, 0)
             self.assertEqual(tool._capture_display_bytes, 0)
+        finally:
+            capture.stop_tasks()
+            capture.deleteLater()
+            APP.processEvents()
+
+    def test_capture_page_pause_continues_live_statistics(self):
+        capture = PacketCaptureTool()
+        tool = capture._capture_tool
+        packet = {
+            "number": 1,
+            "display_number": 1,
+            "frame_number": 1,
+            "capture_path": "capture.pcapng",
+            "time": 0.5,
+            "source": "192.0.2.1",
+            "destination": "192.0.2.2",
+            "protocol": "TCP",
+            "length": 66,
+            "info": "paused packet",
+        }
+        try:
+            tool._capture_running = True
+            tool._capture_paused = True
+            tool._capture_buffer.append(packet)
+            tool._flush_capture_packets()
+            self.assertEqual(tool._capture_model.rowCount(), 0)
+            self.assertEqual(tool._capture_count, 1)
+            self.assertEqual(tool._capture_bytes, 66)
+            self.assertEqual(len(tool._capture_paused_packets), 1)
+            self.assertIn("抓包中", tool._capture_status.text())
+            self.assertIn("页面暂停", tool._capture_status.text())
+
+            tool._on_capture_pause(False)
+            self.assertEqual(tool._capture_model.rowCount(), 1)
+            self.assertEqual(tool._capture_count, 1)
+            self.assertEqual(tool._capture_bytes, 66)
+            self.assertNotIn("页面暂停", tool._capture_status.text())
         finally:
             capture.stop_tasks()
             capture.deleteLater()

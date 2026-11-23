@@ -2552,7 +2552,7 @@ class CaptureTableModel(QAbstractTableModel):
         if role == Qt.ItemDataRole.ToolTipRole and index.column() == 6:
             return values[index.column()]
         if role == Qt.ItemDataRole.TextAlignmentRole:
-            if index.column() in (0, 1, 5):
+            if index.column() != 6:
                 return int(
                     Qt.AlignmentFlag.AlignCenter)
             return int(
@@ -2949,16 +2949,30 @@ class NetworkTool(QWidget):
         self._capture_table.verticalHeader().setMinimumSectionSize(
             TABLE_ROW_HEIGHT)
         header.setStretchLastSection(True)
-        for column in (4, 5):
-            header.setSectionResizeMode(
-                column, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        for column in (1, 4, 5):
+            header.setSectionResizeMode(column, QHeaderView.ResizeMode.Fixed)
         self._capture_table.setColumnWidth(
             1,
             max(
                 96,
                 self._capture_table.fontMetrics().horizontalAdvance(
                     "000000.000000") + 28,
+            ),
+        )
+        self._capture_table.setColumnWidth(
+            4,
+            max(
+                70,
+                self._capture_table.fontMetrics().horizontalAdvance(
+                    "ICMPv6") + 28,
+            ),
+        )
+        self._capture_table.setColumnWidth(
+            5,
+            max(
+                64,
+                self._capture_table.fontMetrics().horizontalAdvance(
+                    "65535") + 28,
             ),
         )
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
@@ -3249,7 +3263,7 @@ class NetworkTool(QWidget):
         self._btn_capture_clear.setEnabled(False)
         self._btn_capture_refresh.setEnabled(False)
         self._chk_capture_save.setEnabled(False)
-        self._set_capture_status("正在抓包", "success")
+        self._update_capture_running_status()
         process.start(self._capture_program(), args)
 
     def _on_capture_stdout(self, process):
@@ -3353,6 +3367,7 @@ class NetworkTool(QWidget):
             return
         packets, self._capture_buffer = self._capture_buffer, []
         visible_packets = []
+        paused_packets = []
         for packet in packets:
             if self._capture_paused:
                 size = len(str(packet.get("info") or "")) + 256
@@ -3362,16 +3377,21 @@ class NetworkTool(QWidget):
                 ):
                     self._capture_dropped += 1
                 else:
-                    self._capture_paused_packets.append(packet)
+                    paused_packets.append(packet)
                     self._capture_paused_bytes += size
                 continue
             visible_packets.append(packet)
+        if paused_packets:
+            self._capture_paused_packets.extend(paused_packets)
+            self._record_capture_totals(paused_packets)
+            self._update_capture_running_status()
         self._append_capture_packets(visible_packets)
 
     def _append_capture_packet(self, packet):
         self._append_capture_packets([packet])
 
-    def _append_capture_packets(self, packets):
+    def _append_capture_packets(
+            self, packets, count_as_new=True):
         if not packets:
             return
         self._capture_model.append_packets(packets)
@@ -3395,9 +3415,28 @@ class NetworkTool(QWidget):
         )
         if self._capture_table.columnWidth(1) < required_time_width:
             self._capture_table.setColumnWidth(1, required_time_width)
-        self._capture_count += len(packets)
-        self._capture_bytes += sum(
-            int(packet["length"]) for packet in packets)
+        required_protocol_width = (
+            max(
+                self._capture_table.fontMetrics().horizontalAdvance(
+                    str(packet["protocol"]))
+                for packet in packets
+            )
+            + 28
+        )
+        if self._capture_table.columnWidth(4) < required_protocol_width:
+            self._capture_table.setColumnWidth(4, required_protocol_width)
+        required_length_width = (
+            max(
+                self._capture_table.fontMetrics().horizontalAdvance(
+                    str(packet["length"]))
+                for packet in packets
+            )
+            + 28
+        )
+        if self._capture_table.columnWidth(5) < required_length_width:
+            self._capture_table.setColumnWidth(5, required_length_width)
+        if count_as_new:
+            self._record_capture_totals(packets)
         self._capture_display_records += len(packets)
         self._capture_display_bytes += sum(
             512 + int(packet["length"]) + len(str(packet["info"]))
@@ -3405,13 +3444,31 @@ class NetworkTool(QWidget):
         )
         if self._capture_model.rowCount() > 0:
             self._capture_table.scrollToBottom()
+        self._update_capture_running_status()
+        self._clear_capture_if_save_limit_reached()
+
+    def _record_capture_totals(self, packets):
+        self._capture_count += len(packets)
+        self._capture_bytes += sum(
+            int(packet["length"]) for packet in packets)
+
+    def _update_capture_running_status(self):
+        text = "抓包中  {} 包 / {}".format(
+            self._capture_count,
+            self._format_capture_bytes(self._capture_bytes),
+        )
+        if self._capture_paused:
+            text += "（页面暂停）"
+        self._set_capture_status(text, "success")
+
+    def _update_capture_stopped_status(self):
         self._set_capture_status(
-            "抓包中  {} 包 / {}".format(
+            "已停止  {} 包 / {}".format(
                 self._capture_count,
-                self._format_capture_bytes(self._capture_bytes)),
+                self._format_capture_bytes(self._capture_bytes),
+            ),
             "success",
         )
-        self._clear_capture_if_save_limit_reached()
 
     @staticmethod
     def _format_capture_bytes(value):
@@ -3430,14 +3487,10 @@ class NetworkTool(QWidget):
             pending, self._capture_paused_packets = (
                 self._capture_paused_packets, [])
             self._capture_paused_bytes = 0
-            for packet in pending:
-                self._append_capture_packet(packet)
-            self._set_capture_status(
-                "抓包中  {} 包 / {}".format(
-                    self._capture_count,
-                    self._format_capture_bytes(self._capture_bytes)),
-                "success",
-            )
+            self._append_capture_packets(
+                pending, count_as_new=False)
+        elif checked and self._capture_running:
+            self._update_capture_running_status()
 
     def _on_capture_save_toggle(self, checked):
         if self._capture_running:
@@ -3558,6 +3611,8 @@ class NetworkTool(QWidget):
             return
         try:
             frame = int(packet.get("frame_number", packet["number"]))
+            display_number = int(
+                packet.get("display_number", packet["number"]))
         except (KeyError, TypeError, ValueError):
             return
         path = packet.get("capture_path") or self._capture_temp_path
@@ -3569,10 +3624,15 @@ class NetworkTool(QWidget):
         self._capture_selected_frame = frame
         self._capture_selected_path = path
         QTimer.singleShot(
-            80, lambda: self._load_capture_detail(frame, path))
+            80,
+            lambda: self._load_capture_detail(
+                frame, path, display_number),
+        )
 
-    def _load_capture_detail(self, frame, path=None):
+    def _load_capture_detail(
+            self, frame, path=None, display_number=None):
         path = path or self._capture_temp_path
+        display_number = int(display_number or frame)
         if (
             not frame
             or not path
@@ -3589,7 +3649,9 @@ class NetworkTool(QWidget):
         cached = self._capture_detail_cache.get(detail_key)
         if cached is not None:
             self._capture_detail_cache.move_to_end(detail_key)
-            self._capture_detail.setPlainText(cached)
+            self._capture_detail.setPlainText(
+                self._format_capture_detail(
+                    display_number, frame, cached))
             return
         process = QProcess(self)
         process.setWorkingDirectory(str(self._capture_engine_dir))
@@ -3597,11 +3659,12 @@ class NetworkTool(QWidget):
             QProcess.ProcessChannelMode.MergedChannels)
         process.finished.connect(
             lambda code, _status: self._on_capture_detail_finished(
-                process, frame, path, code))
+                process, frame, path, display_number, code))
         process.errorOccurred.connect(
             lambda _error: self._on_capture_detail_error(process))
         self._capture_detail_proc = process
-        self._capture_detail.setPlainText("正在加载数据包 #{}...".format(frame))
+        self._capture_detail.setPlainText(
+            "正在加载数据包 #{}...".format(display_number))
         self._capture_detail_timeout_timer.start(8000)
         process.start(self._capture_program(), [
             "-r", path,
@@ -3610,7 +3673,7 @@ class NetworkTool(QWidget):
         ])
 
     def _on_capture_detail_finished(
-            self, process, frame, path, exit_code):
+            self, process, frame, path, display_number, exit_code):
         self._capture_detail_timeout_timer.stop()
         output = bytes(process.readAll()).decode(
             "utf-8", errors="replace")
@@ -3635,7 +3698,9 @@ class NetworkTool(QWidget):
             self._capture_detail_cache.move_to_end(detail_key)
             while len(self._capture_detail_cache) > 50:
                 self._capture_detail_cache.popitem(last=False)
-            self._capture_detail.setPlainText(detail)
+            self._capture_detail.setPlainText(
+                self._format_capture_detail(
+                    display_number, frame, detail))
         else:
             message = (
                 output.strip()
@@ -3645,6 +3710,13 @@ class NetworkTool(QWidget):
             )
             self._capture_detail.setPlainText(
                 "无法读取数据包详情：\n" + message)
+
+    @staticmethod
+    def _format_capture_detail(display_number, frame, detail):
+        return (
+            "页面序号: {}\n"
+            "抓包文件帧号: {}\n\n{}"
+        ).format(display_number, frame, detail)
 
     def _on_capture_detail_error(self, process):
         self._capture_detail_timeout_timer.stop()
@@ -3669,7 +3741,6 @@ class NetworkTool(QWidget):
             return
         self._capture_stopping = True
         self._btn_capture_stop.setEnabled(False)
-        self._set_capture_status("正在停止...", "primary")
         processes = (self._capture_proc, self._capture_file_proc)
         for process in processes:
             if (
@@ -3707,8 +3778,7 @@ class NetworkTool(QWidget):
         self._btn_capture_clear.setEnabled(True)
         self._btn_capture_refresh.setEnabled(True)
         self._chk_capture_save.setEnabled(True)
-        self._set_capture_status(
-            "已停止  {} 包".format(self._capture_count), "success")
+        self._update_capture_stopped_status()
 
     def _on_capture_finished(self, process, exit_code):
         if self._capture_proc is not process:
@@ -3738,8 +3808,7 @@ class NetworkTool(QWidget):
         self._btn_capture_refresh.setEnabled(True)
         self._chk_capture_save.setEnabled(True)
         if user_stopped:
-            self._set_capture_status(
-                "已停止  {} 包".format(self._capture_count), "success")
+            self._update_capture_stopped_status()
         else:
             error = self._capture_stderr_buffer.strip()
             self._set_capture_status("抓包异常结束", "error")

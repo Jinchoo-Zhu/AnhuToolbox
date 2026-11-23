@@ -554,6 +554,73 @@ class UpdateTests(unittest.TestCase):
             server.shutdown()
             server.server_close()
 
+    def test_download_worker_retries_transient_source_failure(self):
+        server = ThreadingHTTPServer(
+            ("127.0.0.1", 0), _DownloadHandler)
+        thread = threading.Thread(
+            target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            payload = _DownloadHandler.payload
+            release = ReleaseInfo(
+                version="1.0.5",
+                installer_url="http://127.0.0.1:{}/setup.exe".format(
+                    server.server_address[1]),
+                sha256=hashlib.sha256(payload).hexdigest(),
+                size=len(payload),
+            )
+            with tempfile.TemporaryDirectory() as temp:
+                worker = UpdateDownloadWorker(release, temp)
+                completed = []
+                failed = []
+                attempts = []
+                worker.completed.connect(completed.append)
+                worker.failed.connect(failed.append)
+
+                def download(_client, _url, part):
+                    attempts.append(part)
+                    if len(attempts) == 1:
+                        raise RuntimeError("_ssl: unexpected EOF")
+                    Path(part).write_bytes(payload)
+
+                with mock.patch.object(
+                        worker, "_download_from", side_effect=download):
+                    worker.start()
+                    self.assertTrue(worker.wait(5000))
+                APP.processEvents()
+                self.assertEqual(len(attempts), 2)
+                self.assertFalse(failed)
+                self.assertTrue(completed)
+                self.assertEqual(Path(completed[0]).read_bytes(), payload)
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def test_download_worker_reuses_valid_cached_installer(self):
+        payload = _DownloadHandler.payload
+        release = ReleaseInfo(
+            version="1.0.6",
+            installer_url="http://127.0.0.1/setup.exe",
+            sha256=hashlib.sha256(payload).hexdigest(),
+            size=len(payload),
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            target = Path(temp) / "AnhuToolbox_Setup_1.0.6.exe"
+            target.write_bytes(payload)
+            worker = UpdateDownloadWorker(release, temp)
+            completed = []
+            failed = []
+            worker.completed.connect(completed.append)
+            worker.failed.connect(failed.append)
+            with mock.patch.object(
+                    worker, "_download_from") as download:
+                worker.start()
+                self.assertTrue(worker.wait(5000))
+            APP.processEvents()
+            download.assert_not_called()
+            self.assertFalse(failed)
+            self.assertEqual(completed, [str(target)])
+
     def test_release_manifest_builder_and_updater_hash(self):
         with tempfile.TemporaryDirectory() as temp:
             installer = (
