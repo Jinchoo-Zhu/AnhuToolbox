@@ -967,6 +967,32 @@ class OptionalToolboxTests(unittest.TestCase):
         self.assertIn("_verify_external_tools()", spec)
         self.assertNotIn("(TOOLS_ROOT, 'tools')", spec)
 
+    def test_installer_keeps_npcap_optional(self):
+        installer = (ROOT / "installer.iss").read_text(
+            encoding="utf-8")
+        self.assertIn(
+            "CreateCustomPage(\n"
+            "    wpSelectTasks,\n"
+            "    '可选运行组件',",
+            installer,
+        )
+        self.assertIn(
+            "'安装抓包工具 Npcap（抓包分析需要）'",
+            installer,
+        )
+        self.assertIn("function NpcapInstallSelected(): Boolean;", installer)
+        self.assertIn("if not NpcapInstallSelected() then", installer)
+        self.assertIn(
+            "function InstallNpcapIfNeeded(): Boolean;", installer)
+        self.assertIn("Result := IsNpcapInstalled();", installer)
+        self.assertIn("NpcapReady := InstallNpcapIfNeeded();", installer)
+        self.assertIn(
+            "if NpcapInstallSelected() and NpcapReady then", installer)
+        self.assertIn("已取消 Npcap 安装", installer)
+        self.assertIn("'Software\\AnhuToolbox\\InstallOptions'", installer)
+        self.assertNotIn('Name: "installnpcap"', installer)
+        self.assertNotIn("是否现在安装 Npcap", installer)
+
 
 class PersistenceTests(unittest.TestCase):
     def test_preset_visibility_is_saved_from_toggle_intent(self):

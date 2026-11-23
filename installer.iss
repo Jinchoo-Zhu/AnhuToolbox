@@ -11,7 +11,8 @@
 ;   - 若用户在向导里改到受保护目录(如 Program Files), Inno Setup 会自动请求提权。
 ;   - data\ 里的配置只在首次安装时写入, 升级时不会覆盖用户已有配置;
 ;     官方 tools 是可选的“安护工具箱”组件, 由安装任务决定是否复制;
-;     用户自定义库清单 tools.user.json 始终保留。
+;     用户自定义库清单 tools.user.json 始终保留;
+;     Npcap 抓包驱动在独立的“可选运行组件”页面选择是否安装。
 
 #define MyAppName "Anhu百宝箱"
 #define MyAppVersion "1.0.7"
@@ -67,6 +68,10 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilen
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#MyAppName}}"; Flags: nowait postinstall skipifsilent
 
 [Code]
+var
+  OptionalDependenciesPage: TWizardPage;
+  OptionalDependenciesList: TNewCheckListBox;
+
 procedure RemoveOfficialToolboxFiles();
 var
   ToolsDir: String;
@@ -89,13 +94,57 @@ begin
     RegKeyExists(HKCU, 'SOFTWARE\Npcap');
 end;
 
-procedure InstallNpcapIfNeeded();
+procedure InitializeWizard();
+var
+  PreviousSelection: Cardinal;
+begin
+  OptionalDependenciesPage := CreateCustomPage(
+    wpSelectTasks,
+    '可选运行组件',
+    '选择需要启用的扩展功能组件；不需要可以跳过，之后仍可从对应功能页补装。');
+
+  OptionalDependenciesList := TNewCheckListBox.Create(
+    OptionalDependenciesPage);
+  with OptionalDependenciesList do
+  begin
+    Parent := OptionalDependenciesPage.Surface;
+    Width := OptionalDependenciesPage.SurfaceWidth;
+    Height := OptionalDependenciesPage.SurfaceHeight;
+    BorderStyle := bsNone;
+    ParentColor := True;
+    Flat := True;
+    AddCheckBox(
+      '安装抓包工具 Npcap（抓包分析需要）',
+      '', 0, False, True, False, True, nil);
+  end;
+
+  if RegQueryDWordValue(
+      HKCU,
+      'Software\AnhuToolbox\InstallOptions',
+      'InstallNpcap',
+      PreviousSelection) then
+    OptionalDependenciesList.Checked[0] := PreviousSelection <> 0;
+end;
+
+function NpcapInstallSelected(): Boolean;
+begin
+  Result :=
+    (OptionalDependenciesList <> nil) and
+    OptionalDependenciesList.Checked[0];
+end;
+
+function InstallNpcapIfNeeded(): Boolean;
 var
   Installer: String;
   ResultCode: Integer;
 begin
+  Result := IsNpcapInstalled();
+
   // 自动更新必须保持静默；缺少驱动时由抓包页面提示用户安装。
-  if WizardSilent() or IsNpcapInstalled() then
+  if not NpcapInstallSelected() then
+    exit;
+
+  if WizardSilent() or Result then
     exit;
 
   Installer := ExpandConstant(
@@ -103,32 +152,30 @@ begin
   if not FileExists(Installer) then
     exit;
 
-  if MsgBox(
-      '抓包功能需要安装 Npcap 网络驱动。' + #13#10#13#10 +
-      '是否现在安装 Npcap？' + #13#10 +
-      '安装完成后，主安装程序会继续完成。',
-      mbConfirmation, MB_YESNO) <> IDYES then
-    exit;
-
   WizardForm.StatusLabel.Caption := '正在等待 Npcap 安装完成...';
   if not ShellExec(
       'runas', Installer, '', '', SW_SHOWNORMAL,
       ewWaitUntilTerminated, ResultCode) then
   begin
-    MsgBox('无法启动 Npcap 安装程序，请稍后从抓包页面重试。',
+    MsgBox(
+      'Npcap 安装未能启动。Anhu百宝箱已完成安装，' + #13#10 +
+      '可稍后在“抓包分析”页面点击“安装抓包驱动”重试。',
       mbError, MB_OK);
     exit;
   end;
 
-  if ResultCode <> 0 then
+  Result := IsNpcapInstalled();
+  if not Result then
     MsgBox(
-      'Npcap 安装未完成。百宝箱仍可安装，但抓包功能需要 Npcap。',
+      '已取消 Npcap 安装。Anhu百宝箱已完成安装，' + #13#10 +
+      '可稍后在“抓包分析”页面点击“安装抓包驱动”补装。',
       mbInformation, MB_OK);
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   StateFile: String;
+  NpcapReady: Boolean;
 begin
   if CurStep = ssPostInstall then
   begin
@@ -144,7 +191,19 @@ begin
       SaveStringToFile(StateFile, '0', False);
     end;
 
-    InstallNpcapIfNeeded();
+    NpcapReady := InstallNpcapIfNeeded();
+    if NpcapInstallSelected() and NpcapReady then
+      RegWriteDWordValue(
+        HKCU,
+        'Software\AnhuToolbox\InstallOptions',
+        'InstallNpcap',
+        1)
+    else
+      RegWriteDWordValue(
+        HKCU,
+        'Software\AnhuToolbox\InstallOptions',
+        'InstallNpcap',
+        0);
   end;
 end;
 
