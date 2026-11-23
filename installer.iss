@@ -47,7 +47,7 @@ Name: "chinesesimplified"; MessagesFile: "ChineseSimplified.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: checkedonce
-Name: "installtoolbox"; Description: "安装安护工具箱（可选第三方工具）"; GroupDescription: "可选组件"
+Name: "installtoolbox"; Description: "安装安护工具箱"; GroupDescription: "可选组件"
 
 [Files]
 Source: "dist\Anhu百宝箱\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
@@ -114,8 +114,9 @@ begin
     ParentColor := True;
     Flat := True;
     AddCheckBox(
-      '安装抓包工具 Npcap（抓包分析需要）',
+      '安装抓包工具 Npcap',
       '', 0, False, True, False, True, nil);
+    ItemIndex := -1;
   end;
 
   if RegQueryDWordValue(
@@ -124,6 +125,7 @@ begin
       'InstallNpcap',
       PreviousSelection) then
     OptionalDependenciesList.Checked[0] := PreviousSelection <> 0;
+  OptionalDependenciesList.ItemIndex := -1;
 end;
 
 function NpcapInstallSelected(): Boolean;

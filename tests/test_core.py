@@ -950,7 +950,7 @@ class OptionalToolboxTests(unittest.TestCase):
         spec = (ROOT / "AnhuToolbox.spec").read_text(encoding="utf-8")
         self.assertIn(
             'Name: "installtoolbox"; '
-            'Description: "安装安护工具箱（可选第三方工具）"',
+            'Description: "安装安护工具箱"',
             installer,
         )
         self.assertGreaterEqual(
@@ -977,9 +977,12 @@ class OptionalToolboxTests(unittest.TestCase):
             installer,
         )
         self.assertIn(
-            "'安装抓包工具 Npcap（抓包分析需要）'",
+            "'安装抓包工具 Npcap'",
             installer,
         )
+        self.assertNotIn("抓包分析需要", installer)
+        self.assertIn(
+            "OptionalDependenciesList.ItemIndex := -1;", installer)
         self.assertIn("function NpcapInstallSelected(): Boolean;", installer)
         self.assertIn("if not NpcapInstallSelected() then", installer)
         self.assertIn(
