@@ -597,6 +597,7 @@ class ProtocolPageTests(unittest.TestCase):
             sidebar.sp_mqtt_keepalive,
             sidebar.cb_mqtt_protocol,
             sidebar.chk_mqtt_tls,
+            sidebar._btn_mqtt_client_tls,
             sidebar.chk_mqtt_clean,
             sidebar.chk_mqtt_reconnect,
         )

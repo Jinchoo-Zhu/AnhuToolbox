@@ -17,7 +17,8 @@ from .workers import SerialReadWorker, TCPServerWorker, TCPClientWorker
 from .protocol_workers import MQTTWorker, WebSocketWorker
 from .protocol_pages import HTTPPage, MQTTPage, WebSocketPage
 from .mqtt_broker import (
-    MQTTBrokerError, MQTTBrokerRuntime, mqtt_broker_available,
+    MQTTBrokerError, MQTTBrokerRuntime, install_mqtt_broker_runtime,
+    mqtt_broker_archive, mqtt_broker_available,
 )
 from .process_metrics import ProcessMetrics
 from .process_guard import close_child_processes
@@ -1109,6 +1110,8 @@ class MainWindow(QMainWindow):
         self._mqtt_page.publish_requested.connect(self._on_mqtt_publish)
         self._mqtt_page.server_connect_local_requested.connect(
             self._on_mqtt_connect_local)
+        self._mqtt_page.server_runtime_install_requested.connect(
+            self._on_mqtt_server_runtime_install_requested)
         self._mqtt_page.mode_changed.connect(
             self._on_mqtt_mode_changed)
         self.sidebar.mqtt_server_settings_changed.connect(
@@ -1119,9 +1122,7 @@ class MainWindow(QMainWindow):
             self._on_mqtt_server_stop_requested)
         self.sidebar.set_mqtt_server_mode(
             self._mqtt_page.is_server_mode())
-        runtime_available = mqtt_broker_available(self._base_dir)
-        self._mqtt_page.set_server_runtime_available(runtime_available)
-        self.sidebar.set_mqtt_server_available(runtime_available)
+        self._refresh_mqtt_server_runtime_availability()
         self._websocket_page.send_requested.connect(
             self._on_websocket_send)
         self._websocket_page.ping_requested.connect(
@@ -1329,6 +1330,7 @@ class MainWindow(QMainWindow):
                 "clean_session": self.sidebar.chk_mqtt_clean.isChecked(),
                 "auto_reconnect": self.sidebar.chk_mqtt_reconnect.isChecked(),
                 "tls": self.sidebar.chk_mqtt_tls.isChecked(),
+                "tls_config": self.sidebar.mqtt_client_tls_config(),
                 **self._mqtt_page.snapshot(),
                 "server": self.sidebar.mqtt_server_config(),
             },
@@ -1491,6 +1493,8 @@ class MainWindow(QMainWindow):
             _profile_bool(mq.get("auto_reconnect", True), True))
         self.sidebar.chk_mqtt_tls.setChecked(
             _profile_bool(mq.get("tls", False), False))
+        self.sidebar.set_mqtt_client_tls_config(
+            mq.get("tls_config"))
         self.sidebar.set_mqtt_server_config(mq.get("server"))
         self._mqtt_page.apply(mq)
         self.sidebar.set_mqtt_server_mode(
@@ -1702,7 +1706,10 @@ class MainWindow(QMainWindow):
             return
         name = self._pm.import_from(path)
         if not name:
-            show_error(self, "导入失败", "项目文件格式不正确或无法读取。")
+            show_error(
+                self, "导入失败",
+                self._pm.last_error
+                or "项目文件格式不正确或无法读取。")
             return
         self._reload_project_list(name)
         show_success(self, "导入成功", "已导入项目「{}」".format(name))
@@ -1716,8 +1723,10 @@ class MainWindow(QMainWindow):
         if data is not None and contains_sensitive_values(data):
             if not ask_yes_no(
                 self, "导出包含凭据",
-                "项目文件包含明文密码、Token 或其他凭据。\n"
-                "导出后请妥善保管，确定继续导出吗？",
+                "项目凭据使用当前 Windows 用户的 DPAPI 加密。\n"
+                "导出的项目只能由同一 Windows 用户解密，"
+                "不能直接交给其他电脑或账号使用。\n\n"
+                "确定继续导出吗？",
                 confirm_text="继续导出", danger=True,
             ):
                 return
@@ -1877,6 +1886,7 @@ class MainWindow(QMainWindow):
             "clean_session": self.sidebar.chk_mqtt_clean.isChecked(),
             "auto_reconnect": self.sidebar.chk_mqtt_reconnect.isChecked(),
             "tls": self.sidebar.chk_mqtt_tls.isChecked(),
+            "tls_config": self.sidebar.mqtt_client_tls_config(),
         }
         self._mqtt_worker.configure(config)
         self._mqtt_auto_reconnect = bool(config["auto_reconnect"])
@@ -2050,6 +2060,29 @@ class MainWindow(QMainWindow):
             self.sidebar.set_mqtt_server_running(False)
             show_warning(self, "MQTT 服务端启动失败", str(exc))
 
+    def _refresh_mqtt_server_runtime_availability(self):
+        available = mqtt_broker_available(self._base_dir)
+        installable = mqtt_broker_archive(self._base_dir) is not None
+        self._mqtt_page.set_server_runtime_available(
+            available, installable)
+        self.sidebar.set_mqtt_server_available(available)
+        return available
+
+    def _on_mqtt_server_runtime_install_requested(self):
+        try:
+            install_mqtt_broker_runtime(
+                self._base_dir, self._data_root)
+        except Exception as exc:
+            self._refresh_mqtt_server_runtime_availability()
+            show_error(self, "安装 MQTT 服务端失败", str(exc))
+            return
+        if not self._refresh_mqtt_server_runtime_availability():
+            show_error(
+                self, "安装 MQTT 服务端失败",
+                "运行组件已解压，但程序仍未找到 mosquitto.exe。")
+            return
+        show_success(self, "安装成功", "MQTT 服务端运行组件已安装。")
+
     def _on_mqtt_server_stop_requested(self):
         self._mqtt_broker.stop()
 
@@ -2092,6 +2125,33 @@ class MainWindow(QMainWindow):
         else:
             self.sidebar.le_mqtt_user.clear()
             self.sidebar.le_mqtt_password.clear()
+        server_tls = config.get("tls")
+        server_tls = server_tls if isinstance(server_tls, dict) else {}
+        if bool(server_tls.get("enabled", False)):
+            existing_tls = self.sidebar.mqtt_client_tls_config()
+            require_client_cert = bool(
+                server_tls.get("require_client_cert", False))
+            cert_file = str(
+                existing_tls.get("cert_file") or "").strip()
+            key_file = str(
+                existing_tls.get("key_file") or "").strip()
+            if require_client_cert and (not cert_file or not key_file):
+                show_warning(
+                    self, "MQTT 本地连接",
+                    "服务端要求客户端证书。请先在客户端 TLS 设置中"
+                    "选择客户端证书和私钥，再使用本地客户端连接。")
+                return
+            self.sidebar.set_mqtt_client_tls_config({
+                "enabled": True,
+                "ca_file": str(
+                    server_tls.get("ca_file") or "").strip(),
+                "cert_file": cert_file if require_client_cert else "",
+                "key_file": key_file if require_client_cert else "",
+                "require_client_cert": False,
+                "insecure": False,
+            })
+        else:
+            self.sidebar.chk_mqtt_tls.setChecked(False)
         self._mqtt_page.show_client_mode()
         self._connect_mqtt()
 

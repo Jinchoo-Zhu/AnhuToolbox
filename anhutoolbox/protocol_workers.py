@@ -153,8 +153,21 @@ class MQTTWorker(QThread):
                 client.username_pw_set(username, str(config.get("password") or ""))
 
             if config.get("tls"):
-                client.tls_set()
-                client.tls_insecure_set(bool(config.get("tls_insecure", False)))
+                tls_config = config.get("tls_config")
+                tls_config = (
+                    tls_config if isinstance(tls_config, dict) else {})
+                client.tls_set(
+                    ca_certs=str(
+                        tls_config.get("ca_file") or "").strip() or None,
+                    certfile=str(
+                        tls_config.get("cert_file") or "").strip() or None,
+                    keyfile=str(
+                        tls_config.get("key_file") or "").strip() or None,
+                )
+                client.tls_insecure_set(
+                    bool(tls_config.get(
+                        "insecure",
+                        config.get("tls_insecure", False))))
 
             client.on_connect = self._on_connect
             client.on_disconnect = self._on_disconnect

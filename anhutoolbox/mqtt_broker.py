@@ -1,11 +1,15 @@
 # -*- coding: utf-8 -*-
 """Bundled Mosquitto process management for the MQTT server mode."""
 
+import base64
+import ctypes
+import hashlib
 import os
+import shutil
 import socket
-import subprocess
 import sys
 import time as os_time
+import zipfile
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QProcess, QTimer, Signal
@@ -27,6 +31,9 @@ def mqtt_broker_dir(base_dir=None):
         if meipass:
             roots.append(Path(meipass))
     roots.append(Path(__file__).resolve().parent.parent)
+    local_appdata = os.environ.get("LOCALAPPDATA")
+    if local_appdata:
+        roots.append(Path(local_appdata) / "AnhuToolbox")
 
     candidates = []
     for root in roots:
@@ -44,6 +51,69 @@ def mqtt_broker_available(base_dir=None):
     return (mqtt_broker_dir(base_dir) / "mosquitto.exe").is_file()
 
 
+def mqtt_broker_archive(base_dir=None):
+    roots = []
+    if base_dir:
+        roots.append(Path(base_dir))
+    if getattr(sys, "frozen", False):
+        roots.append(Path(sys.executable).resolve().parent)
+        meipass = getattr(sys, "_MEIPASS", "")
+        if meipass:
+            roots.append(Path(meipass))
+    roots.append(Path(__file__).resolve().parent.parent)
+    for root in roots:
+        for candidate in (
+            root / "lib" / "mqtt" / "broker.zip",
+            root / "mqtt" / "broker.zip",
+        ):
+            if candidate.is_file():
+                return candidate
+    return None
+
+
+def install_mqtt_broker_runtime(base_dir, data_root):
+    archive = mqtt_broker_archive(base_dir)
+    if archive is None:
+        raise MQTTBrokerError(
+            "安装包中缺少 MQTT 服务端运行资源，请重新下载完整安装包。")
+    target = Path(data_root) / "mqtt" / "broker"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.parent / ".broker-installing-{}-{}".format(
+        os.getpid(), os_time.time_ns())
+    try:
+        temporary.mkdir()
+        with zipfile.ZipFile(archive) as package:
+            for info in package.infolist():
+                relative = Path(info.filename)
+                if relative.is_absolute() or ".." in relative.parts:
+                    raise MQTTBrokerError("MQTT 运行组件压缩包路径不安全")
+                package.extract(info, temporary)
+        required = (
+            "mosquitto.exe",
+            "mosquitto_passwd.exe",
+            "mosquitto_common.dll",
+            "mosquitto_password_file.dll",
+            "NOTICE.md",
+            "edl-v10",
+            "epl-v20",
+        )
+        missing = [
+            name for name in required
+            if not (temporary / name).is_file()
+        ]
+        if missing:
+            raise MQTTBrokerError(
+                "MQTT 运行组件不完整：{}".format("、".join(missing)))
+        if target.exists():
+            shutil.rmtree(target)
+        os.replace(temporary, target)
+        return target
+    except Exception:
+        if temporary.exists():
+            shutil.rmtree(temporary, ignore_errors=True)
+        raise
+
+
 def _port_is_available(bind_address, port):
     family = socket.AF_INET6 if ":" in str(bind_address) else socket.AF_INET
     with socket.socket(family, socket.SOCK_STREAM) as probe:
@@ -54,29 +124,171 @@ def _port_is_available(bind_address, port):
     return True
 
 
-def _write_password_file(executable_dir, username, password, target):
-    tool = executable_dir / "mosquitto_passwd.exe"
-    if not tool.is_file():
-        raise MQTTBrokerError("缺少 mosquitto_passwd.exe")
+def _config_path(path):
+    """Return a Windows short path for Mosquitto's ANSI config parser."""
+    path = Path(path)
+    if os.name != "nt" or all(ord(char) < 128 for char in str(path)):
+        return path
+    if not path.exists():
+        return _config_path(path.parent) / path.name
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.GetShortPathNameW.argtypes = [
+        ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_ulong,
+    ]
+    kernel32.GetShortPathNameW.restype = ctypes.c_ulong
+    size = max(260, len(str(path)) * 2)
+    while size <= 32768:
+        buffer = ctypes.create_unicode_buffer(size)
+        length = kernel32.GetShortPathNameW(
+            str(path), buffer, size)
+        if 0 < length < size:
+            shortened = Path(buffer.value)
+            if all(ord(char) < 128 for char in str(shortened)):
+                return shortened
+            break
+        size *= 2
+    raise MQTTBrokerError(
+        "无法为含中文的 MQTT 运行路径生成兼容短路径，"
+        "请启用 NTFS 8.3 短文件名或将程序放到纯英文路径：{}".format(path))
+
+
+def _password_hash(password):
+    iterations = 20000
+    salt = os.urandom(64)
+    digest = hashlib.pbkdf2_hmac(
+        "sha512",
+        str(password).encode("utf-8"),
+        salt,
+        iterations,
+        dklen=64,
+    )
+    return "$7${}${}${}".format(
+        iterations,
+        base64.b64encode(salt).decode("ascii"),
+        base64.b64encode(digest).decode("ascii"),
+    )
+
+
+def _write_password_file(users, target):
     try:
-        target.unlink(missing_ok=True)
+        lines = [
+            "{}:{}".format(user["username"], _password_hash(
+                user["password"]))
+            for user in users
+        ]
+        target.write_text(
+            "\n".join(lines) + "\n", encoding="utf-8")
     except OSError as exc:
         raise MQTTBrokerError(
-            "无法清理旧的 MQTT 密码文件：{}".format(exc)) from exc
-    flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-    result = subprocess.run(
-        [str(tool), "-b", "-c", str(target), username, password],
-        cwd=str(executable_dir),
-        capture_output=True,
-        timeout=10,
-        creationflags=flags,
-    )
-    if result.returncode != 0 or not target.is_file():
-        detail = bytes(result.stderr or b"").decode(
-            "utf-8", errors="replace").strip()
+            "无法写入 MQTT 密码文件：{}".format(exc)) from exc
+
+
+def _normalize_users(config):
+    raw_users = config.get("users")
+    if not isinstance(raw_users, list):
+        raw_users = []
+    if not raw_users:
+        username = str(config.get("username") or "").strip()
+        if username:
+            raw_users = [{
+                "username": username,
+                "password": str(config.get("password") or ""),
+                "enabled": True,
+                "topics": ["#"],
+                "access": "readwrite",
+            }]
+    users = []
+    seen = set()
+    for item in raw_users:
+        if not isinstance(item, dict):
+            continue
+        username = str(item.get("username") or "").strip()
+        if not username or not bool(item.get("enabled", True)):
+            continue
+        if any(character in username for character in ("\r", "\n", "\0", ":")):
+            raise MQTTBrokerError("MQTT 用户名不能包含换行符或冒号")
+        if username in seen:
+            raise MQTTBrokerError(
+                "MQTT 用户名重复：{}".format(username))
+        seen.add(username)
+        password = str(item.get("password") or "")
+        if not password:
+            raise MQTTBrokerError(
+                "用户 {} 未填写密码".format(username))
+        topics = item.get("topics")
+        if isinstance(topics, str):
+            topics = topics.splitlines()
+        if not isinstance(topics, (list, tuple)):
+            topics = []
+        topics = [
+            str(topic).strip()
+            for topic in topics
+            if str(topic).strip()
+        ]
+        if not topics:
+            raise MQTTBrokerError(
+                "用户 {} 未配置 Topic 权限".format(username))
+        if any(
+            any(character in topic for character in ("\r", "\n", "\0"))
+            for topic in topics
+        ):
+            raise MQTTBrokerError(
+                "用户 {} 的 Topic 不能包含换行符".format(username))
+        access = str(item.get("access") or "readwrite").lower()
+        if access not in ("read", "readwrite"):
+            raise MQTTBrokerError(
+                "用户 {} 的访问方式无效".format(username))
+        users.append({
+            "username": username,
+            "password": password,
+            "topics": topics,
+            "access": access,
+        })
+    return users
+
+
+def _write_acl_file(path, users, allow_anonymous):
+    lines = []
+    if allow_anonymous:
+        lines.append("topic readwrite #")
+    for user in users:
+        lines.append("user {}".format(user["username"]))
+        lines.extend(
+            "topic {} {}".format(user["access"], topic)
+            for topic in user["topics"]
+        )
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _tls_paths(config):
+    tls = config.get("tls")
+    if not isinstance(tls, dict) or not bool(tls.get("enabled", False)):
+        return None
+    ca_file = str(tls.get("ca_file") or "").strip()
+    cert_file = str(tls.get("cert_file") or "").strip()
+    key_file = str(tls.get("key_file") or "").strip()
+    require_client_cert = bool(tls.get("require_client_cert", False))
+    if not cert_file or not key_file:
         raise MQTTBrokerError(
-            "生成 MQTT 密码文件失败：{}".format(
-                detail or "mosquitto_passwd 返回错误"))
+            "启用服务端 TLS 时必须选择证书和私钥")
+    if require_client_cert and not ca_file:
+        raise MQTTBrokerError(
+            "要求客户端证书时必须选择 CA 证书")
+    paths = {
+        "ca_file": Path(ca_file) if ca_file else None,
+        "cert_file": Path(cert_file),
+        "key_file": Path(key_file),
+        "require_client_cert": require_client_cert,
+    }
+    for label, path in (
+        ("CA 证书", paths["ca_file"]),
+        ("证书", paths["cert_file"]),
+        ("私钥", paths["key_file"]),
+    ):
+        if path is not None and not path.is_file():
+            raise MQTTBrokerError(
+                "{}文件不存在：{}".format(label, path))
+    return paths
 
 
 def prepare_broker_config(base_dir, runtime_dir, config):
@@ -111,39 +323,70 @@ def prepare_broker_config(base_dir, runtime_dir, config):
     runtime_dir = Path(runtime_dir)
     runtime_dir.mkdir(parents=True, exist_ok=True)
     password_path = runtime_dir / "passwd"
+    acl_path = runtime_dir / "acl"
+    persistence_dir = runtime_dir / "persistence"
     log_path = runtime_dir / "mosquitto.log"
     allow_anonymous = bool(config.get("allow_anonymous", True))
-    username = str(config.get("username") or "").strip()
-    password = str(config.get("password") or "")
-    if not allow_anonymous:
-        if not username:
-            raise MQTTBrokerError("关闭匿名连接时必须填写用户名")
-        if not password:
-            raise MQTTBrokerError("关闭匿名连接时必须填写密码")
-        _write_password_file(
-            executable_dir, username, password, password_path)
+    users = _normalize_users(config)
+    if not allow_anonymous and not users:
+        raise MQTTBrokerError(
+            "关闭匿名连接时至少需要一个启用的用户")
+    if users:
+        _write_password_file(users, password_path)
+        _write_acl_file(acl_path, users, allow_anonymous)
     else:
-        try:
-            password_path.unlink(missing_ok=True)
-        except OSError:
-            pass
+        for stale_path in (password_path, acl_path):
+            try:
+                stale_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    tls_paths = _tls_paths(config)
+    persistence_enabled = bool(config.get("persistence", False))
+    if persistence_enabled:
+        persistence_dir.mkdir(parents=True, exist_ok=True)
 
     lines = [
         "listener {} {}".format(port, bind_address),
         "allow_anonymous {}".format(
             "true" if allow_anonymous else "false"),
         "max_connections {}".format(max_connections),
-        "persistence false",
         "connection_messages true",
-        "log_dest file {}".format(log_path.as_posix()),
+        "log_dest file {}".format(
+            _config_path(log_path).as_posix()),
         "log_type all",
         "log_timestamp true",
         "log_timestamp_format %Y-%m-%d %H:%M:%S",
         "sys_interval 10",
     ]
-    if not allow_anonymous:
+    if tls_paths is not None:
+        if tls_paths["ca_file"] is not None:
+            lines.append(
+                "cafile {}".format(
+                    _config_path(tls_paths["ca_file"]).as_posix()))
+        lines.extend((
+            "certfile {}".format(
+                _config_path(tls_paths["cert_file"]).as_posix()),
+            "keyfile {}".format(
+                _config_path(tls_paths["key_file"]).as_posix()),
+            "require_certificate {}".format(
+                "true" if tls_paths["require_client_cert"] else "false"),
+        ))
+    if persistence_enabled:
+        lines.extend((
+            "persistence true",
+            "persistence_location {}/".format(
+                _config_path(persistence_dir).as_posix()),
+            "autosave_interval 1",
+        ))
+    else:
+        lines.append("persistence false")
+    if users:
         lines.append(
-            "password_file {}".format(password_path.as_posix()))
+            "password_file {}".format(
+                _config_path(password_path).as_posix()))
+        lines.append("acl_file {}".format(
+            _config_path(acl_path).as_posix()))
 
     config_path = runtime_dir / "mosquitto.conf"
     config_path.write_text(

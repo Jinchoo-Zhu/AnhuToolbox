@@ -1011,6 +1011,11 @@ class OptionalToolboxTests(unittest.TestCase):
             "'安装抓包工具 Npcap'",
             installer,
         )
+        self.assertIn(
+            "Caption := '安装抓包工具 Npcap';\n"
+            "    Checked := True;",
+            installer,
+        )
         self.assertNotIn("抓包分析需要", installer)
         self.assertIn(
             "NpcapDependencyCheckBox := TNewCheckBox.Create(", installer)
@@ -1026,6 +1031,11 @@ class OptionalToolboxTests(unittest.TestCase):
             "if NpcapInstallSelected() and NpcapReady then", installer)
         self.assertIn("已取消 Npcap 安装", installer)
         self.assertIn("'Software\\AnhuToolbox\\InstallOptions'", installer)
+        self.assertNotIn(
+            "NpcapDependencyCheckBox.Checked := "
+            "PreviousSelection <> 0",
+            installer,
+        )
         self.assertNotIn('Name: "installnpcap"', installer)
         self.assertNotIn("是否现在安装 Npcap", installer)
 
@@ -1035,16 +1045,31 @@ class OptionalToolboxTests(unittest.TestCase):
         spec = (ROOT / "AnhuToolbox.spec").read_text(
             encoding="utf-8")
         self.assertIn("Caption := '安装 MQTT 服务端'", installer)
+        self.assertIn(
+            "Caption := '安装 MQTT 服务端';\n"
+            "    Checked := True;",
+            installer,
+        )
         self.assertIn("function MqttBrokerSelected(): Boolean;", installer)
         self.assertIn(
             'Source: "mqtt\\broker\\*"; '
             'DestDir: "{app}\\lib\\mqtt\\broker"',
             installer,
         )
+        self.assertIn(
+            'Source: "mqtt\\broker.zip"; '
+            'DestDir: "{app}\\lib\\mqtt"',
+            installer,
+        )
         self.assertIn("Check: MqttBrokerSelected", installer)
         self.assertIn("InstallMqttBroker", installer)
+        self.assertNotIn(
+            "MqttDependencyCheckBox.Checked := "
+            "PreviousSelection <> 0",
+            installer,
+        )
         self.assertIn(
-            "DelTree(ExpandConstant('{app}\\lib\\mqtt')", installer)
+            "{app}\\lib\\mqtt\\broker", installer)
         self.assertIn("_verify_mqtt_runtime()", spec)
 
 

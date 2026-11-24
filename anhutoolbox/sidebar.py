@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
 """AnhuToolbox 侧边栏 -- 连接模式选择与参数配置"""
 
+import copy
 import os
 
 from PySide6.QtWidgets import (
     QAbstractItemView, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QComboBox,
     QPushButton, QSpinBox, QStackedWidget, QLineEdit, QCheckBox,
-    QFrame, QButtonGroup, QSizePolicy, QScrollArea, QApplication,
+    QDialog, QFrame, QButtonGroup, QSizePolicy, QScrollArea, QApplication,
     QTreeWidget, QTreeWidgetItem, QStyle, QStyledItemDelegate,
     QMenu, QHeaderView,
 )
@@ -16,6 +17,7 @@ from PySide6.QtGui import QFont
 
 from .styles import _find_assets_dir, SIDEBAR_STYLE, COMBO_STYLE, prepare_menu
 from .dialogs import ask_yes_no, get_text
+from .mqtt_server_dialogs import MQTTTlsDialog, MQTTUsersDialog
 from .ui_tokens import HTTP_METHOD_COLORS, PROTOCOL_SETTINGS_STYLE
 from .version import __version__
 
@@ -252,6 +254,9 @@ class Sidebar(QWidget):
         self._mqtt_server_mode = False
         self._mqtt_server_running = False
         self._mqtt_server_available = True
+        self._mqtt_server_users = []
+        self._mqtt_server_tls_config = {}
+        self._mqtt_client_tls_config = {}
         self._wheel_active_control = None
         self._http_pending_expand_ids = set()
         self._http_expanded_target_folder_id = None
@@ -1026,7 +1031,8 @@ class Sidebar(QWidget):
         self._le_mqtt_password = QLineEdit()
         self._le_mqtt_password.setEchoMode(QLineEdit.Password)
         self._le_mqtt_password.setToolTip(
-            "密码会随当前项目保存在本地 JSON 中，请勿直接分享项目文件")
+            "密码随项目保存时使用当前 Windows 账户的 DPAPI 加密，"
+            "其他 Windows 账户无法解密")
         self._mqtt_password_toggle_action = \
             self._le_mqtt_password.addAction(
                 QIcon(os.path.join(
@@ -1064,11 +1070,17 @@ class Sidebar(QWidget):
             form.addWidget(widget, row, 1)
 
         self._chk_mqtt_tls = QCheckBox("启用 TLS")
+        self._btn_mqtt_client_tls = QPushButton("TLS 证书...")
+        self._btn_mqtt_client_tls.clicked.connect(
+            self._edit_mqtt_client_tls)
         self._chk_mqtt_clean = QCheckBox("清理会话")
         self._chk_mqtt_clean.setChecked(True)
         self._chk_mqtt_reconnect = QCheckBox("自动重连")
         self._chk_mqtt_reconnect.setChecked(True)
-        form.addWidget(self._chk_mqtt_tls, 7, 0, 1, 2)
+        form.addWidget(self._chk_mqtt_tls, 7, 0)
+        form.addWidget(
+            self._btn_mqtt_client_tls, 7, 1,
+            Qt.AlignmentFlag.AlignRight)
         form.addWidget(self._chk_mqtt_clean, 8, 0, 1, 2)
         form.addWidget(self._chk_mqtt_reconnect, 9, 0, 1, 2)
         outer.addLayout(form)
@@ -1146,6 +1158,22 @@ class Sidebar(QWidget):
         self._chk_mqtt_server_anonymous = QCheckBox("允许匿名连接")
         self._chk_mqtt_server_anonymous.setChecked(True)
         form.addWidget(self._chk_mqtt_server_anonymous, 5, 0, 1, 2)
+        self._chk_mqtt_server_persistence = QCheckBox(
+            "持久化会话和保留消息")
+        form.addWidget(
+            self._chk_mqtt_server_persistence, 6, 0, 1, 2)
+        self._btn_mqtt_server_users = QPushButton("用户与权限")
+        self._btn_mqtt_server_users.clicked.connect(
+            self._edit_mqtt_server_users)
+        form.addWidget(self._btn_mqtt_server_users, 7, 0, 1, 2)
+        self._chk_mqtt_server_tls = QCheckBox("启用 TLS")
+        self._btn_mqtt_server_tls = QPushButton("TLS 证书...")
+        self._btn_mqtt_server_tls.clicked.connect(
+            self._edit_mqtt_server_tls)
+        form.addWidget(self._chk_mqtt_server_tls, 8, 0)
+        form.addWidget(
+            self._btn_mqtt_server_tls, 8, 1,
+            Qt.AlignmentFlag.AlignRight)
         outer.addLayout(form)
         outer.addStretch()
 
@@ -1165,6 +1193,10 @@ class Sidebar(QWidget):
             spin.valueChanged.connect(
                 lambda _value: self.mqtt_server_settings_changed.emit())
         self._chk_mqtt_server_anonymous.toggled.connect(
+            lambda _checked: self.mqtt_server_settings_changed.emit())
+        self._chk_mqtt_server_persistence.toggled.connect(
+            lambda _checked: self.mqtt_server_settings_changed.emit())
+        self._chk_mqtt_server_tls.toggled.connect(
             lambda _checked: self.mqtt_server_settings_changed.emit())
         return w
 
@@ -1811,11 +1843,102 @@ class Sidebar(QWidget):
             action.setToolTip("隐藏密码")
 
     def _on_mqtt_server_anonymous_toggled(self, allow_anonymous):
-        credentials_enabled = not bool(allow_anonymous)
+        credentials_enabled = (
+            not bool(allow_anonymous) and not self._mqtt_server_running)
         self._le_mqtt_server_user.setEnabled(credentials_enabled)
         self._le_mqtt_server_password.setEnabled(credentials_enabled)
 
+    def _sync_mqtt_server_users_from_fields(self):
+        users = copy.deepcopy(self._mqtt_server_users)
+        username = self._le_mqtt_server_user.text().strip()
+        password = self._le_mqtt_server_password.text()
+        if users:
+            index = next(
+                (
+                    index for index, user in enumerate(users)
+                    if user.get("enabled", True)
+                ),
+                0,
+            )
+            users[index]["username"] = username
+            users[index]["password"] = password
+        elif username:
+            users = [{
+                "username": username,
+                "password": password,
+                "enabled": True,
+                "topics": ["#"],
+                "access": "readwrite",
+            }]
+        return users
+
+    def _update_mqtt_server_user_button(self):
+        enabled = sum(
+            1 for user in self._mqtt_server_users
+            if user.get("enabled", True))
+        self._btn_mqtt_server_users.setText(
+            "用户与权限  ({})".format(enabled)
+            if self._mqtt_server_users else "用户与权限")
+
+    def _edit_mqtt_server_users(self):
+        dialog = MQTTUsersDialog(
+            self._sync_mqtt_server_users_from_fields(),
+            self._chk_mqtt_server_anonymous.isChecked(),
+            self,
+        )
+        dialog.users_changed.connect(
+            lambda: self._apply_mqtt_server_users(dialog.users()))
+        dialog.exec()
+
+    def _apply_mqtt_server_users(self, users):
+        self._mqtt_server_users = [dict(user) for user in users]
+        primary = next(
+            (user for user in self._mqtt_server_users
+             if user.get("enabled", True)),
+            self._mqtt_server_users[0]
+            if self._mqtt_server_users else None,
+        )
+        self._le_mqtt_server_user.setText(
+            str(primary.get("username") or "") if primary else "")
+        self._le_mqtt_server_password.setText(
+            str(primary.get("password") or "") if primary else "")
+        self._update_mqtt_server_user_button()
+        self.mqtt_server_settings_changed.emit()
+
+    def _edit_mqtt_client_tls(self):
+        config = dict(self._mqtt_client_tls_config)
+        config["enabled"] = self._chk_mqtt_tls.isChecked()
+        dialog = MQTTTlsDialog(config, False, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        self._mqtt_client_tls_config = dialog.tls_config()
+        self._chk_mqtt_tls.setChecked(
+            bool(self._mqtt_client_tls_config.get("enabled")))
+
+    def _edit_mqtt_server_tls(self):
+        config = dict(self._mqtt_server_tls_config)
+        config["enabled"] = self._chk_mqtt_server_tls.isChecked()
+        dialog = MQTTTlsDialog(config, True, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        self._mqtt_server_tls_config = dialog.tls_config()
+        self._chk_mqtt_server_tls.setChecked(
+            bool(self._mqtt_server_tls_config.get("enabled")))
+        self.mqtt_server_settings_changed.emit()
+
+    def mqtt_client_tls_config(self):
+        config = dict(self._mqtt_client_tls_config)
+        config["enabled"] = self._chk_mqtt_tls.isChecked()
+        return config
+
+    def set_mqtt_client_tls_config(self, data):
+        self._mqtt_client_tls_config = (
+            copy.deepcopy(data) if isinstance(data, dict) else {})
+        self._chk_mqtt_tls.setChecked(
+            bool(self._mqtt_client_tls_config.get("enabled", False)))
+
     def mqtt_server_config(self):
+        users = self._sync_mqtt_server_users_from_fields()
         return {
             "bind_address": self._le_mqtt_server_bind.text().strip(),
             "port": self._sp_mqtt_server_port.value(),
@@ -1823,6 +1946,9 @@ class Sidebar(QWidget):
                 self._chk_mqtt_server_anonymous.isChecked()),
             "username": self._le_mqtt_server_user.text(),
             "password": self._le_mqtt_server_password.text(),
+            "users": users,
+            "persistence": self._chk_mqtt_server_persistence.isChecked(),
+            "tls": copy.deepcopy(self._mqtt_server_tls_config),
             "max_connections": (
                 self._sp_mqtt_server_max_connections.value()),
         }
@@ -1848,6 +1974,39 @@ class Sidebar(QWidget):
             str(data.get("username") or ""))
         self._le_mqtt_server_password.setText(
             str(data.get("password") or ""))
+        users = data.get("users")
+        self._mqtt_server_users = [
+            dict(user) for user in users
+            if isinstance(user, dict) and user.get("username")
+        ] if isinstance(users, list) else []
+        if not self._mqtt_server_users:
+            username = str(data.get("username") or "").strip()
+            if username:
+                self._mqtt_server_users = [{
+                    "username": username,
+                    "password": str(data.get("password") or ""),
+                    "enabled": True,
+                    "topics": ["#"],
+                    "access": "readwrite",
+                }]
+        if self._mqtt_server_users:
+            primary = next(
+                (user for user in self._mqtt_server_users
+                 if user.get("enabled", True)),
+                self._mqtt_server_users[0],
+            )
+            self._le_mqtt_server_user.setText(
+                str(primary.get("username") or ""))
+            self._le_mqtt_server_password.setText(
+                str(primary.get("password") or ""))
+        self._chk_mqtt_server_persistence.setChecked(
+            bool(data.get("persistence", False)))
+        tls = data.get("tls")
+        self._mqtt_server_tls_config = (
+            copy.deepcopy(tls) if isinstance(tls, dict) else {})
+        self._chk_mqtt_server_tls.setChecked(
+            bool(self._mqtt_server_tls_config.get("enabled", False)))
+        self._update_mqtt_server_user_button()
         self._on_mqtt_server_anonymous_toggled(allow_anonymous)
 
     def set_mqtt_server_mode(self, enabled):
@@ -1890,6 +2049,10 @@ class Sidebar(QWidget):
             self._le_mqtt_server_user,
             self._le_mqtt_server_password,
             self._chk_mqtt_server_anonymous,
+            self._chk_mqtt_server_persistence,
+            self._btn_mqtt_server_users,
+            self._chk_mqtt_server_tls,
+            self._btn_mqtt_server_tls,
         ):
             widget.setEnabled(
                 self._mqtt_server_available
@@ -2007,12 +2170,17 @@ class Sidebar(QWidget):
             self._le_mqtt_client_id, self._le_mqtt_user,
             self._le_mqtt_password, self._sp_mqtt_keepalive,
             self._cb_mqtt_protocol, self._chk_mqtt_tls,
+            self._btn_mqtt_client_tls,
             self._chk_mqtt_clean, self._chk_mqtt_reconnect,
             self._le_mqtt_server_bind, self._sp_mqtt_server_port,
             self._sp_mqtt_server_max_connections,
             self._le_mqtt_server_user,
             self._le_mqtt_server_password,
             self._chk_mqtt_server_anonymous,
+            self._chk_mqtt_server_persistence,
+            self._btn_mqtt_server_users,
+            self._chk_mqtt_server_tls,
+            self._btn_mqtt_server_tls,
             self._le_ws_origin, self._le_ws_protocol,
             self._sp_ws_ping,
             self._chk_ws_reconnect, self._chk_ws_verify,
@@ -2037,6 +2205,7 @@ class Sidebar(QWidget):
             self._sp_mqtt_keepalive,
             self._cb_mqtt_protocol,
             self._chk_mqtt_tls,
+            self._btn_mqtt_client_tls,
             self._chk_mqtt_clean,
             self._chk_mqtt_reconnect,
         ):

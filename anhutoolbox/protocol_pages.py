@@ -170,6 +170,7 @@ class MQTTPage(QWidget):
     subscription_changed = Signal(object)
     publish_requested = Signal(dict)
     server_connect_local_requested = Signal()
+    server_runtime_install_requested = Signal()
     mode_changed = Signal(bool)
     MAX_PAUSED_BYTES = 16 * 1024 * 1024
     MAX_SERVER_LOG_PAUSED_BYTES = 16 * 1024 * 1024
@@ -439,8 +440,6 @@ class MQTTPage(QWidget):
         self._server_runtime_hint.setStyleSheet(
             "color:#C42B1C;font-size:12px;")
         self._server_runtime_hint.hide()
-        form_root.addWidget(self._server_runtime_hint)
-
         actions = QHBoxLayout()
         self._btn_server_connect_local = QPushButton(
             "本地客户端连接")
@@ -451,6 +450,15 @@ class MQTTPage(QWidget):
             self._connect_local_server)
         actions.addWidget(self._btn_server_connect_local)
         actions.addStretch()
+        actions.addWidget(self._server_runtime_hint)
+        self._btn_server_install_runtime = QPushButton(
+            "安装 MQTT 服务端")
+        _set_button_icon(
+            self._btn_server_install_runtime, "http_add.svg")
+        self._btn_server_install_runtime.hide()
+        self._btn_server_install_runtime.clicked.connect(
+            self._request_server_runtime_install)
+        actions.addWidget(self._btn_server_install_runtime)
         form_root.addLayout(actions)
         root.addWidget(config_card)
 
@@ -557,6 +565,10 @@ class MQTTPage(QWidget):
         self.show_client_mode()
         self.server_connect_local_requested.emit()
 
+    def _request_server_runtime_install(self):
+        self.set_server_runtime_installing()
+        self.server_runtime_install_requested.emit()
+
     def _on_mode_tab_changed(self, index):
         self.mode_changed.emit(int(index) == 1)
 
@@ -608,18 +620,33 @@ class MQTTPage(QWidget):
             "启动失败", "#C42B1C", "#FDF3F2", "#E8C5C0")
         self.append_server_log(message)
 
-    def set_server_runtime_available(self, available):
+    def set_server_runtime_available(self, available, installable=False):
         self._server_runtime_available = bool(available)
         self._server_runtime_hint.setVisible(not available)
+        self._btn_server_install_runtime.setVisible(
+            not available and bool(installable))
+        self._btn_server_install_runtime.setEnabled(
+            not available and bool(installable))
+        self._btn_server_install_runtime.setText(
+            "安装 MQTT 服务端")
         if not available:
             self._server_runtime_hint.setText(
-                "未安装 MQTT 服务端运行组件，请重新运行安装程序并勾选安装。")
+                "MQTT 服务端运行组件未安装"
+                if installable
+                else "未找到 MQTT 服务端运行组件，请重新下载完整安装包")
             if not self._server_running:
                 self._set_server_state(
                     "组件缺失", "#C42B1C", "#FDF3F2", "#E8C5C0")
         elif not self._server_running:
             self._set_server_state(
                 "未启动", "#6B7280", "#F3F4F6", "#E5E7EB")
+
+    def set_server_runtime_installing(self):
+        self._server_runtime_hint.setText("正在安装 MQTT 服务端...")
+        self._server_runtime_hint.show()
+        self._btn_server_install_runtime.show()
+        self._btn_server_install_runtime.setEnabled(False)
+        self._btn_server_install_runtime.setText("正在安装")
 
     def append_server_log(self, text):
         text = str(text or "").strip()

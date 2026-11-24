@@ -9,6 +9,10 @@ import os
 import re
 import json
 
+from .secret_store import (
+    SecretStorageError, decrypt_secrets, encrypt_secrets,
+)
+
 PROJECT_SUBDIR = "projects"
 PROJECT_EXT = ".json"
 DEFAULT_PROJECT_NAME = "默认项目"
@@ -32,6 +36,7 @@ class ProjectManager:
 
     def __init__(self, base_dir: str):
         self.base_dir = base_dir
+        self.last_error = ""
         self.dir = os.path.join(base_dir, "data", PROJECT_SUBDIR)
         try:
             os.makedirs(self.dir, exist_ok=True)
@@ -80,6 +85,7 @@ class ProjectManager:
         return self.path_of(name) is not None
 
     def load(self, name: str):
+        self.last_error = ""
         path = self.path_of(name)
         if not path:
             return None
@@ -88,9 +94,14 @@ class ProjectManager:
                 data = json.load(f)
             if not isinstance(data, dict):
                 return None
+            data = decrypt_secrets(data)
             data.setdefault("format", FORMAT_VERSION)
             data.setdefault("name", name)
             return data
+        except SecretStorageError as e:
+            self.last_error = str(e)
+            print("[AnhuToolbox] 项目凭据解密失败:", name, e)
+            return None
         except Exception as e:
             print("[AnhuToolbox] 读取项目失败:", name, e)
             return None
@@ -101,8 +112,9 @@ class ProjectManager:
         tmp = path + ".tmp"
         try:
             os.makedirs(os.path.dirname(path), exist_ok=True)
+            encrypted = encrypt_secrets(data)
             with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
+                json.dump(encrypted, f, ensure_ascii=False, indent=2)
             os.replace(tmp, path)        # 原子替换, 避免写一半损坏
             return True
         except Exception as e:
@@ -196,17 +208,23 @@ class ProjectManager:
 
     def import_from(self, src: str):
         """从 json 文件导入项目; 返回新项目名, 失败返回 None"""
+        self.last_error = ""
         try:
             with open(src, "r", encoding="utf-8") as f:
                 data = json.load(f)
             if not isinstance(data, dict):
                 return None
+            data = decrypt_secrets(data)
             name = str(data.get("name") or "").strip()
             if not name:
                 name = os.path.splitext(os.path.basename(src))[0]
             if self.exists(name):
                 name = "{} (导入)".format(name)
             return self.create(name, data)
+        except SecretStorageError as e:
+            self.last_error = str(e)
+            print("[AnhuToolbox] 导入项目凭据解密失败:", e)
+            return None
         except Exception as e:
             print("[AnhuToolbox] 导入项目失败:", e)
             return None

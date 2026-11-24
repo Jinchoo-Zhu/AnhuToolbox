@@ -19,3 +19,9 @@ Included license files:
 
 The installer copies this directory to `lib/mqtt/broker` only when the user
 selects "安装 MQTT 服务端" on the optional runtime components page.
+
+`broker.zip` is always included in the installer as a compressed installation
+resource. When the component was not selected during installation, AnhuToolbox
+can extract this archive into its writable data directory later from the MQTT
+server page. No administrator privileges or Windows service registration are
+required.

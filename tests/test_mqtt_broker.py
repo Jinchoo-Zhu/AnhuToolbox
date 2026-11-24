@@ -12,13 +12,20 @@ from unittest import mock
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication, QLineEdit
+from PySide6.QtWidgets import (
+    QAbstractItemView, QApplication, QCheckBox, QDialog, QLineEdit,
+    QPushButton,
+)
 import paho.mqtt.client as mqtt
 
 from anhutoolbox.main_window import MainWindow
 from anhutoolbox.mqtt_broker import (
-    MQTTBrokerRuntime, mqtt_broker_available, mqtt_broker_dir,
+    MQTTBrokerError, MQTTBrokerRuntime, install_mqtt_broker_runtime,
+    mqtt_broker_archive, mqtt_broker_available, mqtt_broker_dir,
     prepare_broker_config,
+)
+from anhutoolbox.mqtt_server_dialogs import (
+    MQTTTlsDialog, MQTTUserEditDialog, MQTTUsersDialog,
 )
 from anhutoolbox.protocol_pages import MQTTPage
 from anhutoolbox.sidebar import Sidebar
@@ -48,6 +55,14 @@ class MQTTBrokerTests(unittest.TestCase):
             "epl-v20",
         ):
             self.assertTrue((broker / name).is_file(), name)
+        self.assertIsNotNone(mqtt_broker_archive(str(ROOT)))
+
+    def test_runtime_archive_installs_to_writable_data_dir(self):
+        with tempfile.TemporaryDirectory() as temp:
+            target = install_mqtt_broker_runtime(str(ROOT), temp)
+            self.assertTrue((target / "mosquitto.exe").is_file())
+            self.assertTrue((target / "NOTICE.md").is_file())
+            self.assertTrue((target / "epl-v20").is_file())
 
     def test_prepare_anonymous_broker_config(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -90,6 +105,91 @@ class MQTTBrokerTests(unittest.TestCase):
             self.assertTrue(password_file.is_file())
             self.assertIn(
                 "$7$", password_file.read_text(encoding="utf-8"))
+
+    def test_prepare_multiuser_acl_tls_and_persistence_config(self):
+        tls_dir = ROOT / "tests" / "fixtures" / "mqtt_tls"
+        with tempfile.TemporaryDirectory() as temp:
+            _executable, config_path = prepare_broker_config(
+                str(ROOT),
+                temp,
+                {
+                    "bind_address": "127.0.0.1",
+                    "port": _free_port(),
+                    "allow_anonymous": False,
+                    "max_connections": 10,
+                    "persistence": True,
+                    "users": [
+                        {
+                            "username": "alice",
+                            "password": "alice-pass",
+                            "enabled": True,
+                            "topics": ["alice/#"],
+                            "access": "readwrite",
+                        },
+                        {
+                            "username": "bob",
+                            "password": "bob-pass",
+                            "enabled": True,
+                            "topics": ["bob/#"],
+                            "access": "read",
+                        },
+                        {
+                            "username": "disabled",
+                            "password": "disabled-pass",
+                            "enabled": False,
+                            "topics": ["#"],
+                            "access": "readwrite",
+                        },
+                    ],
+                    "tls": {
+                        "enabled": True,
+                        "ca_file": str(tls_dir / "ca.crt"),
+                        "cert_file": str(tls_dir / "server.crt"),
+                        "key_file": str(tls_dir / "server.key"),
+                        "require_client_cert": True,
+                    },
+                },
+            )
+            runtime_dir = config_path.parent
+            config = config_path.read_text(encoding="utf-8")
+            self.assertIn("persistence true", config)
+            self.assertIn("autosave_interval 1", config)
+            self.assertIn("require_certificate true", config)
+            self.assertIn("password_file", config)
+            self.assertIn("acl_file", config)
+            self.assertTrue((runtime_dir / "persistence").is_dir())
+            password_file = (runtime_dir / "passwd").read_text(
+                encoding="utf-8")
+            self.assertIn("alice", password_file)
+            self.assertIn("bob", password_file)
+            self.assertNotIn("disabled", password_file)
+            acl_file = (runtime_dir / "acl").read_text(encoding="utf-8")
+            self.assertIn("user alice", acl_file)
+            self.assertIn("topic readwrite alice/#", acl_file)
+            self.assertIn("user bob", acl_file)
+            self.assertIn("topic read bob/#", acl_file)
+            self.assertNotIn("user disabled", acl_file)
+
+    def test_multiuser_config_requires_an_enabled_user(self):
+        with tempfile.TemporaryDirectory() as temp:
+            with self.assertRaisesRegex(
+                    MQTTBrokerError, "至少需要一个启用的用户"):
+                prepare_broker_config(
+                    str(ROOT),
+                    temp,
+                    {
+                        "bind_address": "127.0.0.1",
+                        "port": _free_port(),
+                        "allow_anonymous": False,
+                        "users": [{
+                            "username": "disabled",
+                            "password": "secret",
+                            "enabled": False,
+                            "topics": ["#"],
+                            "access": "readwrite",
+                        }],
+                    },
+                )
 
     def test_broker_starts_listening_and_stops(self):
         port = _free_port()
@@ -210,8 +310,17 @@ class MQTTBrokerPageTests(unittest.TestCase):
             )
             page.set_server_runtime_available(False)
             self.assertFalse(page._server_runtime_hint.isHidden())
+            page.set_server_runtime_available(False, True)
+            self.assertFalse(
+                page._btn_server_install_runtime.isHidden())
+            self.assertEqual(
+                page._btn_server_install_runtime.text(),
+                "安装 MQTT 服务端",
+            )
             page.set_server_runtime_available(True)
             self.assertTrue(page._server_runtime_hint.isHidden())
+            self.assertTrue(
+                page._btn_server_install_runtime.isHidden())
             self.assertFalse(hasattr(page, "_btn_server_start"))
             self.assertFalse(hasattr(page, "_btn_server_stop"))
         finally:
@@ -300,6 +409,30 @@ class MQTTBrokerPageTests(unittest.TestCase):
                 page.deleteLater()
                 APP.processEvents()
 
+    def test_missing_server_runtime_can_request_install(self):
+        page = MQTTPage()
+        requested = []
+        page.server_runtime_install_requested.connect(
+            lambda: requested.append(True))
+        try:
+            page.set_server_runtime_available(False, True)
+            page._btn_server_install_runtime.click()
+            self.assertEqual(requested, [True])
+            self.assertFalse(
+                page._btn_server_install_runtime.isEnabled())
+            self.assertEqual(
+                page._btn_server_install_runtime.text(),
+                "正在安装",
+            )
+            self.assertIn(
+                "正在安装",
+                page._server_runtime_hint.text(),
+            )
+        finally:
+            page.cleanup()
+            page.deleteLater()
+            APP.processEvents()
+
     def test_main_window_starts_and_stops_server_mode(self):
         port = _free_port()
         with tempfile.TemporaryDirectory() as temp, mock.patch(
@@ -356,6 +489,43 @@ class MQTTBrokerPageTests(unittest.TestCase):
                     "username": "server-user",
                     "password": "server-pass",
                     "max_connections": 321,
+                    "persistence": True,
+                    "users": [
+                        {
+                            "username": "server-user",
+                            "password": "server-pass",
+                            "enabled": True,
+                            "topics": ["server/#"],
+                            "access": "readwrite",
+                        },
+                        {
+                            "username": "reader",
+                            "password": "reader-pass",
+                            "enabled": True,
+                            "topics": ["public/#"],
+                            "access": "read",
+                        },
+                        {
+                            "username": "disabled",
+                            "password": "disabled-pass",
+                            "enabled": False,
+                            "topics": ["#"],
+                            "access": "readwrite",
+                        },
+                    ],
+                    "tls": {
+                        "enabled": True,
+                        "ca_file": str(
+                            ROOT / "tests" / "fixtures"
+                            / "mqtt_tls" / "ca.crt"),
+                        "cert_file": str(
+                            ROOT / "tests" / "fixtures"
+                            / "mqtt_tls" / "server.crt"),
+                        "key_file": str(
+                            ROOT / "tests" / "fixtures"
+                            / "mqtt_tls" / "server.key"),
+                        "require_client_cert": True,
+                    },
                 })
                 snapshot = window._snapshot_ui()
                 self.assertTrue(snapshot["mqtt"]["server_mode"])
@@ -370,6 +540,23 @@ class MQTTBrokerPageTests(unittest.TestCase):
                     snapshot["mqtt"]["server"]["password"], "server-pass")
                 self.assertEqual(
                     snapshot["mqtt"]["server"]["max_connections"], 321)
+                self.assertTrue(
+                    snapshot["mqtt"]["server"]["persistence"])
+                self.assertEqual(
+                    len(snapshot["mqtt"]["server"]["users"]), 3)
+                self.assertEqual(
+                    snapshot["mqtt"]["server"]["users"][1]["topics"],
+                    ["public/#"],
+                )
+                self.assertTrue(
+                    snapshot["mqtt"]["server"]["tls"]["enabled"])
+                self.assertTrue(
+                    snapshot["mqtt"]["server"]["tls"]
+                    ["require_client_cert"])
+                self.assertEqual(
+                    window.sidebar._btn_mqtt_server_users.text(),
+                    "用户与权限  (2)",
+                )
                 self.assertIs(
                     window.sidebar._settings_stack.currentWidget(),
                     window.sidebar._mqtt_server_settings_page,
@@ -409,6 +596,233 @@ class MQTTBrokerPageTests(unittest.TestCase):
         finally:
             sidebar.deleteLater()
             APP.processEvents()
+
+    def test_primary_server_user_update_does_not_replace_disabled_user(self):
+        sidebar = Sidebar()
+        try:
+            sidebar.set_mqtt_server_config({
+                "allow_anonymous": False,
+                "username": "",
+                "password": "",
+                "users": [
+                    {
+                        "username": "disabled",
+                        "password": "disabled-pass",
+                        "enabled": False,
+                        "topics": ["#"],
+                        "access": "readwrite",
+                    },
+                    {
+                        "username": "active",
+                        "password": "active-pass",
+                        "enabled": True,
+                        "topics": ["active/#"],
+                        "access": "readwrite",
+                    },
+                ],
+            })
+            sidebar._le_mqtt_server_user.setText("active-renamed")
+            users = sidebar.mqtt_server_config()["users"]
+            self.assertEqual(users[0]["username"], "disabled")
+            self.assertEqual(users[1]["username"], "active-renamed")
+            self.assertTrue(users[1]["enabled"])
+        finally:
+            sidebar.deleteLater()
+            APP.processEvents()
+
+    def test_server_user_changes_apply_before_outer_dialog_closes(self):
+        sidebar = Sidebar()
+        users = [{
+            "username": "immediate",
+            "password": "secret",
+            "enabled": True,
+            "topics": ["immediate/#"],
+            "access": "readwrite",
+        }]
+        fake_dialog = mock.MagicMock()
+        fake_dialog.users.return_value = users
+        fake_dialog.users_changed.connect.side_effect = (
+            lambda callback: callback())
+        fake_dialog.exec.return_value = QDialog.DialogCode.Rejected
+        try:
+            with mock.patch(
+                    "anhutoolbox.sidebar.MQTTUsersDialog",
+                    return_value=fake_dialog):
+                sidebar._edit_mqtt_server_users()
+            self.assertEqual(
+                sidebar._mqtt_server_users[0]["username"], "immediate")
+            self.assertEqual(
+                sidebar._le_mqtt_server_user.text(), "immediate")
+        finally:
+            sidebar.deleteLater()
+            APP.processEvents()
+
+    def test_local_client_inherits_server_tls_and_requires_client_cert(self):
+        tls_dir = ROOT / "tests" / "fixtures" / "mqtt_tls"
+        with tempfile.TemporaryDirectory() as temp, mock.patch(
+                "anhutoolbox.hardware.collect_hardware_info",
+                return_value={}):
+            window = MainWindow(temp)
+            try:
+                window.sidebar.set_mqtt_server_config({
+                    "bind_address": "127.0.0.1",
+                    "port": 18883,
+                    "allow_anonymous": True,
+                    "tls": {
+                        "enabled": True,
+                        "ca_file": str(tls_dir / "ca.crt"),
+                        "cert_file": str(tls_dir / "server.crt"),
+                        "key_file": str(tls_dir / "server.key"),
+                        "require_client_cert": True,
+                    },
+                })
+                with mock.patch.object(
+                        window, "_connect_mqtt") as connect, mock.patch(
+                        "anhutoolbox.main_window.show_warning"
+                ) as warning:
+                    window._on_mqtt_connect_local()
+                    connect.assert_not_called()
+                    warning.assert_called_once()
+
+                window.sidebar.set_mqtt_client_tls_config({
+                    "enabled": True,
+                    "ca_file": "",
+                    "cert_file": str(tls_dir / "client.crt"),
+                    "key_file": str(tls_dir / "client.key"),
+                    "insecure": False,
+                })
+                with mock.patch.object(
+                        window, "_connect_mqtt") as connect:
+                    window._on_mqtt_connect_local()
+                    connect.assert_called_once()
+                client_tls = window.sidebar.mqtt_client_tls_config()
+                self.assertTrue(client_tls["enabled"])
+                self.assertEqual(
+                    client_tls["ca_file"], str(tls_dir / "ca.crt"))
+                self.assertTrue(client_tls["cert_file"])
+                self.assertTrue(client_tls["key_file"])
+            finally:
+                window._mqtt_broker.cleanup()
+                window.close()
+                window.deleteLater()
+                APP.processEvents()
+
+    def test_mqtt_security_dialogs_validate_and_return_configuration(self):
+        user_dialog = MQTTUserEditDialog(is_new=True)
+        try:
+            user_dialog.username.setText("设备用户")
+            user_dialog.password.setText("设备密码")
+            user_dialog.topics.setPlainText("device/one/#\ndevice/two/#")
+            user_dialog.access.setCurrentIndex(
+                user_dialog.access.findData("read"))
+            user_dialog._validate()
+            self.assertEqual(
+                user_dialog.result(), QDialog.DialogCode.Accepted)
+            user = user_dialog.user_data()
+            self.assertEqual(user["username"], "设备用户")
+            self.assertEqual(
+                user["topics"], ["device/one/#", "device/two/#"])
+            self.assertEqual(user["access"], "read")
+        finally:
+            user_dialog.deleteLater()
+
+        users_dialog = MQTTUsersDialog(
+            [user], allow_anonymous=False)
+        try:
+            self.assertEqual(users_dialog.table.rowCount(), 1)
+            self.assertEqual(users_dialog.users()[0]["username"], "设备用户")
+            self.assertEqual(
+                users_dialog.table.selectionMode(),
+                QAbstractItemView.SelectionMode.NoSelection,
+            )
+            self.assertNotIn(
+                "编辑",
+                [button.text() for button in users_dialog.findChildren(
+                    QPushButton)],
+            )
+        finally:
+            users_dialog.deleteLater()
+
+        delete_dialog = MQTTUsersDialog([
+            dict(user, username="user-a"),
+            dict(user, username="user-b"),
+            dict(user, username="user-c"),
+        ])
+        try:
+            for row in (0, 2):
+                checkbox = delete_dialog.table.cellWidget(
+                    row, 0).findChild(QCheckBox)
+                checkbox.setChecked(True)
+            delete_dialog._remove_user()
+            self.assertEqual(
+                [item["username"] for item in delete_dialog.users()],
+                ["user-b"],
+            )
+            self.assertEqual(delete_dialog.table.rowCount(), 1)
+            with mock.patch(
+                    "anhutoolbox.mqtt_server_dialogs.show_warning"
+            ) as warning:
+                delete_dialog._remove_user()
+                warning.assert_called_once()
+            self.assertEqual(
+                [item["username"] for item in delete_dialog.users()],
+                ["user-b"],
+            )
+        finally:
+            delete_dialog.deleteLater()
+
+        immediate_dialog = MQTTUsersDialog([user])
+        changes = []
+        immediate_dialog.users_changed.connect(
+            lambda: changes.append(True))
+        added_user = dict(user, username="新增用户")
+        fake_add = mock.Mock()
+        fake_add.exec.return_value = QDialog.DialogCode.Accepted
+        fake_add.user_data.return_value = added_user
+        with mock.patch(
+                "anhutoolbox.mqtt_server_dialogs.MQTTUserEditDialog",
+                return_value=fake_add):
+            immediate_dialog._add_user()
+        self.assertEqual(
+            [item["username"] for item in immediate_dialog.users()],
+            ["设备用户", "新增用户"],
+        )
+        self.assertEqual(changes, [True])
+
+        fake_edit = mock.Mock()
+        fake_edit.exec.return_value = QDialog.DialogCode.Accepted
+        fake_edit.user_data.return_value = dict(
+            added_user, username="编辑后的用户")
+        with mock.patch(
+                "anhutoolbox.mqtt_server_dialogs.MQTTUserEditDialog",
+                return_value=fake_edit):
+            immediate_dialog._on_cell_double_clicked(1, 1)
+        self.assertEqual(
+            immediate_dialog.users()[1]["username"], "编辑后的用户")
+        self.assertEqual(changes, [True, True])
+        immediate_dialog.deleteLater()
+
+        tls_dir = ROOT / "tests" / "fixtures" / "mqtt_tls"
+        tls_dialog = MQTTTlsDialog(
+            {
+                "enabled": True,
+                "ca_file": str(tls_dir / "ca.crt"),
+                "cert_file": str(tls_dir / "server.crt"),
+                "key_file": str(tls_dir / "server.key"),
+                "require_client_cert": True,
+            },
+            server_mode=True,
+        )
+        try:
+            tls_dialog._validate()
+            self.assertEqual(
+                tls_dialog.result(), QDialog.DialogCode.Accepted)
+            config = tls_dialog.tls_config()
+            self.assertTrue(config["enabled"])
+            self.assertTrue(config["require_client_cert"])
+        finally:
+            tls_dialog.deleteLater()
+        APP.processEvents()
 
 
 if __name__ == "__main__":

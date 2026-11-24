@@ -15,7 +15,7 @@
 ;     Npcap 抓包驱动在独立的“可选运行组件”页面选择是否安装。
 
 #define MyAppName "Anhu百宝箱"
-#define MyAppVersion "1.0.8"
+#define MyAppVersion "1.0.9"
 #define MyAppPublisher "Anhu"
 #define MyAppExeName "Anhu百宝箱.exe"
 
@@ -59,6 +59,7 @@ Source: "tools\tools.json"; DestDir: "{app}\tools"; Tasks: installtoolbox; Flags
 ; 官方便携工具及资源在升级时同步更新，避免 tools.json 已指向新文件但磁盘上
 ; 仍是旧版本。用户自己维护的 tools.user.json 单独排除。
 Source: "tools\*"; DestDir: "{app}\tools"; Excludes: "tools.json,tools.user.json,toolbox.install-state"; Tasks: installtoolbox; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "mqtt\broker.zip"; DestDir: "{app}\lib\mqtt"; Flags: ignoreversion
 Source: "mqtt\broker\*"; DestDir: "{app}\lib\mqtt\broker"; Flags: ignoreversion recursesubdirs createallsubdirs; Check: MqttBrokerSelected
 
 [Icons]
@@ -97,8 +98,6 @@ begin
 end;
 
 procedure InitializeWizard();
-var
-  PreviousSelection: Cardinal;
 begin
   OptionalDependenciesPage := CreateCustomPage(
     wpSelectTasks,
@@ -114,16 +113,9 @@ begin
     Width := OptionalDependenciesPage.SurfaceWidth;
     Height := ScaleY(17);
     Caption := '安装抓包工具 Npcap';
-    Checked := False;
+    Checked := True;
     Parent := OptionalDependenciesPage.Surface;
   end;
-
-  if RegQueryDWordValue(
-      HKCU,
-      'Software\AnhuToolbox\InstallOptions',
-      'InstallNpcap',
-      PreviousSelection) then
-    NpcapDependencyCheckBox.Checked := PreviousSelection <> 0;
 
   MqttDependencyCheckBox := TNewCheckBox.Create(
     OptionalDependenciesPage);
@@ -135,16 +127,10 @@ begin
     Width := OptionalDependenciesPage.SurfaceWidth;
     Height := ScaleY(17);
     Caption := '安装 MQTT 服务端';
-    Checked := False;
+    Checked := True;
     Parent := OptionalDependenciesPage.Surface;
   end;
 
-  if RegQueryDWordValue(
-      HKCU,
-      'Software\AnhuToolbox\InstallOptions',
-      'InstallMqttBroker',
-      PreviousSelection) then
-    MqttDependencyCheckBox.Checked := PreviousSelection <> 0;
 end;
 
 function NpcapInstallSelected(): Boolean;
@@ -260,7 +246,9 @@ begin
         1)
     else
     begin
-      DelTree(ExpandConstant('{app}\lib\mqtt'), True, True, True);
+      DelTree(
+        ExpandConstant('{app}\lib\mqtt\broker'),
+        True, True, True);
       RegWriteDWordValue(
         HKCU,
         'Software\AnhuToolbox\InstallOptions',

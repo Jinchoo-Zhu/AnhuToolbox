@@ -49,7 +49,9 @@ def _verify_capture_runtime():
 def _verify_mqtt_runtime():
     root = os.path.dirname(os.path.abspath(SPEC))
     broker = os.path.join(root, "mqtt", "broker")
+    archive = os.path.join(root, "mqtt", "broker.zip")
     required = [
+        archive,
         os.path.join(broker, "mosquitto.exe"),
         os.path.join(broker, "mosquitto_passwd.exe"),
         os.path.join(broker, "mosquitto_common.dll"),
