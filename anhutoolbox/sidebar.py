@@ -1115,12 +1115,9 @@ class Sidebar(QWidget):
         self._sp_mqtt_server_max_connections.setRange(1, 100000)
         self._sp_mqtt_server_max_connections.setValue(100)
         self._le_mqtt_server_user = QLineEdit()
-        self._le_mqtt_server_user.setPlaceholderText("关闭匿名连接时必填")
         self._le_mqtt_server_user.setEnabled(False)
         self._le_mqtt_server_password = QLineEdit()
         self._le_mqtt_server_password.setEchoMode(QLineEdit.Password)
-        self._le_mqtt_server_password.setPlaceholderText(
-            "关闭匿名连接时必填")
         self._le_mqtt_server_password.setEnabled(False)
         self._mqtt_server_password_toggle_action = \
             self._le_mqtt_server_password.addAction(

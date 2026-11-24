@@ -573,6 +573,10 @@ class MQTTBrokerPageTests(unittest.TestCase):
     def test_server_password_visibility_button_toggles_echo_mode(self):
         sidebar = Sidebar()
         try:
+            self.assertEqual(
+                sidebar._le_mqtt_server_user.placeholderText(), "")
+            self.assertEqual(
+                sidebar._le_mqtt_server_password.placeholderText(), "")
             for field, action in (
                 (
                     sidebar._le_mqtt_password,
