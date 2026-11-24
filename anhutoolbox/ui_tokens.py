@@ -797,6 +797,32 @@ QWidget#mqttPage,
 QWidget#websocketPage {{
     background-color: {COLOR_PAGE_BG};
 }}
+QTabWidget#mqttModeTabs::pane {{
+    background-color: {COLOR_PAGE_BG};
+    border: none;
+    top: -1px;
+}}
+QTabWidget#mqttModeTabs QTabBar::tab {{
+    background-color: {COLOR_SURFACE_SUBTLE};
+    color: {COLOR_TEXT_SECONDARY};
+    border: 1px solid {COLOR_BORDER};
+    border-bottom: none;
+    padding: 7px 18px;
+    margin-right: 4px;
+    border-top-left-radius: {RADIUS_SMALL}px;
+    border-top-right-radius: {RADIUS_SMALL}px;
+    font-family: "{FONT_UI}";
+    font-size: 13px;
+}}
+QTabWidget#mqttModeTabs QTabBar::tab:hover {{
+    background-color: {COLOR_SURFACE_HOVER};
+    color: {COLOR_TEXT};
+}}
+QTabWidget#mqttModeTabs QTabBar::tab:selected {{
+    background-color: {COLOR_SURFACE};
+    color: {COLOR_PRIMARY};
+    border-color: {COLOR_BORDER};
+}}
 QWidget#protocolCard {{
     background-color: {COLOR_SURFACE};
     border: 1px solid {COLOR_BORDER};
@@ -944,12 +970,14 @@ QSplitter#protocolSplit::handle {{
 
 PROTOCOL_SETTINGS_STYLE = f"""
 QWidget#mqttSettingsPage,
+QWidget#mqttServerSettingsPage,
 QWidget#websocketSettingsPage {{
     background-color: {COLOR_SURFACE};
     border: 1px solid {COLOR_BORDER};
     border-radius: {RADIUS_CARD}px;
 }}
 QWidget#mqttSettingsPage QLabel,
+QWidget#mqttServerSettingsPage QLabel,
 QWidget#websocketSettingsPage QLabel {{
     color: {COLOR_TEXT_SECONDARY};
     font-family: "{FONT_UI}";
@@ -958,6 +986,9 @@ QWidget#websocketSettingsPage QLabel {{
 QWidget#mqttSettingsPage QLineEdit,
 QWidget#mqttSettingsPage QSpinBox,
 QWidget#mqttSettingsPage QComboBox,
+QWidget#mqttServerSettingsPage QLineEdit,
+QWidget#mqttServerSettingsPage QSpinBox,
+QWidget#mqttServerSettingsPage QComboBox,
 QWidget#websocketSettingsPage QLineEdit,
 QWidget#websocketSettingsPage QSpinBox {{
     background-color: {COLOR_SURFACE};
@@ -971,15 +1002,36 @@ QWidget#websocketSettingsPage QSpinBox {{
 QWidget#mqttSettingsPage QLineEdit:focus,
 QWidget#mqttSettingsPage QSpinBox:focus,
 QWidget#mqttSettingsPage QComboBox:focus,
+QWidget#mqttServerSettingsPage QLineEdit:focus,
+QWidget#mqttServerSettingsPage QSpinBox:focus,
+QWidget#mqttServerSettingsPage QComboBox:focus,
 QWidget#websocketSettingsPage QLineEdit:focus,
 QWidget#websocketSettingsPage QSpinBox:focus {{
     border-color: {COLOR_PRIMARY};
 }}
+QWidget#mqttSettingsPage QLineEdit:disabled,
+QWidget#mqttSettingsPage QSpinBox:disabled,
+QWidget#mqttSettingsPage QComboBox:disabled,
+QWidget#mqttServerSettingsPage QLineEdit:disabled,
+QWidget#mqttServerSettingsPage QSpinBox:disabled,
+QWidget#mqttServerSettingsPage QComboBox:disabled,
+QWidget#websocketSettingsPage QLineEdit:disabled,
+QWidget#websocketSettingsPage QSpinBox:disabled {{
+    background-color: {COLOR_SURFACE_SUBTLE};
+    color: {COLOR_TEXT_MUTED};
+    border-color: {COLOR_DIVIDER};
+}}
 QWidget#mqttSettingsPage QCheckBox,
+QWidget#mqttServerSettingsPage QCheckBox,
 QWidget#websocketSettingsPage QCheckBox {{
     color: {COLOR_TEXT_SECONDARY};
     font-family: "{FONT_UI}";
     font-size: 13px;
+}}
+QWidget#mqttSettingsPage QCheckBox:disabled,
+QWidget#mqttServerSettingsPage QCheckBox:disabled,
+QWidget#websocketSettingsPage QCheckBox:disabled {{
+    color: {COLOR_TEXT_MUTED};
 }}
 """
 

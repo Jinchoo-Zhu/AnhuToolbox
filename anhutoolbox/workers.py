@@ -355,10 +355,46 @@ class TCPServerWorker(QThread):
         # 信号, 避免覆盖主线程已设置好的"未连接"状态.
         self._stopping = True
         self._running = False
-        self.wait(1000)
-        self._cleanup()
+        server = self._server
+        if server is not None:
+            try:
+                server.close()
+            except Exception:
+                pass
+        exited = self.wait(1500)
+        if not exited:
+            self.requestInterruption()
+            exited = self.wait(1000)
+        if not exited:
+            self.terminate()
+            exited = self.wait(500)
+        if not self.isRunning():
+            self._cleanup()
+        released = self._wait_port_released()
         # 重置标志, 让该 worker 再次启动时表现正常.
         self._stopping = False
+        return bool(exited and released)
+
+    def _wait_port_released(self, timeout=2.0):
+        if self._port <= 0:
+            return True
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            try:
+                if (
+                    os.name == "nt"
+                    and hasattr(socket, "SO_EXCLUSIVEADDRUSE")
+                ):
+                    probe.setsockopt(
+                        socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+                probe.bind(("0.0.0.0", self._port))
+                return True
+            except OSError:
+                time.sleep(0.05)
+            finally:
+                probe.close()
+        return False
 
 
 class TCPClientWorker(QThread):

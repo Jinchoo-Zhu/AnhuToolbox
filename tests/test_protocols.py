@@ -581,12 +581,14 @@ class ProtocolPageTests(unittest.TestCase):
         ])
         self.assertEqual(sidebar.sp_mqtt_port.value(), 1883)
         self.assertEqual(sidebar.sp_mqtt_keepalive.value(), 60)
+        self.assertEqual(sidebar.le_mqtt_host.text(), "")
+        self.assertEqual(
+            sidebar.le_mqtt_host.placeholderText(),
+            "例如：127.0.0.1",
+        )
         sidebar._mode_group.button(3).click()
         self.assertEqual(sidebar._btn_connect.text(), "连接服务端")
-        sidebar.set_connected(True)
-        self.assertEqual(sidebar._btn_connect.text(), "断开服务端")
-        sidebar.set_controls_enabled(False)
-        for widget in (
+        mqtt_client_widgets = (
             sidebar.le_mqtt_host,
             sidebar.sp_mqtt_port,
             sidebar.le_mqtt_client_id,
@@ -597,10 +599,20 @@ class ProtocolPageTests(unittest.TestCase):
             sidebar.chk_mqtt_tls,
             sidebar.chk_mqtt_clean,
             sidebar.chk_mqtt_reconnect,
-        ):
+        )
+        sidebar.set_connected(True)
+        self.assertEqual(sidebar._btn_connect.text(), "断开服务端")
+        for widget in mqtt_client_widgets:
+            self.assertFalse(widget.isEnabled())
+        sidebar.set_controls_enabled(False)
+        for widget in mqtt_client_widgets:
             self.assertFalse(widget.isEnabled())
         sidebar.set_controls_enabled(True)
+        for widget in mqtt_client_widgets:
+            self.assertFalse(widget.isEnabled())
         sidebar.set_connected(False)
+        for widget in mqtt_client_widgets:
+            self.assertTrue(widget.isEnabled())
         self.assertTrue(any(
             label.text() == "服务端IP"
             for label in sidebar.findChildren(QLabel)

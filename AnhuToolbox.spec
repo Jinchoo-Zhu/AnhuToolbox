@@ -46,10 +46,28 @@ def _verify_capture_runtime():
         raise SystemExit("抓包运行时资源不完整：" + "; ".join(missing))
 
 
+def _verify_mqtt_runtime():
+    root = os.path.dirname(os.path.abspath(SPEC))
+    broker = os.path.join(root, "mqtt", "broker")
+    required = [
+        os.path.join(broker, "mosquitto.exe"),
+        os.path.join(broker, "mosquitto_passwd.exe"),
+        os.path.join(broker, "mosquitto_common.dll"),
+        os.path.join(broker, "mosquitto_password_file.dll"),
+        os.path.join(broker, "NOTICE.md"),
+        os.path.join(broker, "edl-v10"),
+        os.path.join(broker, "epl-v20"),
+    ]
+    missing = [path for path in required if not os.path.isfile(path)]
+    if missing:
+        raise SystemExit("MQTT 服务端运行时资源不完整：" + "; ".join(missing))
+
+
 # 构建前仍校验第三方资源完整性，但不再把官方工具打进 exe。
 # installer.iss 会根据任务选择把它们复制到安装目录的 tools\。
 _verify_external_tools()
 _verify_capture_runtime()
+_verify_mqtt_runtime()
 VERSION_FILE = os.path.join(
     os.path.dirname(os.path.abspath(SPEC)), "version_info.txt")
 
@@ -80,6 +98,8 @@ a = Analysis(
            ('anhutoolbox/assets/http_example.svg', 'anhutoolbox/assets'),
            ('anhutoolbox/assets/http_edit.svg', 'anhutoolbox/assets'),
            ('anhutoolbox/assets/http_close.svg', 'anhutoolbox/assets'),
+           ('anhutoolbox/assets/password_show.svg', 'anhutoolbox/assets'),
+           ('anhutoolbox/assets/password_hide.svg', 'anhutoolbox/assets'),
            # 统一弹窗的状态图标，源码和打包版本都使用同一套 PNG
            ('anhutoolbox/assets/dialog_status.png', 'anhutoolbox/assets'),
            ('anhutoolbox/assets/dialog_error.png', 'anhutoolbox/assets'),

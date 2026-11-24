@@ -15,7 +15,7 @@
 ;     Npcap 抓包驱动在独立的“可选运行组件”页面选择是否安装。
 
 #define MyAppName "Anhu百宝箱"
-#define MyAppVersion "1.0.7"
+#define MyAppVersion "1.0.8"
 #define MyAppPublisher "Anhu"
 #define MyAppExeName "Anhu百宝箱.exe"
 
@@ -59,6 +59,7 @@ Source: "tools\tools.json"; DestDir: "{app}\tools"; Tasks: installtoolbox; Flags
 ; 官方便携工具及资源在升级时同步更新，避免 tools.json 已指向新文件但磁盘上
 ; 仍是旧版本。用户自己维护的 tools.user.json 单独排除。
 Source: "tools\*"; DestDir: "{app}\tools"; Excludes: "tools.json,tools.user.json,toolbox.install-state"; Tasks: installtoolbox; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "mqtt\broker\*"; DestDir: "{app}\lib\mqtt\broker"; Flags: ignoreversion recursesubdirs createallsubdirs; Check: MqttBrokerSelected
 
 [Icons]
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"
@@ -71,6 +72,7 @@ Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#MyAppName}}
 var
   OptionalDependenciesPage: TWizardPage;
   NpcapDependencyCheckBox: TNewCheckBox;
+  MqttDependencyCheckBox: TNewCheckBox;
 
 procedure RemoveOfficialToolboxFiles();
 var
@@ -122,13 +124,59 @@ begin
       'InstallNpcap',
       PreviousSelection) then
     NpcapDependencyCheckBox.Checked := PreviousSelection <> 0;
+
+  MqttDependencyCheckBox := TNewCheckBox.Create(
+    OptionalDependenciesPage);
+  with MqttDependencyCheckBox do
+  begin
+    Left := 0;
+    Top := NpcapDependencyCheckBox.Top +
+      NpcapDependencyCheckBox.Height + ScaleY(8);
+    Width := OptionalDependenciesPage.SurfaceWidth;
+    Height := ScaleY(17);
+    Caption := '安装 MQTT 服务端';
+    Checked := False;
+    Parent := OptionalDependenciesPage.Surface;
+  end;
+
+  if RegQueryDWordValue(
+      HKCU,
+      'Software\AnhuToolbox\InstallOptions',
+      'InstallMqttBroker',
+      PreviousSelection) then
+    MqttDependencyCheckBox.Checked := PreviousSelection <> 0;
 end;
 
 function NpcapInstallSelected(): Boolean;
+var
+  StoredSelection: Cardinal;
 begin
-  Result :=
-    (NpcapDependencyCheckBox <> nil) and
-    NpcapDependencyCheckBox.Checked;
+  if NpcapDependencyCheckBox <> nil then
+    Result := NpcapDependencyCheckBox.Checked
+  else
+    Result :=
+      RegQueryDWordValue(
+        HKCU,
+        'Software\AnhuToolbox\InstallOptions',
+        'InstallNpcap',
+        StoredSelection) and
+      (StoredSelection <> 0);
+end;
+
+function MqttBrokerSelected(): Boolean;
+var
+  StoredSelection: Cardinal;
+begin
+  if MqttDependencyCheckBox <> nil then
+    Result := MqttDependencyCheckBox.Checked
+  else
+    Result :=
+      RegQueryDWordValue(
+        HKCU,
+        'Software\AnhuToolbox\InstallOptions',
+        'InstallMqttBroker',
+        StoredSelection) and
+      (StoredSelection <> 0);
 end;
 
 function InstallNpcapIfNeeded(): Boolean;
@@ -202,6 +250,23 @@ begin
         'Software\AnhuToolbox\InstallOptions',
         'InstallNpcap',
         0);
+
+    if MqttBrokerSelected() and FileExists(
+        ExpandConstant('{app}\lib\mqtt\broker\mosquitto.exe')) then
+      RegWriteDWordValue(
+        HKCU,
+        'Software\AnhuToolbox\InstallOptions',
+        'InstallMqttBroker',
+        1)
+    else
+    begin
+      DelTree(ExpandConstant('{app}\lib\mqtt'), True, True, True);
+      RegWriteDWordValue(
+        HKCU,
+        'Software\AnhuToolbox\InstallOptions',
+        'InstallMqttBroker',
+        0);
+    end;
   end;
 end;
 

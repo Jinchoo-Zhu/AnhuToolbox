@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QTreeWidget, QTreeWidgetItem, QStyle, QStyledItemDelegate,
     QMenu, QHeaderView,
 )
-from PySide6.QtGui import QColor, QFontMetrics, QIntValidator
+from PySide6.QtGui import QColor, QFontMetrics, QIcon, QIntValidator
 from PySide6.QtCore import QEvent, QRect, QTimer, Qt, Signal
 from PySide6.QtGui import QFont
 
@@ -237,6 +237,9 @@ class Sidebar(QWidget):
     http_duplicate_requested = Signal(str)
     http_delete_interface_requested = Signal(str)
     http_delete_folder_requested = Signal(str)
+    mqtt_server_settings_changed = Signal()
+    mqtt_server_start_requested = Signal()
+    mqtt_server_stop_requested = Signal()
 
     def __init__(self):
         super().__init__()
@@ -246,6 +249,9 @@ class Sidebar(QWidget):
 
         self._current_mode = "serial"
         self._connected = False
+        self._mqtt_server_mode = False
+        self._mqtt_server_running = False
+        self._mqtt_server_available = True
         self._wheel_active_control = None
         self._http_pending_expand_ids = set()
         self._http_expanded_target_folder_id = None
@@ -502,9 +508,12 @@ class Sidebar(QWidget):
         self._settings_stack.addWidget(self._build_serial_page())
         self._settings_stack.addWidget(self._build_tcpserver_page())
         self._settings_stack.addWidget(self._build_tcpclient_page())
-        self._settings_stack.addWidget(self._build_mqtt_page())
+        self._mqtt_client_settings_page = self._build_mqtt_page()
+        self._settings_stack.addWidget(self._mqtt_client_settings_page)
         self._settings_stack.addWidget(self._build_websocket_page())
         self._settings_stack.addWidget(self._build_http_page())
+        self._mqtt_server_settings_page = self._build_mqtt_server_page()
+        self._settings_stack.addWidget(self._mqtt_server_settings_page)
 
         # 窗口不够高时, 参数区应该出现滚动条, 而不是把每一行压扁
         inner = QWidget()
@@ -1006,7 +1015,8 @@ class Sidebar(QWidget):
             QLabel("用户名"), QLabel("密码"), QLabel("心跳间隔(秒)"),
             QLabel("协议"),
         ])
-        self._le_mqtt_host = QLineEdit("broker.emqx.io")
+        self._le_mqtt_host = QLineEdit()
+        self._le_mqtt_host.setPlaceholderText("例如：127.0.0.1")
         self._sp_mqtt_port = QSpinBox()
         self._sp_mqtt_port.setRange(1, 65535)
         self._sp_mqtt_port.setValue(1883)
@@ -1017,6 +1027,19 @@ class Sidebar(QWidget):
         self._le_mqtt_password.setEchoMode(QLineEdit.Password)
         self._le_mqtt_password.setToolTip(
             "密码会随当前项目保存在本地 JSON 中，请勿直接分享项目文件")
+        self._mqtt_password_toggle_action = \
+            self._le_mqtt_password.addAction(
+                QIcon(os.path.join(
+                    _find_assets_dir(), "password_show.svg")),
+                QLineEdit.ActionPosition.TrailingPosition,
+            )
+        self._mqtt_password_toggle_action.setToolTip("显示密码")
+        self._mqtt_password_toggle_action.triggered.connect(
+            lambda _checked=False: self._toggle_password_visibility(
+                self._le_mqtt_password,
+                self._mqtt_password_toggle_action,
+            )
+        )
         self._sp_mqtt_keepalive = QSpinBox()
         self._sp_mqtt_keepalive.setRange(5, 3600)
         self._sp_mqtt_keepalive.setValue(60)
@@ -1050,6 +1073,99 @@ class Sidebar(QWidget):
         form.addWidget(self._chk_mqtt_reconnect, 9, 0, 1, 2)
         outer.addLayout(form)
         outer.addStretch()
+        return w
+
+    def _build_mqtt_server_page(self) -> QWidget:
+        w = QWidget()
+        w.setObjectName("mqttServerSettingsPage")
+        w.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        w.setStyleSheet(PROTOCOL_SETTINGS_STYLE)
+        outer = QVBoxLayout(w)
+        outer.setContentsMargins(10, 10, 10, 10)
+        outer.setSpacing(8)
+        form = QGridLayout()
+        form.setHorizontalSpacing(8)
+        form.setVerticalSpacing(8)
+        form.setColumnStretch(1, 1)
+
+        labels = self._form_label([
+            QLabel("监听地址"), QLabel("端口"),
+            QLabel("最大连接"), QLabel("用户名"), QLabel("密码"),
+        ])
+        self._le_mqtt_server_bind = QLineEdit("127.0.0.1")
+        self._le_mqtt_server_bind.setPlaceholderText("127.0.0.1 或 0.0.0.0")
+        self._le_mqtt_server_bind.setToolTip(
+            "127.0.0.1 仅本机可连接；0.0.0.0 允许局域网连接")
+        self._sp_mqtt_server_port = QSpinBox()
+        self._sp_mqtt_server_port.setRange(1, 65535)
+        self._sp_mqtt_server_port.setValue(1883)
+        self._sp_mqtt_server_max_connections = QSpinBox()
+        self._sp_mqtt_server_max_connections.setRange(1, 100000)
+        self._sp_mqtt_server_max_connections.setValue(100)
+        self._le_mqtt_server_user = QLineEdit()
+        self._le_mqtt_server_user.setPlaceholderText("关闭匿名连接时必填")
+        self._le_mqtt_server_user.setEnabled(False)
+        self._le_mqtt_server_password = QLineEdit()
+        self._le_mqtt_server_password.setEchoMode(QLineEdit.Password)
+        self._le_mqtt_server_password.setPlaceholderText(
+            "关闭匿名连接时必填")
+        self._le_mqtt_server_password.setEnabled(False)
+        self._mqtt_server_password_toggle_action = \
+            self._le_mqtt_server_password.addAction(
+                QIcon(os.path.join(
+                    _find_assets_dir(), "password_show.svg")),
+                QLineEdit.ActionPosition.TrailingPosition,
+            )
+        self._mqtt_server_password_toggle_action.setToolTip("显示密码")
+        self._mqtt_server_password_toggle_action.triggered.connect(
+            lambda _checked=False: self._toggle_password_visibility(
+                self._le_mqtt_server_password,
+                self._mqtt_server_password_toggle_action,
+            )
+        )
+        for widget in (
+            self._le_mqtt_server_bind,
+            self._sp_mqtt_server_port,
+            self._sp_mqtt_server_max_connections,
+            self._le_mqtt_server_user,
+            self._le_mqtt_server_password,
+        ):
+            widget.setFixedHeight(32)
+        widgets = [
+            self._le_mqtt_server_bind,
+            self._sp_mqtt_server_port,
+            self._sp_mqtt_server_max_connections,
+            self._le_mqtt_server_user,
+            self._le_mqtt_server_password,
+        ]
+        for row, (label, widget) in enumerate(
+                zip(labels, widgets, strict=False)):
+            form.addWidget(label, row, 0, Qt.AlignLeft)
+            form.addWidget(widget, row, 1)
+
+        self._chk_mqtt_server_anonymous = QCheckBox("允许匿名连接")
+        self._chk_mqtt_server_anonymous.setChecked(True)
+        form.addWidget(self._chk_mqtt_server_anonymous, 5, 0, 1, 2)
+        outer.addLayout(form)
+        outer.addStretch()
+
+        self._chk_mqtt_server_anonymous.toggled.connect(
+            self._on_mqtt_server_anonymous_toggled)
+        for field in (
+            self._le_mqtt_server_bind,
+            self._le_mqtt_server_user,
+            self._le_mqtt_server_password,
+        ):
+            field.editingFinished.connect(
+                lambda: self.mqtt_server_settings_changed.emit())
+        for spin in (
+            self._sp_mqtt_server_port,
+            self._sp_mqtt_server_max_connections,
+        ):
+            spin.valueChanged.connect(
+                lambda _value: self.mqtt_server_settings_changed.emit())
+        self._chk_mqtt_server_anonymous.toggled.connect(
+            lambda _checked: self.mqtt_server_settings_changed.emit())
         return w
 
     def _build_websocket_page(self) -> QWidget:
@@ -1680,13 +1796,126 @@ class Sidebar(QWidget):
         elif selected == export_action:
             self.http_export_requested.emit()
 
+    @staticmethod
+    def _toggle_password_visibility(field, action):
+        visible = field.echoMode() == QLineEdit.EchoMode.Normal
+        if visible:
+            field.setEchoMode(QLineEdit.EchoMode.Password)
+            action.setIcon(QIcon(os.path.join(
+                _find_assets_dir(), "password_show.svg")))
+            action.setToolTip("显示密码")
+        else:
+            field.setEchoMode(QLineEdit.EchoMode.Normal)
+            action.setIcon(QIcon(os.path.join(
+                _find_assets_dir(), "password_hide.svg")))
+            action.setToolTip("隐藏密码")
+
+    def _on_mqtt_server_anonymous_toggled(self, allow_anonymous):
+        credentials_enabled = not bool(allow_anonymous)
+        self._le_mqtt_server_user.setEnabled(credentials_enabled)
+        self._le_mqtt_server_password.setEnabled(credentials_enabled)
+
+    def mqtt_server_config(self):
+        return {
+            "bind_address": self._le_mqtt_server_bind.text().strip(),
+            "port": self._sp_mqtt_server_port.value(),
+            "allow_anonymous": (
+                self._chk_mqtt_server_anonymous.isChecked()),
+            "username": self._le_mqtt_server_user.text(),
+            "password": self._le_mqtt_server_password.text(),
+            "max_connections": (
+                self._sp_mqtt_server_max_connections.value()),
+        }
+
+    def set_mqtt_server_config(self, data):
+        data = data if isinstance(data, dict) else {}
+        self._le_mqtt_server_bind.setText(
+            str(data.get("bind_address") or "127.0.0.1"))
+        try:
+            port = int(data.get("port", 1883))
+        except (TypeError, ValueError, OverflowError):
+            port = 1883
+        self._sp_mqtt_server_port.setValue(max(1, min(65535, port)))
+        try:
+            max_connections = int(data.get("max_connections", 100))
+        except (TypeError, ValueError, OverflowError):
+            max_connections = 100
+        self._sp_mqtt_server_max_connections.setValue(
+            max(1, min(100000, max_connections)))
+        allow_anonymous = bool(data.get("allow_anonymous", True))
+        self._chk_mqtt_server_anonymous.setChecked(allow_anonymous)
+        self._le_mqtt_server_user.setText(
+            str(data.get("username") or ""))
+        self._le_mqtt_server_password.setText(
+            str(data.get("password") or ""))
+        self._on_mqtt_server_anonymous_toggled(allow_anonymous)
+
+    def set_mqtt_server_mode(self, enabled):
+        self._mqtt_server_mode = bool(enabled)
+        if self._current_mode != "mqtt":
+            return
+        self._settings_stack.setCurrentWidget(
+            self._mqtt_server_settings_page
+            if self._mqtt_server_mode
+            else self._mqtt_client_settings_page)
+        self._settings_label.setText(
+            "服务端配置" if self._mqtt_server_mode else "参数配置")
+        if self._mqtt_server_mode:
+            self._refresh_mqtt_server_button()
+        else:
+            self.set_connected(self._connected)
+
+    def set_mqtt_server_running(self, running):
+        self._mqtt_server_running = bool(running)
+        self._refresh_mqtt_server_button()
+
+    def set_mqtt_server_available(self, available):
+        self._mqtt_server_available = bool(available)
+        self._refresh_mqtt_server_button()
+
+    def _refresh_mqtt_server_button(self):
+        if self._current_mode != "mqtt" or not self._mqtt_server_mode:
+            return
+        if not self._mqtt_server_available:
+            text = "服务端组件未安装"
+        elif self._mqtt_server_running:
+            text = "停止服务端"
+        else:
+            text = "启动服务端"
+        self._btn_connect.setText(text)
+        self._btn_connect.setEnabled(self._mqtt_server_available)
+        for widget in (
+            self._le_mqtt_server_bind, self._sp_mqtt_server_port,
+            self._sp_mqtt_server_max_connections,
+            self._le_mqtt_server_user,
+            self._le_mqtt_server_password,
+            self._chk_mqtt_server_anonymous,
+        ):
+            widget.setEnabled(
+                self._mqtt_server_available
+                and not self._mqtt_server_running
+                and (
+                    widget is not self._le_mqtt_server_user
+                    and widget is not self._le_mqtt_server_password
+                    or not self._chk_mqtt_server_anonymous.isChecked()
+                )
+            )
+        self._btn_connect.setProperty(
+            "connected", "true" if self._mqtt_server_running else "false")
+        self._btn_connect.style().unpolish(self._btn_connect)
+        self._btn_connect.style().polish(self._btn_connect)
+
     def _on_mode_changed(self, idx: int):
         modes = [
             "serial", "tcpserver", "tcpclient",
             "mqtt", "websocket", "http",
         ]
         self._current_mode = modes[idx]
-        self._settings_stack.setCurrentIndex(idx)
+        if self._current_mode == "mqtt" and self._mqtt_server_mode:
+            self._settings_stack.setCurrentWidget(
+                self._mqtt_server_settings_page)
+        else:
+            self._settings_stack.setCurrentIndex(idx)
         fill_settings = self._current_mode in (
             "mqtt", "websocket", "http")
         self._settings_inner_layout.setStretch(
@@ -1704,30 +1933,37 @@ class Sidebar(QWidget):
         self._settings_scroll.widget().updateGeometry()
         self._wheel_active_control = None
         self._settings_label.setText(
-            "全部接口" if self._current_mode == "http" else "参数配置")
+            "全部接口"
+            if self._current_mode == "http"
+            else (
+                "服务端配置"
+                if self._current_mode == "mqtt" and self._mqtt_server_mode
+                else "参数配置"
+            )
+        )
         self._btn_http_transfer_menu.setVisible(
             self._current_mode == "http")
 
         is_serial = (self._current_mode == "serial")
         self._btn_refresh.setVisible(is_serial)
         self._btn_connect.setVisible(
-            self._current_mode not in ("http", "websocket"))
+            self._current_mode not in ("http", "websocket")
+        )
 
-        if self._connected:
-            return
-        labels = {
-            "serial": "打开串口",
-            "tcpserver": "启动服务器",
-            "tcpclient": "连接服务器",
-            "mqtt": "连接服务端",
-            "websocket": "连接 WebSocket",
-            "http": "HTTP 请求",
-        }
-        self._btn_connect.setText(labels[self._current_mode])
+        if self._current_mode == "mqtt" and self._mqtt_server_mode:
+            self._refresh_mqtt_server_button()
+        else:
+            self.set_connected(self._connected)
 
         self.mode_changed.emit(self._current_mode)
 
     def _on_connect_clicked(self):
+        if self._current_mode == "mqtt" and self._mqtt_server_mode:
+            if self._mqtt_server_running:
+                self.mqtt_server_stop_requested.emit()
+            elif self._mqtt_server_available:
+                self.mqtt_server_start_requested.emit()
+            return
         if self._connected:
             self.disconnect_clicked.emit(self._current_mode)
         else:
@@ -1735,6 +1971,10 @@ class Sidebar(QWidget):
 
     def set_connected(self, connected: bool):
         self._connected = connected
+        if self._current_mode == "mqtt" and self._mqtt_server_mode:
+            return
+        if self._current_mode == "mqtt":
+            self._set_mqtt_client_fields_enabled(not connected)
         labels = {
             "serial": "打开串口", "tcpserver": "启动服务器",
             "tcpclient": "连接服务器", "mqtt": "连接服务端",
@@ -1768,12 +2008,39 @@ class Sidebar(QWidget):
             self._le_mqtt_password, self._sp_mqtt_keepalive,
             self._cb_mqtt_protocol, self._chk_mqtt_tls,
             self._chk_mqtt_clean, self._chk_mqtt_reconnect,
+            self._le_mqtt_server_bind, self._sp_mqtt_server_port,
+            self._sp_mqtt_server_max_connections,
+            self._le_mqtt_server_user,
+            self._le_mqtt_server_password,
+            self._chk_mqtt_server_anonymous,
             self._le_ws_origin, self._le_ws_protocol,
             self._sp_ws_ping,
             self._chk_ws_reconnect, self._chk_ws_verify,
         ]
         for w in widgets:
             w.setEnabled(enabled)
+        if (
+            enabled
+            and self._connected
+            and self._current_mode == "mqtt"
+            and not self._mqtt_server_mode
+        ):
+            self._set_mqtt_client_fields_enabled(False)
+
+    def _set_mqtt_client_fields_enabled(self, enabled):
+        for widget in (
+            self._le_mqtt_host,
+            self._sp_mqtt_port,
+            self._le_mqtt_client_id,
+            self._le_mqtt_user,
+            self._le_mqtt_password,
+            self._sp_mqtt_keepalive,
+            self._cb_mqtt_protocol,
+            self._chk_mqtt_tls,
+            self._chk_mqtt_clean,
+            self._chk_mqtt_reconnect,
+        ):
+            widget.setEnabled(enabled)
 
     @property
     def cb_port(self) -> QComboBox:

@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
     QSplitter, QStatusBar, QLabel, QFrame,
     QMenu, QFileDialog, QPushButton,
 )
-from PySide6.QtCore import Qt, QTimer, Signal, Slot
+from PySide6.QtCore import QProcess, Qt, QTimer, Signal, Slot
 import serial, serial.tools.list_ports
 
 from .sidebar import Sidebar
@@ -16,7 +16,11 @@ from .panels import PresetPanel
 from .workers import SerialReadWorker, TCPServerWorker, TCPClientWorker
 from .protocol_workers import MQTTWorker, WebSocketWorker
 from .protocol_pages import HTTPPage, MQTTPage, WebSocketPage
+from .mqtt_broker import (
+    MQTTBrokerError, MQTTBrokerRuntime, mqtt_broker_available,
+)
 from .process_metrics import ProcessMetrics
+from .process_guard import close_child_processes
 from .stream_views import StreamPage
 from .tools import (
     TimestampTool, QRTool, JsonTool, BaseTool, RegexTool, DiffTool, SortTool,
@@ -170,6 +174,11 @@ class MainWindow(QMainWindow):
         self._mqtt_worker.message_received.connect(self._on_mqtt_message)
         self._mqtt_worker.error_occurred.connect(self._on_error)
         self._mqtt_worker.log_message.connect(self._log)
+        self._mqtt_broker = MQTTBrokerRuntime(self._base_dir, self)
+        self._mqtt_broker.started.connect(self._on_mqtt_broker_started)
+        self._mqtt_broker.stopped.connect(self._on_mqtt_broker_stopped)
+        self._mqtt_broker.failed.connect(self._on_mqtt_broker_failed)
+        self._mqtt_broker.log_message.connect(self._on_mqtt_broker_log)
 
         self._websocket_worker = WebSocketWorker()
         self._websocket_worker.connected.connect(self._on_websocket_connected)
@@ -199,6 +208,7 @@ class MainWindow(QMainWindow):
         self._last_project_save_error = ""
         self._applying = False          # 应用项目配置期间抑制自动保存
         self._last_snapshot = None
+        self._close_authorized = False
         self._has_dtr_rts = False       # 当前项目是否记录了 DTR/RTS 状态
         self._extra_tabs_built = False
         self._pending_update = None
@@ -1097,6 +1107,21 @@ class MainWindow(QMainWindow):
         self._mqtt_page.subscription_changed.connect(
             self._on_mqtt_subscriptions_changed)
         self._mqtt_page.publish_requested.connect(self._on_mqtt_publish)
+        self._mqtt_page.server_connect_local_requested.connect(
+            self._on_mqtt_connect_local)
+        self._mqtt_page.mode_changed.connect(
+            self._on_mqtt_mode_changed)
+        self.sidebar.mqtt_server_settings_changed.connect(
+            self._project_autosave_soon)
+        self.sidebar.mqtt_server_start_requested.connect(
+            self._on_mqtt_server_start_requested)
+        self.sidebar.mqtt_server_stop_requested.connect(
+            self._on_mqtt_server_stop_requested)
+        self.sidebar.set_mqtt_server_mode(
+            self._mqtt_page.is_server_mode())
+        runtime_available = mqtt_broker_available(self._base_dir)
+        self._mqtt_page.set_server_runtime_available(runtime_available)
+        self.sidebar.set_mqtt_server_available(runtime_available)
         self._websocket_page.send_requested.connect(
             self._on_websocket_send)
         self._websocket_page.ping_requested.connect(
@@ -1305,6 +1330,7 @@ class MainWindow(QMainWindow):
                 "auto_reconnect": self.sidebar.chk_mqtt_reconnect.isChecked(),
                 "tls": self.sidebar.chk_mqtt_tls.isChecked(),
                 **self._mqtt_page.snapshot(),
+                "server": self.sidebar.mqtt_server_config(),
             },
             "websocket": {
                 "origin": self.sidebar.le_ws_origin.text(),
@@ -1447,7 +1473,7 @@ class MainWindow(QMainWindow):
 
         mq = _profile_dict(p.get("mqtt"))
         self.sidebar.le_mqtt_host.setText(
-            str(mq.get("host") or "broker.emqx.io"))
+            str(mq.get("host") or ""))
         self.sidebar.sp_mqtt_port.setValue(
             _profile_int(mq.get("port", 1883), 1883, 1, 65535))
         self.sidebar.le_mqtt_client_id.setText(
@@ -1465,7 +1491,10 @@ class MainWindow(QMainWindow):
             _profile_bool(mq.get("auto_reconnect", True), True))
         self.sidebar.chk_mqtt_tls.setChecked(
             _profile_bool(mq.get("tls", False), False))
+        self.sidebar.set_mqtt_server_config(mq.get("server"))
         self._mqtt_page.apply(mq)
+        self.sidebar.set_mqtt_server_mode(
+            self._mqtt_page.is_server_mode())
 
         ws = _profile_dict(p.get("websocket"))
         self.sidebar.le_ws_origin.setText(str(ws.get("origin") or ""))
@@ -1505,14 +1534,19 @@ class MainWindow(QMainWindow):
         """切换项目: 存旧项目 -> 停自动动作 -> 断开 -> 应用新项目"""
         if name == self._current_project:
             return True
-        if confirm and self._active_worker:
+        if confirm and (self._active_worker or self._mqtt_broker.is_running):
+            message = "切换项目会断开当前连接"
+            if self._mqtt_broker.is_running:
+                message += "并停止当前 MQTT 服务端"
+            message += "，是否继续？"
             if not ask_yes_no(
-                self, "切换项目", "切换项目会断开当前连接，是否继续？",
+                self, "切换项目", message,
                 confirm_text="切换",
             ):
                 self.sidebar.set_current_project(self._current_project)
                 return False
         self._save_current_project()
+        self._mqtt_broker.stop()
         # 停掉所有"会自己动"的东西, 免得老节奏打到新连接上
         for page in self._stream_pages.values():
             if page.send_bar.chk_repeat.isChecked():
@@ -1647,6 +1681,7 @@ class MainWindow(QMainWindow):
             confirm_text="删除", danger=True,
         ):
             return
+        self._mqtt_broker.stop()
         for page in self._stream_pages.values():
             if page.send_bar.chk_repeat.isChecked():
                 page.send_bar.chk_repeat.setChecked(False)
@@ -1998,6 +2033,68 @@ class MainWindow(QMainWindow):
             self._mqtt_rx_count, self._mqtt_tx_count))
         self._project_autosave_soon()
 
+    def _on_mqtt_mode_changed(self, server_mode):
+        self.sidebar.set_mqtt_server_mode(server_mode)
+        self._project_autosave_soon()
+
+    def _on_mqtt_server_start_requested(self):
+        config = self.sidebar.mqtt_server_config()
+        self._mqtt_page.set_server_starting()
+        self.sidebar.set_mqtt_server_running(True)
+        try:
+            self._mqtt_broker.start(
+                config, os.path.join(
+                    self._data_dir, "mqtt", "runtime"))
+        except MQTTBrokerError as exc:
+            self._mqtt_page.set_server_failed(str(exc))
+            self.sidebar.set_mqtt_server_running(False)
+            show_warning(self, "MQTT 服务端启动失败", str(exc))
+
+    def _on_mqtt_server_stop_requested(self):
+        self._mqtt_broker.stop()
+
+    def _on_mqtt_broker_started(self):
+        self._mqtt_page.set_server_running()
+        self.sidebar.set_mqtt_server_running(True)
+        self.status_bar.showMessage("MQTT 服务端已启动", 3000)
+
+    def _on_mqtt_broker_stopped(self, message=""):
+        self._mqtt_page.set_server_stopped(message)
+        self.sidebar.set_mqtt_server_running(False)
+        self.status_bar.showMessage(message or "MQTT 服务端已停止", 3000)
+
+    def _on_mqtt_broker_failed(self, message):
+        self._mqtt_page.set_server_failed(message)
+        self.sidebar.set_mqtt_server_running(False)
+        show_warning(self, "MQTT 服务端", message)
+
+    def _on_mqtt_broker_log(self, message):
+        self._mqtt_page.append_server_log(message)
+
+    def _on_mqtt_connect_local(self):
+        config = self.sidebar.mqtt_server_config()
+        bind_address = str(
+            config.get("bind_address") or "127.0.0.1").strip()
+        if bind_address == "0.0.0.0":
+            host = "127.0.0.1"
+        elif bind_address == "::":
+            host = "::1"
+        else:
+            host = bind_address
+        self.sidebar.le_mqtt_host.setText(host)
+        self.sidebar.sp_mqtt_port.setValue(
+            int(config.get("port", 1883)))
+        if not config.get("allow_anonymous", True):
+            self.sidebar.le_mqtt_user.setText(
+                str(config.get("username") or ""))
+            self.sidebar.le_mqtt_password.setText(
+                str(config.get("password") or ""))
+        else:
+            self.sidebar.le_mqtt_user.clear()
+            self.sidebar.le_mqtt_password.clear()
+        self._mqtt_page.show_client_mode()
+        self._connect_mqtt()
+
     @Slot()
     def _on_websocket_connected(self):
         if self._active_worker is not self._websocket_worker:
@@ -2152,14 +2249,24 @@ class MainWindow(QMainWindow):
     @Slot(str)
     def _on_disconnect(self, mode: str):
         self.send_bar.stop_repeat()
-        if self._active_worker:
-            if self._active_worker is self._mqtt_worker:
+        worker = self._active_worker
+        if worker:
+            if worker is self._mqtt_worker:
                 self._mqtt_page.set_connected(False)
-            elif self._active_worker is self._websocket_worker:
+            elif worker is self._websocket_worker:
                 self._websocket_page.set_connected(False)
-            self._active_worker.stop()
-            if isinstance(self._active_worker, SerialReadWorker):
-                if self._active_worker._serial:
+            stopped = worker.stop()
+            still_running = (
+                hasattr(worker, "isRunning") and worker.isRunning())
+            if stopped is False or still_running:
+                show_warning(
+                    self, "停止失败",
+                    "当前通信模块未能完全停止，端口或连接可能仍被占用。"
+                    "请稍后重试。",
+                )
+                return False
+            if isinstance(worker, SerialReadWorker):
+                if worker._serial:
                     try: self._active_worker._serial.close()
                     except: pass
             self._active_worker = None
@@ -2171,6 +2278,7 @@ class MainWindow(QMainWindow):
         self._lbl_remote.setText(""); self._lbl_stats.setText("")
         self._local_addr = ""; self._remote_addr = ""
         self.status_bar.showMessage("已断开",3000)
+        return True
 
     @Slot(bytes)
     def _on_rx_data(self, data: bytes):
@@ -2340,7 +2448,89 @@ class MainWindow(QMainWindow):
             print("[AnhuToolbox] 刷新串口列表失败:", e)
         self._check_port_exists()
 
+    def _running_modules(self):
+        modules = []
+        worker_names = (
+            (self._serial_worker, "串口"),
+            (self._tcp_server, "TCP 服务端"),
+            (self._tcp_client, "TCP 客户端"),
+            (self._mqtt_worker, "MQTT 客户端"),
+            (self._websocket_worker, "WebSocket"),
+        )
+        for worker, name in worker_names:
+            if worker.isRunning():
+                modules.append(name)
+        if self._mqtt_broker.has_active_process:
+            modules.append("MQTT 服务端")
+        http_worker = getattr(self._http_page, "_worker", None)
+        if http_worker is not None and http_worker.isRunning():
+            modules.append("HTTP 请求")
+        if self._update_download_dialog is not None:
+            update_worker = getattr(
+                self._update_download_dialog, "worker", None)
+            if update_worker is not None and update_worker.isRunning():
+                modules.append("软件更新下载")
+        if hasattr(self, "_library_pages"):
+            network = self._library_pages.get("network")
+            if network is not None:
+                ping_proc = getattr(network, "_ping_proc", None)
+                if (
+                    getattr(network, "_scan_running", False)
+                    or (
+                        ping_proc is not None
+                        and ping_proc.state()
+                        != QProcess.ProcessState.NotRunning
+                    )
+                ):
+                    modules.append("网络检测")
+            capture = self._library_pages.get("capture")
+            if capture is not None:
+                capture_tool = getattr(
+                    capture, "_capture_tool", None)
+                if (
+                    capture_tool is not None
+                    and getattr(
+                        capture_tool, "_capture_running", False)
+                ):
+                    modules.append("抓包分析")
+        return list(dict.fromkeys(modules))
+
+    def _confirm_exit(self):
+        modules = self._running_modules()
+        if modules:
+            message = (
+                "以下模块正在运行：\n\n"
+                + "\n".join("• " + name for name in modules)
+                + "\n\n退出程序将停止这些模块，是否继续？"
+            )
+        else:
+            message = "确定退出 Anhu 百宝箱吗？"
+        return ask_yes_no(
+            self, "退出 Anhu 百宝箱", message,
+            confirm_text="退出", danger=True,
+        )
+
     def closeEvent(self, event):
+        if not self._close_authorized and event.spontaneous():
+            if not self._confirm_exit():
+                event.ignore()
+                return
+            self._close_authorized = True
+        broker_was_active = self._mqtt_broker.has_active_process
+        if broker_was_active and not self._mqtt_broker.stop():
+            show_warning(
+                self, "无法安全退出",
+                "MQTT 服务端尚未完全退出或端口仍未释放，"
+                "请稍后重试。",
+            )
+            self._close_authorized = False
+            event.ignore()
+            return
+        if self._active_worker and self._on_disconnect(
+                self.sidebar.current_mode) is False:
+            self._close_authorized = False
+            event.ignore()
+            return
         self._sync_timer.stop(); self._port_timer.stop()
         self._resource_timer.stop()
         self._extra_tabs_timer.stop()
@@ -2354,11 +2544,10 @@ class MainWindow(QMainWindow):
         for page in self._stream_pages.values():
             page.send_bar.stop_repeat()
             page.log_panel.cleanup()
+        self._mqtt_broker.cleanup()
         self._mqtt_page.cleanup()
         self._websocket_page.cleanup()
         self.preset_panel.stop_timer()
-        if self._active_worker:
-            self._on_disconnect(self.sidebar.current_mode)
         if hasattr(self, "_library_pages"):
             network = self._library_pages.get("network")
             if network is not None:
@@ -2375,4 +2564,5 @@ class MainWindow(QMainWindow):
         self._http_page.cleanup()
         self._save_current_project()
         self._save_global()
+        close_child_processes()
         event.accept()

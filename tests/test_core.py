@@ -692,6 +692,37 @@ class CommunicationTests(unittest.TestCase):
         worker._remove_client(client)
         self.assertEqual(events, [("192.0.2.1", 12345)])
 
+    def test_tcp_server_stop_releases_listening_port(self):
+        probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        probe.bind(("0.0.0.0", 0))
+        port = probe.getsockname()[1]
+        probe.close()
+        worker = TCPServerWorker()
+        worker.configure(port)
+        started = []
+        worker.started.connect(started.append)
+        try:
+            worker.start()
+            deadline = time.monotonic() + 3
+            while not started and time.monotonic() < deadline:
+                APP.processEvents()
+                time.sleep(0.01)
+            self.assertTrue(started)
+            self.assertTrue(worker.stop())
+            self.assertFalse(worker.isRunning())
+            replacement = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            try:
+                if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+                    replacement.setsockopt(
+                        socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+                replacement.bind(("0.0.0.0", port))
+                replacement.listen(1)
+            finally:
+                replacement.close()
+        finally:
+            if worker.isRunning():
+                worker.stop()
+
     def test_failed_send_is_not_recorded_as_tx(self):
         sock = mock.Mock()
         sock.sendall.side_effect = OSError("send failed")
@@ -998,6 +1029,24 @@ class OptionalToolboxTests(unittest.TestCase):
         self.assertNotIn('Name: "installnpcap"', installer)
         self.assertNotIn("是否现在安装 Npcap", installer)
 
+    def test_mqtt_broker_runtime_is_optional(self):
+        installer = (ROOT / "installer.iss").read_text(
+            encoding="utf-8")
+        spec = (ROOT / "AnhuToolbox.spec").read_text(
+            encoding="utf-8")
+        self.assertIn("Caption := '安装 MQTT 服务端'", installer)
+        self.assertIn("function MqttBrokerSelected(): Boolean;", installer)
+        self.assertIn(
+            'Source: "mqtt\\broker\\*"; '
+            'DestDir: "{app}\\lib\\mqtt\\broker"',
+            installer,
+        )
+        self.assertIn("Check: MqttBrokerSelected", installer)
+        self.assertIn("InstallMqttBroker", installer)
+        self.assertIn(
+            "DelTree(ExpandConstant('{app}\\lib\\mqtt')", installer)
+        self.assertIn("_verify_mqtt_runtime()", spec)
+
 
 class PersistenceTests(unittest.TestCase):
     def test_preset_visibility_is_saved_from_toggle_intent(self):
@@ -1137,6 +1186,35 @@ class PersistenceTests(unittest.TestCase):
                 self.assertTrue(
                     window._lbl_resource_usage.isVisible())
                 self.assertFalse(window._lbl_conn_type.isVisible())
+            finally:
+                close_window(window)
+
+    def test_exit_confirmation_lists_running_modules(self):
+        with tempfile.TemporaryDirectory() as temp:
+            window = MainWindow(temp)
+            try:
+                with mock.patch.object(
+                        window._tcp_server,
+                        "isRunning",
+                        return_value=True,
+                ), mock.patch.object(
+                    type(window._mqtt_broker),
+                    "has_active_process",
+                    new_callable=mock.PropertyMock,
+                    return_value=True,
+                ), mock.patch(
+                    "anhutoolbox.main_window.ask_yes_no",
+                    return_value=False,
+                ) as ask:
+                    self.assertEqual(
+                        window._running_modules(),
+                        ["TCP 服务端", "MQTT 服务端"],
+                    )
+                    self.assertFalse(window._confirm_exit())
+                message = ask.call_args.args[2]
+                self.assertIn("TCP 服务端", message)
+                self.assertIn("MQTT 服务端", message)
+                self.assertIn("退出程序将停止", message)
             finally:
                 close_window(window)
 

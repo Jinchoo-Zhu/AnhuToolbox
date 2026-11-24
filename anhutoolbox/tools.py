@@ -34,6 +34,7 @@ from .capture import (
 from .dialogs import show_error, show_information, show_success, show_warning
 from .log_writer import AUTO_CLEAR_BYTES, AUTO_CLEAR_RECORDS
 from .panels import _save_rule_label
+from .process_guard import assign_child_process
 from .styles import _find_assets_dir
 from .table_actions import apply_data_table_style
 from .ui_tokens import (
@@ -3230,6 +3231,8 @@ class NetworkTool(QWidget):
                     file_process, code))
             file_process.errorOccurred.connect(
                 lambda _error: self._on_capture_file_error(file_process))
+            file_process.started.connect(
+                lambda: assign_child_process(file_process.processId()))
             self._capture_file_proc = file_process
             file_process.start(
                 str(self._capture_engine_dir / "dumpcap.exe"),
@@ -3249,6 +3252,8 @@ class NetworkTool(QWidget):
                 process, code))
         process.errorOccurred.connect(
             lambda _error: self._on_capture_process_error(process))
+        process.started.connect(
+            lambda: assign_child_process(process.processId()))
         self._capture_proc = process
         self._capture_running = True
         self._capture_stopping = False

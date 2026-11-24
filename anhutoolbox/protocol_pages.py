@@ -11,11 +11,11 @@ import urllib.parse
 from datetime import datetime
 
 from PySide6.QtCore import QSize, Qt, QTimer, Signal, Slot
-from PySide6.QtGui import QFont, QIcon
+from PySide6.QtGui import QColor, QFont, QIcon
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QFileDialog, QGroupBox,
-    QHBoxLayout, QHeaderView, QLabel, QLineEdit, QPlainTextEdit, QPushButton,
-    QSpinBox, QSplitter,
+    QHBoxLayout, QHeaderView, QLabel, QLineEdit,
+    QPlainTextEdit, QPushButton, QSpinBox, QSplitter,
     QAbstractItemView, QTableWidget, QTableWidgetItem, QTabWidget,
     QVBoxLayout, QWidget, QSizePolicy,
 )
@@ -24,6 +24,7 @@ from .dialogs import show_error, show_information, show_warning
 from .log_writer import (
     AUTO_CLEAR_BYTES, AUTO_CLEAR_RECORDS, AsyncLogWriter,
 )
+from .mqtt_connections import MQTTConnectionRegistry
 from .panels import _save_rule_label, parse_hex_bytes
 from .protocol_workers import HTTPRequestWorker
 from .styles import _find_assets_dir
@@ -168,7 +169,10 @@ def _table_pairs(table):
 class MQTTPage(QWidget):
     subscription_changed = Signal(object)
     publish_requested = Signal(dict)
+    server_connect_local_requested = Signal()
+    mode_changed = Signal(bool)
     MAX_PAUSED_BYTES = 16 * 1024 * 1024
+    MAX_SERVER_LOG_PAUSED_BYTES = 16 * 1024 * 1024
 
     def __init__(self):
         super().__init__()
@@ -182,12 +186,41 @@ class MQTTPage(QWidget):
         self._save_prefix = "mqtt"
         self._display_records = 0
         self._display_bytes = 0
+        self._server_running = False
+        self._server_runtime_available = True
+        self._server_log_paused = False
+        self._server_log_paused_lines = []
+        self._server_log_paused_bytes = 0
+        self._server_log_pause_dropped = 0
+        self._server_log_display_records = 0
+        self._server_log_display_bytes = 0
+        self._server_log_save_writer = None
+        self._mqtt_connections = MQTTConnectionRegistry()
+        self._connection_refresh_timer = QTimer(self)
+        self._connection_refresh_timer.setSingleShot(True)
+        self._connection_refresh_timer.timeout.connect(
+            self._refresh_connections_table)
+        self._connection_age_timer = QTimer(self)
+        self._connection_age_timer.setInterval(1000)
+        self._connection_age_timer.timeout.connect(
+            self._refresh_connections_table)
+        self._connection_age_timer.start()
         self._build()
 
     def _build(self):
         self.setObjectName("mqttPage")
         self.setStyleSheet(PROTOCOL_WORKSPACE_STYLE)
-        root = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(10, 8, 10, 10)
+        outer.setSpacing(0)
+        self._mode_tabs = QTabWidget()
+        self._mode_tabs.setObjectName("mqttModeTabs")
+        self._mode_tabs.setDocumentMode(True)
+        outer.addWidget(self._mode_tabs)
+
+        client_page = QWidget()
+        client_page.setObjectName("mqttClientPage")
+        root = QVBoxLayout(client_page)
         root.setContentsMargins(14, 12, 14, 12)
         root.setSpacing(10)
 
@@ -361,7 +394,417 @@ class MQTTPage(QWidget):
         self._mqtt_bottom_split = bottom_split
         root.addWidget(messages, 2)
         root.addWidget(bottom_split, 3)
+        server_page = self._build_server_page()
+        self._mode_tabs.addTab(client_page, "客户端连接")
+        self._mode_tabs.addTab(server_page, "内置服务端")
+        self._mode_tabs.currentChanged.connect(
+            self._on_mode_tab_changed)
         self.set_connected(False)
+
+    def _build_server_page(self):
+        page = QWidget()
+        page.setObjectName("mqttServerPage")
+        root = QVBoxLayout(page)
+        root.setContentsMargins(14, 12, 14, 12)
+        root.setSpacing(10)
+
+        config_card = QWidget()
+        config_card.setObjectName("protocolCard")
+        config_card.setAttribute(
+            Qt.WidgetAttribute.WA_StyledBackground, True)
+        form_root = QVBoxLayout(config_card)
+        form_root.setContentsMargins(12, 10, 12, 12)
+        form_root.setSpacing(10)
+
+        title_row = QHBoxLayout()
+        title = QLabel("本地 MQTT 服务端")
+        title.setObjectName("protocolSectionTitle")
+        title_row.addWidget(title)
+        title_row.addStretch()
+        self._server_status = QLabel("未启动")
+        self._server_status.setStyleSheet(
+            "color:#6B7280;background:#F3F4F6;"
+            "border:1px solid #E5E7EB;border-radius:10px;"
+            "padding:3px 10px;")
+        title_row.addWidget(self._server_status)
+        form_root.addLayout(title_row)
+        hint = QLabel(
+            "服务只在百宝箱运行期间启动。默认仅本机可连接；"
+            "监听 0.0.0.0 时局域网设备可访问。")
+        hint.setObjectName("protocolHint")
+        form_root.addWidget(hint)
+
+        self._server_runtime_hint = QLabel("")
+        self._server_runtime_hint.setObjectName("protocolHint")
+        self._server_runtime_hint.setStyleSheet(
+            "color:#C42B1C;font-size:12px;")
+        self._server_runtime_hint.hide()
+        form_root.addWidget(self._server_runtime_hint)
+
+        actions = QHBoxLayout()
+        self._btn_server_connect_local = QPushButton(
+            "本地客户端连接")
+        self._btn_server_connect_local.setEnabled(False)
+        self._btn_server_connect_local.setToolTip(
+            "切换到客户端连接并连接当前运行的本地服务端")
+        self._btn_server_connect_local.clicked.connect(
+            self._connect_local_server)
+        actions.addWidget(self._btn_server_connect_local)
+        actions.addStretch()
+        form_root.addLayout(actions)
+        root.addWidget(config_card)
+
+        connections_card = QWidget()
+        connections_card.setObjectName("protocolCard")
+        connections_card.setAttribute(
+            Qt.WidgetAttribute.WA_StyledBackground, True)
+        connections_layout = QVBoxLayout(connections_card)
+        connections_layout.setContentsMargins(12, 10, 12, 12)
+        connections_layout.setSpacing(8)
+        connections_title_row = QHBoxLayout()
+        self._lbl_server_connections_title = QLabel("客户端连接")
+        self._lbl_server_connections_title.setObjectName(
+            "protocolSectionTitle")
+        connections_title_row.addWidget(
+            self._lbl_server_connections_title)
+        connections_title_row.addSpacing(12)
+        self._server_connection_search = QLineEdit()
+        self._server_connection_search.setPlaceholderText(
+            "搜索 Client ID、用户名或地址")
+        self._server_connection_search.setFixedWidth(230)
+        self._server_connection_search.textChanged.connect(
+            self._schedule_connection_refresh)
+        connections_title_row.addWidget(
+            self._server_connection_search)
+        connections_title_row.addStretch()
+        connections_layout.addLayout(connections_title_row)
+
+        self._server_connections = _new_table([
+            "状态", "Client ID", "用户名", "客户端地址",
+            "协议", "Keepalive", "Clean Session",
+            "连接时间", "在线时长",
+        ])
+        self._server_connections.setEditTriggers(
+            QAbstractItemView.EditTrigger.NoEditTriggers)
+        self._server_connections.setWordWrap(False)
+        self._server_connections.setSelectionBehavior(
+            QAbstractItemView.SelectionBehavior.SelectRows)
+        self._server_connections.setAlternatingRowColors(False)
+        connections_header = (
+            self._server_connections.horizontalHeader())
+        connections_header.setStretchLastSection(False)
+        widths = (72, 160, 100, 160, 96, 82, 100, 175, 82)
+        for column, width in enumerate(widths):
+            if column == 1:
+                connections_header.setSectionResizeMode(
+                    column, QHeaderView.ResizeMode.Stretch)
+            else:
+                connections_header.setSectionResizeMode(
+                    column, QHeaderView.ResizeMode.Fixed)
+                self._server_connections.setColumnWidth(
+                    column, width)
+        connections_layout.addWidget(
+            self._server_connections, 1)
+        connections_card.setMinimumHeight(210)
+
+        log_card = QWidget()
+        log_card.setObjectName("protocolCard")
+        log_card.setAttribute(
+            Qt.WidgetAttribute.WA_StyledBackground, True)
+        log_layout = QVBoxLayout(log_card)
+        log_layout.setContentsMargins(12, 10, 12, 12)
+        log_layout.setSpacing(8)
+        log_title_row = QHBoxLayout()
+        log_title = QLabel("服务端日志")
+        log_title.setObjectName("protocolSectionTitle")
+        log_title_row.addWidget(log_title)
+        log_title_row.addSpacing(12)
+        self._chk_server_log_pause = QCheckBox("页面暂停")
+        self._chk_server_log_pause.toggled.connect(
+            self._on_server_log_pause)
+        log_title_row.addWidget(self._chk_server_log_pause)
+        self._chk_server_log_save = QCheckBox("保存到文件")
+        self._chk_server_log_save.toggled.connect(
+            self._on_server_log_save_toggle)
+        log_title_row.addWidget(self._chk_server_log_save)
+        self._lbl_server_log_save_rule = _save_rule_label()
+        log_title_row.addWidget(self._lbl_server_log_save_rule)
+        log_title_row.addStretch()
+        self._btn_server_log_clear = QPushButton("清空日志")
+        _set_button_icon(
+            self._btn_server_log_clear, "http_delete.svg")
+        self._btn_server_log_clear.clicked.connect(
+            self._clear_server_log)
+        log_title_row.addWidget(self._btn_server_log_clear)
+        log_layout.addLayout(log_title_row)
+        self._server_log = QPlainTextEdit()
+        self._server_log.setReadOnly(True)
+        self._server_log.setFont(QFont("Consolas", 9))
+        self._server_log.setPlaceholderText("启动服务端后显示运行日志")
+        log_layout.addWidget(self._server_log, 1)
+        server_content_split = QSplitter(Qt.Orientation.Vertical)
+        server_content_split.setChildrenCollapsible(False)
+        server_content_split.setHandleWidth(7)
+        server_content_split.addWidget(connections_card)
+        server_content_split.addWidget(log_card)
+        server_content_split.setSizes([300, 330])
+        self._server_content_split = server_content_split
+        root.addWidget(server_content_split, 1)
+
+        return page
+
+    def _connect_local_server(self):
+        self.show_client_mode()
+        self.server_connect_local_requested.emit()
+
+    def _on_mode_tab_changed(self, index):
+        self.mode_changed.emit(int(index) == 1)
+
+    def is_server_mode(self):
+        return self._mode_tabs.currentIndex() == 1
+
+    def show_client_mode(self):
+        self._mode_tabs.setCurrentIndex(0)
+
+    def show_server_mode(self):
+        self._mode_tabs.setCurrentIndex(1)
+
+    def _set_server_state(self, text, color, background, border):
+        self._server_status.setText(text)
+        self._server_status.setStyleSheet(
+            "color:{};background:{};border:1px solid {};"
+            "border-radius:10px;padding:3px 10px;".format(
+                color, background, border))
+
+    def set_server_starting(self):
+        self._server_running = False
+        self._btn_server_connect_local.setEnabled(False)
+        self._set_server_state(
+            "启动中", "#0067B8", "#EAF4FF", "#B7D9F5")
+        self.append_server_log("正在启动 MQTT 服务端...")
+
+    def set_server_running(self):
+        self._server_running = True
+        self._btn_server_connect_local.setEnabled(True)
+        self._set_server_state(
+            "运行中", "#107C10", "#EFFAF2", "#C9E8D1")
+
+    def set_server_stopped(self, message="已停止"):
+        self._server_running = False
+        if self._mqtt_connections.mark_all_offline():
+            self._schedule_connection_refresh()
+        self._btn_server_connect_local.setEnabled(False)
+        self._set_server_state(
+            "已停止", "#6B7280", "#F3F4F6", "#E5E7EB")
+        if message:
+            self.append_server_log(message)
+
+    def set_server_failed(self, message):
+        self._server_running = False
+        if self._mqtt_connections.mark_all_offline():
+            self._schedule_connection_refresh()
+        self._btn_server_connect_local.setEnabled(False)
+        self._set_server_state(
+            "启动失败", "#C42B1C", "#FDF3F2", "#E8C5C0")
+        self.append_server_log(message)
+
+    def set_server_runtime_available(self, available):
+        self._server_runtime_available = bool(available)
+        self._server_runtime_hint.setVisible(not available)
+        if not available:
+            self._server_runtime_hint.setText(
+                "未安装 MQTT 服务端运行组件，请重新运行安装程序并勾选安装。")
+            if not self._server_running:
+                self._set_server_state(
+                    "组件缺失", "#C42B1C", "#FDF3F2", "#E8C5C0")
+        elif not self._server_running:
+            self._set_server_state(
+                "未启动", "#6B7280", "#F3F4F6", "#E5E7EB")
+
+    def append_server_log(self, text):
+        text = str(text or "").strip()
+        if not text:
+            return
+        if self._mqtt_connections.ingest_line(text):
+            self._schedule_connection_refresh()
+        writer = self._server_log_save_writer
+        if writer is not None and not writer.write_text(text + "\n"):
+            self._on_server_log_save_error(
+                "服务端日志写入失败，保存已停止")
+        if self._server_log_paused:
+            size = len((text + "\n").encode("utf-8"))
+            if (
+                self._server_log_paused_bytes + size
+                > self.MAX_SERVER_LOG_PAUSED_BYTES
+            ):
+                self._server_log_pause_dropped += 1
+                return
+            self._server_log_paused_lines.append(text)
+            self._server_log_paused_bytes += size
+            return
+        self._append_server_log_lines([text])
+
+    def _schedule_connection_refresh(self, *_args):
+        self._connection_refresh_timer.start(120)
+
+    @staticmethod
+    def _format_connection_duration(seconds):
+        seconds = max(0, int(seconds))
+        hours, remainder = divmod(seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        return "{:02d}:{:02d}:{:02d}".format(
+            hours, minutes, seconds)
+
+    def _refresh_connections_table(self):
+        query = self._server_connection_search.text().strip().lower()
+        records = []
+        for connection in self._mqtt_connections.records():
+            if query and query not in " ".join((
+                connection.client_id,
+                connection.username,
+                connection.remote,
+            )).lower():
+                continue
+            records.append(connection)
+
+        self._server_connections.setUpdatesEnabled(False)
+        self._server_connections.setRowCount(len(records))
+        now = datetime.now()
+        for row, connection in enumerate(records):
+            values = (
+                "● 在线",
+                connection.client_id,
+                connection.username or "—",
+                connection.remote,
+                connection.protocol,
+                "{} 秒".format(connection.keepalive),
+                "是" if connection.clean_session else "否",
+                connection.connected_at.strftime(
+                    "%Y-%m-%d %H:%M:%S"),
+                self._format_connection_duration(
+                    connection.online_seconds(now)),
+            )
+            for column, value in enumerate(values):
+                item = QTableWidgetItem(str(value))
+                item.setTextAlignment(
+                    Qt.AlignmentFlag.AlignCenter)
+                if column == 0:
+                    item.setForeground(QColor("#107C10"))
+                self._server_connections.setItem(row, column, item)
+        self._server_connections.setUpdatesEnabled(True)
+        self._lbl_server_connections_title.setText(
+            "客户端连接  ·  在线 {}".format(
+                self._mqtt_connections.online_count()))
+
+    def _append_server_log_lines(self, lines):
+        lines = [str(line) for line in lines if str(line)]
+        if not lines:
+            return
+        self._server_log.appendPlainText("\n".join(lines))
+        self._server_log_display_records += len(lines)
+        self._server_log_display_bytes += sum(
+            len(line.encode("utf-8")) + 1 for line in lines)
+        scrollbar = self._server_log.verticalScrollBar()
+        scrollbar.setValue(scrollbar.maximum())
+        self._clear_server_log_if_saving_limit_reached()
+
+    def _on_server_log_pause(self, paused):
+        self._server_log_paused = bool(paused)
+        if paused:
+            return
+        pending = self._server_log_paused_lines
+        dropped = self._server_log_pause_dropped
+        self._server_log_paused_lines = []
+        self._server_log_paused_bytes = 0
+        self._server_log_pause_dropped = 0
+        lines = list(pending)
+        if dropped:
+            lines.append(
+                "暂停缓存超过限制，已丢弃 {} 行服务端日志".format(dropped))
+        self._append_server_log_lines(lines)
+
+    def _on_server_log_save_toggle(self, checked):
+        if checked:
+            try:
+                os.makedirs(self._log_directory, exist_ok=True)
+            except Exception:
+                pass
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            default_path = os.path.join(
+                self._log_directory,
+                "mqtt_server_{}.log".format(timestamp),
+            )
+            path, _ = QFileDialog.getSaveFileName(
+                self, "保存服务端日志", default_path,
+                "日志文件 (*.log);;所有文件 (*.*)",
+            )
+            if not path:
+                self._chk_server_log_save.blockSignals(True)
+                self._chk_server_log_save.setChecked(False)
+                self._chk_server_log_save.blockSignals(False)
+                return
+            try:
+                self._server_log_save_writer = AsyncLogWriter(path, self)
+                self._server_log_save_writer.error.connect(
+                    self._on_server_log_save_error)
+                if self._server_log_paused_lines:
+                    self._server_log_save_writer.write_text(
+                        "\n".join(self._server_log_paused_lines) + "\n")
+            except Exception as exc:
+                self._close_server_log_save_writer()
+                show_error(self, "保存失败", str(exc))
+        else:
+            self._close_server_log_save_writer()
+
+    def _close_server_log_save_writer(self):
+        writer = self._server_log_save_writer
+        self._server_log_save_writer = None
+        if writer is not None:
+            writer.close()
+            writer.deleteLater()
+        if self._chk_server_log_save.isChecked():
+            self._chk_server_log_save.blockSignals(True)
+            self._chk_server_log_save.setChecked(False)
+            self._chk_server_log_save.blockSignals(False)
+
+    def _on_server_log_save_error(self, message):
+        if (
+            self._server_log_save_writer is None
+            and not self._chk_server_log_save.isChecked()
+        ):
+            return
+        self._close_server_log_save_writer()
+        show_error(self, "保存失败", message)
+
+    def _clear_server_log_if_saving_limit_reached(self):
+        writer = self._server_log_save_writer
+        if writer is None:
+            return
+        if (
+            self._server_log_display_records < AUTO_CLEAR_RECORDS
+            and self._server_log_display_bytes < AUTO_CLEAR_BYTES
+        ):
+            return
+        if not writer.flush():
+            self._on_server_log_save_error(
+                "服务端日志写入未完成，页面未清空，保存已停止")
+            return
+        self._server_log.clear()
+        self._server_log_display_records = 0
+        self._server_log_display_bytes = 0
+
+    def _clear_server_log(self):
+        writer = self._server_log_save_writer
+        if writer is not None and not writer.flush():
+            self._on_server_log_save_error(
+                "服务端日志写入未完成，页面未清空，保存已停止")
+            return
+        self._server_log.clear()
+        self._server_log_paused_lines = []
+        self._server_log_paused_bytes = 0
+        self._server_log_pause_dropped = 0
+        self._server_log_display_records = 0
+        self._server_log_display_bytes = 0
 
     def set_connected(self, connected):
         self._connected = bool(connected)
@@ -688,9 +1131,26 @@ class MQTTPage(QWidget):
             self._paused_bytes = 0
             self._pause_dropped_bytes = 0
         self._close_save_writer()
+        self._close_server_log_save_writer()
+        if self._chk_server_log_pause.isChecked():
+            self._chk_server_log_pause.setChecked(False)
+        self._server_log_paused_lines = []
+        self._server_log_paused_bytes = 0
+        self._server_log_pause_dropped = 0
+        self._server_log.clear()
+        self._server_log_display_records = 0
+        self._server_log_display_bytes = 0
+        self._mqtt_connections.clear()
+        self._refresh_connections_table()
+        self.set_server_stopped("")
+        if not self._server_runtime_available:
+            self.set_server_runtime_available(False)
 
     def cleanup(self):
         self._close_save_writer()
+        self._close_server_log_save_writer()
+        self._connection_refresh_timer.stop()
+        self._connection_age_timer.stop()
 
     def snapshot(self):
         return {
@@ -700,6 +1160,7 @@ class MQTTPage(QWidget):
             "publish_retain": self._pub_retain.isChecked(),
             "publish_format": self._pub_format.currentText(),
             "publish_payload": self._pub_payload.toPlainText(),
+            "server_mode": self._mode_tabs.currentIndex() == 1,
         }
 
     def apply(self, data):
@@ -716,6 +1177,12 @@ class MQTTPage(QWidget):
             str(data.get("publish_format") or "文本"))
         self._pub_payload.setPlainText(
             str(data.get("publish_payload") or ""))
+        self._mode_tabs.blockSignals(True)
+        try:
+            self._mode_tabs.setCurrentIndex(
+                1 if bool(data.get("server_mode", False)) else 0)
+        finally:
+            self._mode_tabs.blockSignals(False)
 
 
 class WebSocketPage(QWidget):

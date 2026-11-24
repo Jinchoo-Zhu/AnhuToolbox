@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """应用版本与更新源。"""
 
-__version__ = "1.0.7"
+__version__ = "1.0.8"
 
 GITHUB_OWNER = "Jinchoo-Zhu"
 GITHUB_REPO = "AnhuToolbox"
