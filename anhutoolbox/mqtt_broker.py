@@ -2,7 +2,6 @@
 """Bundled Mosquitto process management for the MQTT server mode."""
 
 import base64
-import ctypes
 import hashlib
 import os
 import shutil
@@ -122,34 +121,6 @@ def _port_is_available(bind_address, port):
                 socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
         probe.bind((str(bind_address), int(port)))
     return True
-
-
-def _config_path(path):
-    """Return a Windows short path for Mosquitto's ANSI config parser."""
-    path = Path(path)
-    if os.name != "nt" or all(ord(char) < 128 for char in str(path)):
-        return path
-    if not path.exists():
-        return _config_path(path.parent) / path.name
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    kernel32.GetShortPathNameW.argtypes = [
-        ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_ulong,
-    ]
-    kernel32.GetShortPathNameW.restype = ctypes.c_ulong
-    size = max(260, len(str(path)) * 2)
-    while size <= 32768:
-        buffer = ctypes.create_unicode_buffer(size)
-        length = kernel32.GetShortPathNameW(
-            str(path), buffer, size)
-        if 0 < length < size:
-            shortened = Path(buffer.value)
-            if all(ord(char) < 128 for char in str(shortened)):
-                return shortened
-            break
-        size *= 2
-    raise MQTTBrokerError(
-        "无法为含中文的 MQTT 运行路径生成兼容短路径，"
-        "请启用 NTFS 8.3 短文件名或将程序放到纯英文路径：{}".format(path))
 
 
 def _password_hash(password):
@@ -291,6 +262,41 @@ def _tls_paths(config):
     return paths
 
 
+def _copy_tls_runtime_files(tls_paths, runtime_dir):
+    targets = {
+        "ca_file": runtime_dir / "tls-ca.pem",
+        "cert_file": runtime_dir / "tls-cert.pem",
+        "key_file": runtime_dir / "tls-key.pem",
+    }
+    if tls_paths is None:
+        for target in targets.values():
+            try:
+                target.unlink(missing_ok=True)
+            except OSError:
+                pass
+        return None
+
+    prepared = {
+        "require_client_cert": tls_paths["require_client_cert"],
+    }
+    for key, target in targets.items():
+        source = tls_paths[key]
+        if source is None:
+            prepared[key] = ""
+            try:
+                target.unlink(missing_ok=True)
+            except OSError:
+                pass
+            continue
+        try:
+            shutil.copyfile(source, target)
+        except OSError as exc:
+            raise MQTTBrokerError(
+                "无法准备 MQTT TLS 文件：{}".format(exc)) from exc
+        prepared[key] = target.name
+    return prepared
+
+
 def prepare_broker_config(base_dir, runtime_dir, config):
     executable_dir = mqtt_broker_dir(base_dir)
     executable = executable_dir / "mosquitto.exe"
@@ -325,7 +331,6 @@ def prepare_broker_config(base_dir, runtime_dir, config):
     password_path = runtime_dir / "passwd"
     acl_path = runtime_dir / "acl"
     persistence_dir = runtime_dir / "persistence"
-    log_path = runtime_dir / "mosquitto.log"
     allow_anonymous = bool(config.get("allow_anonymous", True))
     users = _normalize_users(config)
     if not allow_anonymous and not users:
@@ -341,7 +346,8 @@ def prepare_broker_config(base_dir, runtime_dir, config):
             except OSError:
                 pass
 
-    tls_paths = _tls_paths(config)
+    tls_paths = _copy_tls_runtime_files(
+        _tls_paths(config), runtime_dir)
     persistence_enabled = bool(config.get("persistence", False))
     if persistence_enabled:
         persistence_dir.mkdir(parents=True, exist_ok=True)
@@ -352,41 +358,34 @@ def prepare_broker_config(base_dir, runtime_dir, config):
             "true" if allow_anonymous else "false"),
         "max_connections {}".format(max_connections),
         "connection_messages true",
-        "log_dest file {}".format(
-            _config_path(log_path).as_posix()),
+        "log_dest file mosquitto.log",
         "log_type all",
         "log_timestamp true",
         "log_timestamp_format %Y-%m-%d %H:%M:%S",
         "sys_interval 10",
     ]
     if tls_paths is not None:
-        if tls_paths["ca_file"] is not None:
-            lines.append(
-                "cafile {}".format(
-                    _config_path(tls_paths["ca_file"]).as_posix()))
+        if tls_paths["ca_file"]:
+            lines.append("cafile {}".format(tls_paths["ca_file"]))
         lines.extend((
-            "certfile {}".format(
-                _config_path(tls_paths["cert_file"]).as_posix()),
-            "keyfile {}".format(
-                _config_path(tls_paths["key_file"]).as_posix()),
+            "certfile {}".format(tls_paths["cert_file"]),
+            "keyfile {}".format(tls_paths["key_file"]),
             "require_certificate {}".format(
                 "true" if tls_paths["require_client_cert"] else "false"),
         ))
     if persistence_enabled:
         lines.extend((
             "persistence true",
-            "persistence_location {}/".format(
-                _config_path(persistence_dir).as_posix()),
+            "persistence_location persistence/",
             "autosave_interval 1",
         ))
     else:
         lines.append("persistence false")
     if users:
-        lines.append(
-            "password_file {}".format(
-                _config_path(password_path).as_posix()))
-        lines.append("acl_file {}".format(
-            _config_path(acl_path).as_posix()))
+        lines.extend((
+            "password_file passwd",
+            "acl_file acl",
+        ))
 
     config_path = runtime_dir / "mosquitto.conf"
     config_path.write_text(
@@ -456,7 +455,7 @@ class MQTTBrokerRuntime(QObject):
         self._running = False
 
         process = QProcess(self)
-        process.setWorkingDirectory(str(executable.parent))
+        process.setWorkingDirectory(str(config_path.parent))
         process.setProcessChannelMode(
             QProcess.ProcessChannelMode.MergedChannels)
         process.readyReadStandardOutput.connect(
@@ -466,7 +465,7 @@ class MQTTBrokerRuntime(QObject):
         process.errorOccurred.connect(
             lambda _error: self._on_process_error(process))
         self._process = process
-        process.start(str(executable), ["-c", str(config_path)])
+        process.start(str(executable), ["-c", config_path.name])
         if not process.waitForStarted(3000):
             self._process = None
             process.deleteLater()

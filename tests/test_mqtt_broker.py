@@ -152,12 +152,21 @@ class MQTTBrokerTests(unittest.TestCase):
             )
             runtime_dir = config_path.parent
             config = config_path.read_text(encoding="utf-8")
+            self.assertNotIn(
+                runtime_dir.as_posix(), config)
+            self.assertIn("log_dest file mosquitto.log", config)
             self.assertIn("persistence true", config)
             self.assertIn("autosave_interval 1", config)
             self.assertIn("require_certificate true", config)
-            self.assertIn("password_file", config)
-            self.assertIn("acl_file", config)
+            self.assertIn("password_file passwd", config)
+            self.assertIn("acl_file acl", config)
+            self.assertIn("cafile tls-ca.pem", config)
+            self.assertIn("certfile tls-cert.pem", config)
+            self.assertIn("keyfile tls-key.pem", config)
             self.assertTrue((runtime_dir / "persistence").is_dir())
+            self.assertTrue((runtime_dir / "tls-ca.pem").is_file())
+            self.assertTrue((runtime_dir / "tls-cert.pem").is_file())
+            self.assertTrue((runtime_dir / "tls-key.pem").is_file())
             password_file = (runtime_dir / "passwd").read_text(
                 encoding="utf-8")
             self.assertIn("alice", password_file)
