@@ -11,38 +11,51 @@ https://github.com/Jinchoo-Zhu/AnhuToolbox/releases/latest/download/latest.json
 
 1. 修改 `anhutoolbox/version.py`、`version_info.txt` 和 `installer.iss`，
    三处版本必须一致。
-2. 构建程序、更新器、安装包并生成 `latest.json`：
+2. 修改 `release_notes.txt`，写入本次版本号和更新内容。文件中的实际换行
+   会原样显示在程序更新窗口。
+3. 构建程序、更新器、安装包并生成 `latest.json`：
 
 ```powershell
-.\build_release.ps1 -Notes "本次更新内容"
+.\build_release.ps1 -NotesFile .\release_notes.txt
 ```
 
 生成文件：
 
 ```text
 dist\AnhuUpdater.exe
-installer\AnhuToolbox_Setup_1.0.4.exe
+installer\AnhuToolbox_Setup_<version>.exe
 installer\latest.json
 ```
 
-3. 将安装包复制到服务器的版本目录：
+4. 在 GitHub 创建标签 `v<version>` 和对应的 Release，并上传：
 
 ```text
-F:\Services\anhutoolbox\releases\v1.0.4\
+installer\AnhuToolbox_Setup_<version>.exe
+installer\latest.json
 ```
 
-4. 将生成的 `installer\latest.json` 覆盖到：
+5. 将安装包复制到服务器的版本目录：
+
+```text
+F:\Services\anhutoolbox\releases\v<version>\
+```
+
+6. 将生成的 `installer\latest.json` 覆盖到：
 
 ```text
 F:\Services\anhutoolbox\updates\latest.json
 ```
 
-5. 确认下面两个地址可以匿名访问：
+7. 确认下面两个地址可以匿名访问：
 
 ```text
-https://mcsgzy.online:8443/anhutoolbox/releases/v1.0.4/AnhuToolbox_Setup_1.0.4.exe
+https://mcsgzy.online:8443/anhutoolbox/releases/v<version>/AnhuToolbox_Setup_<version>.exe
 https://mcsgzy.online:8443/anhutoolbox/updates/latest.json
 ```
+
+以上尖括号内容仅为占位符。例如版本为 `1.0.9` 时，
+`AnhuToolbox_Setup_<version>.exe` 对应
+`AnhuToolbox_Setup_1.0.9.exe`。
 
 `latest.json` 同时包含自建服务器和 GitHub 的安装包地址。用户下载时先使用
 自建服务器，失败后自动回退到 GitHub。
