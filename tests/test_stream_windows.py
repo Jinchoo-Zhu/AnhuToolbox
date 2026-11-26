@@ -159,6 +159,10 @@ class StreamWindowTests(unittest.TestCase):
 
                 single_font_height = (
                     first.log_panel.text.fontMetrics().height())
+                single_send_height = (
+                    first.send_bar.text.fontMetrics().height())
+                single_toolbar_height = (
+                    first.log_panel.chk_hex.fontMetrics().height())
                 layout.setCurrentIndex(layout.findData("quad"))
                 APP.processEvents()
                 self.assertEqual(workspace.layout_mode, "quad")
@@ -181,8 +185,12 @@ class StreamWindowTests(unittest.TestCase):
                     11,
                 )
                 self.assertEqual(
-                    workspace.page(0).send_bar.text.font().pixelSize(),
-                    11,
+                    workspace.page(0).send_bar.text.fontMetrics().height(),
+                    single_send_height,
+                )
+                self.assertEqual(
+                    workspace.page(0).log_panel.chk_hex.fontMetrics().height(),
+                    single_toolbar_height,
                 )
                 for index in range(4):
                     self.assertEqual(

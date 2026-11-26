@@ -46,23 +46,13 @@ class StreamPage(QWidget):
     def set_compact_scale(self, scale):
         scale = max(0.7, min(1.0, float(scale)))
         self._compact_scale = scale
-        hosts = (self, self.toolbar, self.send_bar)
         if scale >= 0.99:
-            font_rule = ""
+            self.setStyleSheet("")
         else:
             pixel_size = 12 if scale >= 0.86 else 11
-            font_rule = "QWidget{{font-size:{}px;}}".format(pixel_size)
-        for host in hosts:
-            base_style = getattr(host, "_anhu_base_stylesheet", None)
-            if base_style is None:
-                base_style = host.styleSheet()
-                host._anhu_base_stylesheet = base_style
-            host.setStyleSheet(
-                "\n".join(part for part in (base_style, font_rule) if part))
-        widgets = [self, self.toolbar, self.send_bar]
-        widgets.extend(self.findChildren(QWidget))
-        widgets.extend(self.toolbar.findChildren(QWidget))
-        widgets.extend(self.send_bar.findChildren(QWidget))
+            self.setStyleSheet(
+                "QWidget{{font-size:{}px;}}".format(pixel_size))
+        widgets = [self, *self.findChildren(QWidget)]
         seen = set()
         for widget in widgets:
             if id(widget) in seen:
@@ -85,8 +75,7 @@ class StreamPage(QWidget):
             mono_size = 9
         else:
             mono_size = 8
-        for editor in (self.log_panel.text, self.send_bar.text):
-            editor.setFont(QFont("Consolas", mono_size))
+        self.log_panel.text.setFont(QFont("Consolas", mono_size))
 
 
 class StreamWindowFrame(QFrame):
