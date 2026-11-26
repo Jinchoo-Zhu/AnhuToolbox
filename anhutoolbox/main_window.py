@@ -25,9 +25,9 @@ from .process_metrics import ProcessMetrics
 from .process_guard import close_child_processes
 from .stream_views import StreamModeWorkspace
 from .tools import (
-    TimestampTool, QRTool, JsonTool, BaseTool, RegexTool, DiffTool, SortTool,
-    EncodeTool, ChecksumTool, AmountTool, HardwareInfoPage, NetworkTool,
-    PacketCaptureTool,
+    TimestampTool, QRTool, BarcodeTool, JsonTool, BaseTool, RegexTool,
+    DiffTool, SortTool, EncodeTool, ChecksumTool, AmountTool,
+    HardwareInfoPage, NetworkTool, PacketCaptureTool,
 )
 from .styles import (GLOBAL_STYLE, STATUS_BAR_STYLE, BG_SIDEBAR, BORDER,
                      TEXT_PRIMARY, TEXT_SECONDARY, prepare_menu)
@@ -67,6 +67,7 @@ LIBRARY_GROUPS = [
     ]),
     ("生成工具", [
         ("qr", "二维码生成"),
+        ("barcode", "条形码生成"),
     ]),
     ("网络工具", [
         ("network", "Ping | 端口扫描 | 网段扫描"),
@@ -76,7 +77,8 @@ LIBRARY_GROUPS = [
 
 # 工具库默认展示顺序 (与分组一致)
 LIBRARY_ORDER = ["hardware", "timestamp", "base", "encode", "checksum", "amount",
-                 "json", "regex", "diff", "sort", "qr", "network", "capture"]
+                 "json", "regex", "diff", "sort", "qr", "barcode",
+                 "network", "capture"]
 
 COMM_MODE_INDEX = {
     "serial": 0,
@@ -495,6 +497,7 @@ class MainWindow(QMainWindow):
             "diff": DiffTool(),
             "sort": SortTool(),
             "qr": QRTool(),
+            "barcode": BarcodeTool(),
             "network": NetworkTool(self._base_dir),
             "capture": PacketCaptureTool(self._base_dir),
         }

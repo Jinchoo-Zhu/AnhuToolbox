@@ -15,7 +15,7 @@
 ;     Npcap 抓包驱动在独立的“可选运行组件”页面选择是否安装。
 
 #define MyAppName "Anhu百宝箱"
-#define MyAppVersion "1.1.1"
+#define MyAppVersion "1.1.2"
 #define MyAppPublisher "Anhu"
 #define MyAppExeName "Anhu百宝箱.exe"
 

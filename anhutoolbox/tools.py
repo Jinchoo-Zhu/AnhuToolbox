@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""AnhuToolbox 实用工具集: 时间戳转换 / 二维码生成 / JSON美化 / 进制转换"""
+"""AnhuToolbox 实用工具集: 时间戳转换 / 二维码与条形码 / JSON美化 / 进制转换"""
 
 import io, os, json, re, shutil, tempfile, zipfile, time
 from collections import OrderedDict
@@ -28,8 +28,9 @@ from . import hardware
 from . import toolbox
 from .capture import (
     build_dumpcap_capture_args, build_tshark_capture_args,
-    capture_resource_dirs, launch_npcap_installer, npcap_installer_path,
-    parse_packet_fields, parse_tshark_interfaces,
+    capture_interface_priority, capture_resource_dirs,
+    friendly_capture_interface_name, launch_npcap_installer,
+    npcap_installer_path, parse_packet_fields, parse_tshark_interfaces,
 )
 from .dialogs import show_error, show_information, show_success, show_warning
 from .log_writer import AUTO_CLEAR_BYTES, AUTO_CLEAR_RECORDS
@@ -456,18 +457,19 @@ class ScaledPixmapLabel(QLabel):
 
 
 class QRCellFrame(QFrame):
-    """二维码卡片；有图片时双击可请求放大预览。"""
+    """二维码或条形码卡片；有图片时双击可请求放大预览。"""
 
     double_clicked = Signal()
 
-    def __init__(self, text, pixmap=None, parent=None):
+    def __init__(
+            self, text, pixmap=None, preview_name="二维码", parent=None):
         super().__init__(parent)
         self.setObjectName("qrCell")
         self._text = text
         self._pixmap = pixmap
         if pixmap is not None and not pixmap.isNull():
             self.setCursor(Qt.CursorShape.PointingHandCursor)
-            self.setToolTip("双击放大二维码")
+            self.setToolTip("双击放大{}".format(preview_name))
 
     def mouseDoubleClickEvent(self, event):
         if (self._pixmap is not None
@@ -479,13 +481,46 @@ class QRCellFrame(QFrame):
         super().mouseDoubleClickEvent(event)
 
 
+BARCODE_FORMATS = (
+    ("Code 128（数字/英文）", "code128"),
+    ("Code 39（大写字母/数字）", "code39"),
+    ("EAN-13（数字）", "ean13"),
+    ("EAN-8（数字）", "ean8"),
+    ("UPC-A（数字）", "upca"),
+)
+
+
+def _render_barcode_png(text, code_name):
+    import barcode
+    from barcode.writer import ImageWriter
+
+    output = io.BytesIO()
+    barcode.generate(
+        str(code_name),
+        str(text),
+        writer=ImageWriter(),
+        output=output,
+        writer_options={
+            "write_text": False,
+            "module_height": 12.0,
+            "module_width": 0.25,
+            "quiet_zone": 2.0,
+        },
+    )
+    return output.getvalue()
+
+
 class QRTool(QWidget):
-    """二维码批量生成：五列网格，预览数量有上限，批量保存不限量。"""
+    """二维码/条形码批量生成，共用同一套网格、预览和保存界面。"""
     ROWS, COLS = 2, 5
     MAX_PREVIEW_ITEMS = 200
 
-    def __init__(self):
+    def __init__(self, barcode_mode=False):
         super().__init__()
+        self._barcode_mode = bool(barcode_mode)
+        self._code_name = "条形码" if self._barcode_mode else "二维码"
+        self._barcode_format = None
+        self._preview_generated = False
         self._lines = []
         self._cells = []
         self._build()
@@ -493,23 +528,36 @@ class QRTool(QWidget):
     def _build(self):
         body = _tool_page(
             self,
-            "二维码生成",
-            "每行输入一条内容，批量生成、预览并以 ZIP 保存二维码。",
+            "{}生成".format(self._code_name),
+            "每行输入一条内容，批量生成、预览并以 ZIP 保存{}。".format(
+                self._code_name),
         )
 
         input_card = ToolCard(
-            "二维码内容", "空行会被忽略；修改内容后点击生成即可刷新预览")
+            "{}内容".format(self._code_name),
+            "空行会被忽略；修改内容后点击生成即可刷新预览",
+        )
         self._lbl_qr_count = _badge("尚未生成")
         input_card.add_header_widget(self._lbl_qr_count)
 
         self._qr_input = QPlainTextEdit()
-        self._qr_input.setPlaceholderText("每行一个文本，对应一个二维码...")
+        self._qr_input.setPlaceholderText(
+            "每行一个文本，对应一个{}...".format(self._code_name))
         _code_editor(self._qr_input)
         self._qr_input.setMinimumHeight(112)
         self._qr_input.setMaximumHeight(150)
         input_card.body.addWidget(self._qr_input)
 
         btns = QHBoxLayout()
+        if self._barcode_mode:
+            btns.addWidget(_field_label("格式"))
+            self._barcode_format = QComboBox()
+            self._barcode_format.setMinimumWidth(230)
+            for label, value in BARCODE_FORMATS:
+                self._barcode_format.addItem(label, value)
+            self._barcode_format.currentIndexChanged.connect(
+                self._on_barcode_format_changed)
+            btns.addWidget(self._barcode_format)
         self._btn_gen = _primary_button("生成预览")
         self._btn_gen.clicked.connect(self._generate)
         btns.addWidget(self._btn_gen)
@@ -554,7 +602,10 @@ class QRTool(QWidget):
             self._update_qr_scrollbar_state)
         self._update_qr_scrollbar_state()
         preview_card = ToolCard(
-            "二维码预览", "预览按单元格等比缩放，保存的 PNG 保持原始分辨率，双击可放大预览二维码")
+            "{}预览".format(self._code_name),
+            "预览按单元格等比缩放，保存的 PNG 保持原始分辨率，"
+            "双击可放大预览{}".format(self._code_name),
+        )
         preview_card.body.addWidget(self._qr_scroll, stretch=1)
         body.addWidget(preview_card, stretch=1)
 
@@ -587,7 +638,8 @@ class QRTool(QWidget):
             Qt.CursorShape.PointingHandCursor)
         self._btn_close_qr_preview.setFocusPolicy(
             Qt.FocusPolicy.NoFocus)
-        self._btn_close_qr_preview.setToolTip("关闭预览并恢复二维码列表")
+        self._btn_close_qr_preview.setToolTip(
+            "关闭预览并恢复{}列表".format(self._code_name))
         self._btn_close_qr_preview.setAccessibleName("关闭预览")
         _set_button_icon(self._btn_close_qr_preview, "http_close.svg")
         if self._btn_close_qr_preview.icon().isNull():
@@ -627,6 +679,10 @@ class QRTool(QWidget):
     def _update_qr_scrollbar_state(self, *_):
         bar = self._qr_scroll.verticalScrollBar()
         bar.setEnabled(bar.maximum() > bar.minimum())
+
+    def _on_barcode_format_changed(self, _index):
+        if self._preview_generated:
+            self._generate()
 
     def _show_qr_preview(self, text, pixmap):
         if pixmap is None or pixmap.isNull():
@@ -711,8 +767,8 @@ class QRTool(QWidget):
         return cell
 
     def _make_qr_cell(self, text, pixmap, error=None):
-        """带二维码的格子：QR 图自适应缩放居中；生成失败时显示错误原因"""
-        cell = QRCellFrame(text, pixmap)
+        """带编码图的格子；图片自适应缩放居中，失败时显示原因。"""
+        cell = QRCellFrame(text, pixmap, self._code_name)
         if pixmap is not None and not pixmap.isNull():
             cell.double_clicked.connect(
                 lambda t=text, p=pixmap: self._show_qr_preview(t, p))
@@ -757,7 +813,9 @@ class QRTool(QWidget):
             self._rebuild_grid(2)
             self._lbl_qr_count.setText("尚未生成")
             _set_tone(self._lbl_qr_count, "default")
+            self._preview_generated = False
             return
+        self._preview_generated = True
 
         preview_lines = self._lines[:self.MAX_PREVIEW_ITEMS]
         preview_count = len(preview_lines)
@@ -799,27 +857,42 @@ class QRTool(QWidget):
 
 
     def _make_qr_pixmap(self, text):
-        """生成二维码，返回 (QPixmap 或 None, 错误信息或 None)"""
-        import qrcode
+        """生成二维码或条形码，返回 (QPixmap 或 None, 错误信息或 None)。"""
         try:
-            qr = qrcode.QRCode(box_size=12, border=2)
-            qr.add_data(text); qr.make(fit=True)
-            img = qr.make_image(fill_color="black", back_color="white")
-            buf = io.BytesIO(); img.save(buf, "PNG"); buf.seek(0)
-            qimg = QImage.fromData(buf.read())
+            data = self._render_code_bytes(text)
+            qimg = QImage.fromData(data)
             return QPixmap.fromImage(qimg), None
         except Exception as e:
             return None, str(e)
 
-    def _batch_save(self):
+    def _render_code_bytes(self, text):
+        if self._barcode_mode:
+            code_name = (
+                self._barcode_format.currentData()
+                if self._barcode_format is not None else "code128"
+            )
+            return _render_barcode_png(text, code_name or "code128")
         import qrcode
+        qr = qrcode.QRCode(box_size=12, border=2)
+        qr.add_data(text)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="black", back_color="white")
+        buf = io.BytesIO()
+        img.save(buf, "PNG")
+        return buf.getvalue()
+
+    def _batch_save(self):
         text = self._qr_input.toPlainText().strip()
         self._lines = [l.strip() for l in text.split("\n") if l.strip()]
         if not self._lines:
-            show_information(self, "提示", "请输入二维码内容")
+            show_information(
+                self, "提示", "请输入{}内容".format(self._code_name))
             return
         path_, _ = QFileDialog.getSaveFileName(
-            self, "保存二维码 ZIP", "QR码.zip", "ZIP 文件 (*.zip)"
+            self,
+            "保存{} ZIP".format(self._code_name),
+            "条形码.zip" if self._barcode_mode else "二维码.zip",
+            "ZIP 文件 (*.zip)",
         )
         if not path_:
             return
@@ -832,11 +905,13 @@ class QRTool(QWidget):
             name = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "_", value)
             name = name.strip().rstrip(". ")
             if not name:
-                name = "QR_{:03d}".format(index + 1)
+                name = "{}_{:03d}".format(
+                    "BAR" if self._barcode_mode else "QR", index + 1)
             if re.fullmatch(
                     r"(?i)(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])", name):
                 name = "_" + name
-            name = name[:80].rstrip(". ") or "QR_{:03d}".format(index + 1)
+            name = name[:80].rstrip(". ") or "{}_{:03d}".format(
+                "BAR" if self._barcode_mode else "QR", index + 1)
             candidate = name + ".png"
             suffix = 2
             while candidate.casefold() in used_names:
@@ -849,18 +924,15 @@ class QRTool(QWidget):
             with zipfile.ZipFile(path_, "w", zipfile.ZIP_DEFLATED) as zf:
                 for i, line in enumerate(self._lines):
                     try:
-                        qr = qrcode.QRCode(box_size=12, border=2)
-                        qr.add_data(line); qr.make(fit=True)
-                        img = qr.make_image(fill_color="black", back_color="white")
-                        buf = io.BytesIO()
-                        img.save(buf, "PNG")
+                        data = self._render_code_bytes(line)
                         fname = output_name(line, i)
-                        zf.writestr(fname, buf.getvalue())
+                        zf.writestr(fname, data)
                         count += 1
                     except Exception as e:
                         fail += 1
                         errs.append(f"第 {i+1} 条: {e}")
-            msg = f"已打包 {count} 张二维码到:\n{path_}"
+            msg = "已打包 {} 张{}到:\n{}".format(
+                count, self._code_name, path_)
             if fail:
                 msg += f"\n\n{fail} 条生成失败:\n" + "\n".join(errs[:5])
                 if fail > 5:
@@ -868,6 +940,14 @@ class QRTool(QWidget):
             show_success(self, "完成", msg)
         except Exception as e:
             show_error(self, "错误", f"保存失败: {e}")
+
+
+class BarcodeTool(QRTool):
+    """批量生成 Code 128、Code 39、EAN 和 UPC 条形码。"""
+
+    def __init__(self):
+        super().__init__(barcode_mode=True)
+
 
 class JsonTool(QWidget):
     """JSON 格式化工具"""
@@ -2514,7 +2594,10 @@ _INVALID_MODEL_INDEX = QModelIndex()
 class CaptureTableModel(QAbstractTableModel):
     """Compact packet-summary model for high-rate capture display."""
 
-    HEADERS = ["序号", "时间", "源地址", "目标地址", "协议", "长度", "信息"]
+    HEADERS = [
+        "序号", "时间", "源地址:端口", "目标地址:端口",
+        "协议", "长度", "信息",
+    ]
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -2542,15 +2625,20 @@ class CaptureTableModel(QAbstractTableModel):
         values = (
             str(packet.get("display_number", packet["number"])),
             self.format_time(packet["time"]),
-            packet["source"],
-            packet["destination"],
+            self.format_endpoint(
+                packet["source"], packet.get("source_port")),
+            self.format_endpoint(
+                packet["destination"], packet.get("destination_port")),
             packet["protocol"],
             str(packet["length"]),
             packet["info"],
         )
         if role == Qt.ItemDataRole.DisplayRole:
             return values[index.column()]
-        if role == Qt.ItemDataRole.ToolTipRole and index.column() == 6:
+        if (
+            role == Qt.ItemDataRole.ToolTipRole
+            and index.column() in (2, 3, 6)
+        ):
             return values[index.column()]
         if role == Qt.ItemDataRole.TextAlignmentRole:
             if index.column() != 6:
@@ -2563,7 +2651,21 @@ class CaptureTableModel(QAbstractTableModel):
 
     @staticmethod
     def format_time(value):
-        return "{:.6f}".format(value)
+        try:
+            return datetime.fromtimestamp(float(value)).strftime(
+                "%Y-%m-%d %H:%M:%S")
+        except (TypeError, ValueError, OSError, OverflowError):
+            return str(value or "")
+
+    @staticmethod
+    def format_endpoint(address, port=""):
+        address = str(address or "")
+        port = str(port or "")
+        if not port:
+            return address
+        if ":" in address and not address.startswith("["):
+            address = "[{}]".format(address)
+        return "{}:{}".format(address, port)
 
     def max_display_number(self):
         return max(
@@ -2687,6 +2789,7 @@ class NetworkTool(QWidget):
         self._capture_file_proc = None
         self._capture_detail_proc = None
         self._capture_interface_proc = None
+        self._capture_previous_interface = ""
         self._capture_interface_recheck_after_failure = False
         self._capture_temp_path = ""
         self._capture_save_path = ""
@@ -2950,14 +3053,14 @@ class NetworkTool(QWidget):
         self._capture_table.verticalHeader().setMinimumSectionSize(
             TABLE_ROW_HEIGHT)
         header.setStretchLastSection(True)
-        for column in (1, 4, 5):
+        for column in (1, 2, 3, 4, 5):
             header.setSectionResizeMode(column, QHeaderView.ResizeMode.Fixed)
         self._capture_table.setColumnWidth(
             1,
             max(
-                96,
+                146,
                 self._capture_table.fontMetrics().horizontalAdvance(
-                    "000000.000000") + 28,
+                    "0000-00-00 00:00:00") + 28,
             ),
         )
         self._capture_table.setColumnWidth(
@@ -2979,7 +3082,7 @@ class NetworkTool(QWidget):
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
         self._capture_table.setColumnWidth(0, 60)
         for column in (2, 3):
-            self._capture_table.setColumnWidth(column, 170)
+            self._capture_table.setColumnWidth(column, 180)
         self._capture_table.selectionModel().selectionChanged.connect(
             self._on_capture_selection_changed)
         table_card = ToolCard(
@@ -3061,6 +3164,8 @@ class NetworkTool(QWidget):
             return
         self._capture_interface_recheck_after_failure = bool(
             after_capture_failure)
+        self._capture_previous_interface = str(
+            self._capture_interface.currentData() or "")
         self._capture_interface.clear()
         self._btn_capture_refresh.setEnabled(False)
         self._btn_capture_start.setEnabled(False)
@@ -3105,12 +3210,29 @@ class NetworkTool(QWidget):
         if exit_code == 0 and interfaces:
             self._capture_waiting_for_npcap = False
             self._capture_driver_hint.hide()
-            for interface in interfaces:
+            ordered = sorted(
+                interfaces,
+                key=lambda item: (
+                    capture_interface_priority(item["name"]),
+                    item["name"].casefold(),
+                ),
+            )
+            for interface in ordered:
                 self._capture_interface.addItem(
-                    "{}  ({})".format(
-                        interface["name"], interface["device"]),
+                    friendly_capture_interface_name(interface["name"]),
                     interface["device"],
                 )
+                index = self._capture_interface.count() - 1
+                self._capture_interface.setItemData(
+                    index,
+                    "网卡：{}\n内部设备：{}".format(
+                        interface["name"], interface["device"]),
+                    Qt.ItemDataRole.ToolTipRole,
+                )
+            previous = self._capture_interface.findData(
+                self._capture_previous_interface)
+            self._capture_interface.setCurrentIndex(
+                previous if previous >= 0 else 0)
             if recheck_after_failure:
                 self._set_capture_status("抓包异常结束", "error")
             else:
@@ -3400,19 +3522,19 @@ class NetworkTool(QWidget):
         if not packets:
             return
         self._capture_model.append_packets(packets)
+        metrics = self._capture_table.fontMetrics()
         digits = max(
             3,
             max(len(str(int(packet["number"]))) for packet in packets),
         )
         required_width = (
-            self._capture_table.fontMetrics().horizontalAdvance(
-                "9" * digits) + 24
+            metrics.horizontalAdvance("9" * digits) + 24
         )
         if self._capture_table.columnWidth(0) < required_width:
             self._capture_table.setColumnWidth(0, required_width)
         required_time_width = (
             max(
-                self._capture_table.fontMetrics().horizontalAdvance(
+                metrics.horizontalAdvance(
                     self._capture_model.format_time(packet["time"]))
                 for packet in packets
             )
@@ -3420,9 +3542,32 @@ class NetworkTool(QWidget):
         )
         if self._capture_table.columnWidth(1) < required_time_width:
             self._capture_table.setColumnWidth(1, required_time_width)
+        required_source_width = (
+            max(
+                metrics.horizontalAdvance(
+                    self._capture_model.format_endpoint(
+                        packet["source"], packet.get("source_port")))
+                for packet in packets
+            )
+            + 28
+        )
+        if self._capture_table.columnWidth(2) < required_source_width:
+            self._capture_table.setColumnWidth(2, required_source_width)
+        required_destination_width = (
+            max(
+                metrics.horizontalAdvance(
+                    self._capture_model.format_endpoint(
+                        packet["destination"],
+                        packet.get("destination_port")))
+                for packet in packets
+            )
+            + 28
+        )
+        if self._capture_table.columnWidth(3) < required_destination_width:
+            self._capture_table.setColumnWidth(3, required_destination_width)
         required_protocol_width = (
             max(
-                self._capture_table.fontMetrics().horizontalAdvance(
+                metrics.horizontalAdvance(
                     str(packet["protocol"]))
                 for packet in packets
             )
@@ -3432,7 +3577,7 @@ class NetworkTool(QWidget):
             self._capture_table.setColumnWidth(4, required_protocol_width)
         required_length_width = (
             max(
-                self._capture_table.fontMetrics().horizontalAdvance(
+                metrics.horizontalAdvance(
                     str(packet["length"]))
                 for packet in packets
             )

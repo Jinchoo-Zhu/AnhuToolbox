@@ -62,6 +62,53 @@ def parse_tshark_interfaces(output):
     return interfaces
 
 
+def friendly_capture_interface_name(name):
+    """Return a concise, user-facing capture interface label."""
+    text = str(name or "").strip()
+    lowered = text.lower()
+    if "loopback" in lowered:
+        return "本机回环（仅本机通信）"
+    if lowered == "ethernet" or text.startswith("以太网"):
+        return "以太网（有线网卡）"
+    if lowered.startswith("wlan") or "wi-fi" in lowered:
+        return "WLAN（无线网卡）"
+    if "wsl" in lowered or "vethernet" in lowered:
+        return "WSL 虚拟网卡"
+    if "vmware" in lowered:
+        vmnet = re.search(r"VMnet\d+", text, re.IGNORECASE)
+        if vmnet:
+            return "VMware {}（虚拟网卡）".format(vmnet.group(0))
+        return "VMware 虚拟网卡"
+    if "bluetooth" in lowered or "蓝牙" in text:
+        return "蓝牙网络（蓝牙连接）"
+    if text.startswith("本地连接*") or lowered.startswith(
+            "local area connection*"):
+        return "{}（虚拟网卡）".format(text)
+    return text
+
+
+def capture_interface_priority(name):
+    """Sort physical adapters before special virtual adapters."""
+    text = str(name or "").strip()
+    lowered = text.lower()
+    if lowered == "ethernet" or text.startswith("以太网"):
+        return 0
+    if lowered.startswith("wlan") or "wi-fi" in lowered:
+        return 1
+    if "loopback" in lowered:
+        return 2
+    if "bluetooth" in lowered or "蓝牙" in text:
+        return 3
+    if "vmware" in lowered:
+        return 5
+    if "wsl" in lowered or "vethernet" in lowered:
+        return 6
+    if text.startswith("本地连接*") or lowered.startswith(
+            "local area connection*"):
+        return 7
+    return 4
+
+
 def parse_packet_fields(line):
     """Parse one quoted tab-separated TShark fields record."""
     text = str(line or "").rstrip("\r\n")
@@ -82,11 +129,23 @@ def parse_packet_fields(line):
         length = int(values[7])
     except (TypeError, ValueError):
         return None
+    source_port = next(
+        (values[index] for index in (9, 11)
+         if index < len(values) and values[index]),
+        "",
+    )
+    destination_port = next(
+        (values[index] for index in (10, 12)
+         if index < len(values) and values[index]),
+        "",
+    )
     return {
         "number": frame_number,
         "time": elapsed,
         "source": source,
+        "source_port": source_port,
         "destination": destination,
+        "destination_port": destination_port,
         "protocol": values[6],
         "length": length,
         "info": values[8],
@@ -112,7 +171,7 @@ def build_tshark_capture_args(
         "-E", "quote=d",
         "-E", "occurrence=f",
         "-e", "frame.number",
-        "-e", "frame.time_relative",
+        "-e", "frame.time_epoch",
         "-e", "ip.src",
         "-e", "ipv6.src",
         "-e", "ip.dst",
@@ -120,6 +179,10 @@ def build_tshark_capture_args(
         "-e", "_ws.col.Protocol",
         "-e", "frame.len",
         "-e", "_ws.col.Info",
+        "-e", "tcp.srcport",
+        "-e", "tcp.dstport",
+        "-e", "udp.srcport",
+        "-e", "udp.dstport",
     ])
     return args
 

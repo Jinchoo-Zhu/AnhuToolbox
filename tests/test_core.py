@@ -33,9 +33,9 @@ from anhutoolbox.projects import ProjectManager
 from anhutoolbox.secrets_guard import contains_sensitive_values
 from anhutoolbox.process_metrics import ProcessMetrics, ProcessUsage
 from anhutoolbox.tools import (
-    AmountTool, BaseTool, ChecksumTool, DiffTool, EncodeTool, HardwareInfoPage,
-    JsonTool, NetworkTool, PacketCaptureTool, QRTool, RegexTool, SortTool,
-    TimestampTool,
+    AmountTool, BarcodeTool, BaseTool, ChecksumTool, DiffTool, EncodeTool,
+    HardwareInfoPage, JsonTool, NetworkTool, PacketCaptureTool, QRTool,
+    RegexTool, SortTool, TimestampTool,
 )
 from anhutoolbox.workers import (
     SerialReadWorker, TCPClientWorker, TCPServerWorker,
@@ -172,13 +172,96 @@ class ToolTests(unittest.TestCase):
             path = os.path.join(temp, "qr.zip")
             with mock.patch(
                     "anhutoolbox.tools.QFileDialog.getSaveFileName",
-                    return_value=(path, "")), \
+                    return_value=(path, "")) as save_dialog, \
                     mock.patch("anhutoolbox.tools.show_success"):
                 tool._batch_save()
+            self.assertEqual(save_dialog.call_args.args[2], "二维码.zip")
             with zipfile.ZipFile(path) as archive:
                 self.assertEqual(
                     archive.namelist(), ["003.png", "002.png"])
         self.assertEqual(tool._lines, ["003", "002"])
+
+    def test_barcode_page_reuses_qr_layout_and_selects_format(self):
+        tool = BarcodeTool()
+        try:
+            self.assertTrue(tool._barcode_mode)
+            self.assertIsNotNone(tool._barcode_format)
+            self.assertEqual(tool._barcode_format.count(), 5)
+            self.assertEqual(
+                tool._barcode_format.currentData(), "code128")
+            self.assertEqual(tool.objectName(), "toolPage")
+            self.assertIn("QWidget#toolPage", tool.styleSheet())
+            self.assertIsNotNone(
+                tool.findChild(QLabel, "toolPageSubtitle"))
+            self.assertIsNotNone(tool._qr_scroll)
+            self.assertIsNotNone(tool._qr_preview_overlay)
+
+            pixmap, error = tool._make_qr_pixmap("ABC-123")
+            self.assertIsNone(error)
+            self.assertFalse(pixmap.isNull())
+            self.assertGreater(pixmap.width(), pixmap.height())
+
+            ean_index = tool._barcode_format.findData("ean13")
+            tool._barcode_format.setCurrentIndex(ean_index)
+            pixmap, error = tool._make_qr_pixmap("590123412345")
+            self.assertIsNone(error)
+            self.assertFalse(pixmap.isNull())
+
+            for code_name, value in (
+                    ("code39", "ABC-123"),
+                    ("ean8", "9638507"),
+                    ("upca", "01234567890")):
+                index = tool._barcode_format.findData(code_name)
+                tool._barcode_format.setCurrentIndex(index)
+                pixmap, error = tool._make_qr_pixmap(value)
+                self.assertIsNone(error)
+                self.assertFalse(pixmap.isNull())
+
+            _pixmap, error = tool._make_qr_pixmap("中文")
+            self.assertIsNotNone(error)
+        finally:
+            tool.close()
+
+    def test_barcode_batch_save_uses_selected_format(self):
+        tool = BarcodeTool()
+        tool._qr_input.setPlainText("ABC-123\nXYZ-9")
+        try:
+            with tempfile.TemporaryDirectory() as temp:
+                path = os.path.join(temp, "barcode.zip")
+                with mock.patch(
+                        "anhutoolbox.tools.QFileDialog.getSaveFileName",
+                        return_value=(path, "")) as save_dialog, \
+                        mock.patch("anhutoolbox.tools.show_success"):
+                    tool._batch_save()
+                self.assertEqual(
+                    save_dialog.call_args.args[2], "条形码.zip")
+                with zipfile.ZipFile(path) as archive:
+                    self.assertEqual(
+                        archive.namelist(),
+                        ["ABC-123.png", "XYZ-9.png"],
+                    )
+                    self.assertTrue(all(
+                        archive.read(name).startswith(b"\x89PNG")
+                        for name in archive.namelist()
+                    ))
+        finally:
+            tool.close()
+
+    def test_changing_barcode_format_refreshes_generated_preview(self):
+        tool = BarcodeTool()
+        pixmap = QPixmap(8, 4)
+        pixmap.fill(Qt.GlobalColor.white)
+        try:
+            tool._qr_input.setPlainText("590123412345")
+            tool._generate()
+            ean_index = tool._barcode_format.findData("ean13")
+            with mock.patch.object(
+                    tool, "_make_qr_pixmap",
+                    return_value=(pixmap, None)) as make_pixmap:
+                tool._barcode_format.setCurrentIndex(ean_index)
+            make_pixmap.assert_called_once_with("590123412345")
+        finally:
+            tool.close()
 
     def test_copy_toast_reuses_indicator_widget(self):
         tool = AmountTool()
@@ -261,7 +344,7 @@ class ToolTests(unittest.TestCase):
         page_classes = (
             HardwareInfoPage, TimestampTool, BaseTool, EncodeTool,
             ChecksumTool, AmountTool, JsonTool, RegexTool, DiffTool,
-            SortTool, QRTool, NetworkTool, PacketCaptureTool,
+            SortTool, QRTool, BarcodeTool, NetworkTool, PacketCaptureTool,
         )
         for page_class in page_classes:
             page = page_class()
@@ -285,6 +368,23 @@ class ToolTests(unittest.TestCase):
                 page.close()
                 page.deleteLater()
         APP.processEvents()
+
+    def test_barcode_generation_page_is_below_qr_in_library(self):
+        with tempfile.TemporaryDirectory() as temp:
+            window = MainWindow(temp)
+            try:
+                window._extra_tabs_timer.stop()
+                window._build_extra_tabs()
+                page = window._library_pages["barcode"]
+                self.assertIsInstance(page, BarcodeTool)
+                window._on_library_item("barcode")
+                self.assertIs(window._library_stack.currentWidget(), page)
+                self.assertEqual(
+                    window.sidebar._library_groups_map["生成工具"],
+                    ["qr", "barcode"],
+                )
+            finally:
+                close_window(window)
 
     def test_qr_preview_fits_minimum_main_window_width(self):
         with tempfile.TemporaryDirectory() as temp:

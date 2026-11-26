@@ -113,7 +113,10 @@ a = Analysis(
            ('capture/engine', 'capture/engine'),
            # Npcap 安装资源；最终位于 lib\capture\npcap。
            ('capture/npcap', 'capture/npcap')],
-    hiddenimports=['h2', 'hpack', 'hyperframe'],
+    hiddenimports=[
+        'h2', 'hpack', 'hyperframe',
+        'barcode.codex', 'barcode.ean', 'barcode.upc', 'barcode.writer',
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

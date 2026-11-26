@@ -4,6 +4,7 @@
 import os
 import tempfile
 import unittest
+from datetime import datetime
 from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -13,8 +14,8 @@ from PySide6.QtCore import QPoint, QProcess, Qt
 
 from anhutoolbox.capture import (
     build_dumpcap_capture_args, build_tshark_capture_args,
-    capture_resource_dirs, npcap_installer_path, parse_packet_fields,
-    parse_tshark_interfaces,
+    capture_resource_dirs, friendly_capture_interface_name,
+    npcap_installer_path, parse_packet_fields, parse_tshark_interfaces,
 )
 from anhutoolbox.log_writer import AUTO_CLEAR_RECORDS
 from anhutoolbox.tools import NetworkTool, PacketCaptureTool
@@ -34,17 +35,78 @@ class CaptureTests(unittest.TestCase):
         self.assertEqual(interfaces[0]["device"], "\\Device\\NPF_{AAAA}")
         self.assertEqual(interfaces[0]["name"], "以太网")
 
+    def test_capture_interface_names_are_user_friendly(self):
+        self.assertEqual(
+            friendly_capture_interface_name(
+                "Adapter for loopback traffic capture"),
+            "本机回环（仅本机通信）",
+        )
+        self.assertEqual(
+            friendly_capture_interface_name("以太网"),
+            "以太网（有线网卡）",
+        )
+        self.assertEqual(
+            friendly_capture_interface_name(
+                "VMware Network Adapter VMnet8"),
+            "VMware VMnet8（虚拟网卡）",
+        )
+        self.assertEqual(
+            friendly_capture_interface_name(
+                "vEthernet (WSL (Hyper-V firewall))"),
+            "WSL 虚拟网卡",
+        )
+
     def test_parse_packet_fields(self):
         line = (
             '"7"\t"1.250000"\t"192.168.1.10"\t\t'
-            '"192.168.1.20"\t\t"TCP"\t"74"\t"502 -> 55000 [ACK]"\n'
+            '"192.168.1.20"\t\t"TCP"\t"74"\t"502 -> 55000 [ACK]"\t'
+            '"55000"\t"502"\t\t\n'
         )
         packet = parse_packet_fields(line)
         self.assertEqual(packet["number"], 7)
         self.assertEqual(packet["source"], "192.168.1.10")
         self.assertEqual(packet["destination"], "192.168.1.20")
+        self.assertEqual(packet["source_port"], "55000")
+        self.assertEqual(packet["destination_port"], "502")
         self.assertEqual(packet["protocol"], "TCP")
         self.assertEqual(packet["length"], 74)
+
+    def test_packet_table_shows_address_ports(self):
+        capture = PacketCaptureTool()
+        model = capture._capture_tool._capture_model
+        try:
+            model.append_packets([{
+                "number": 1,
+                "time": 0.1,
+                "source": "192.0.2.1",
+                "source_port": "32211",
+                "destination": "192.0.2.2",
+                "destination_port": "5000",
+                "protocol": "HTTP/JSON",
+                "length": 345,
+                "info": "POST /status",
+            }])
+            self.assertEqual(
+                model.data(model.index(0, 2)),
+                "192.0.2.1:32211",
+            )
+            self.assertEqual(
+                model.data(model.index(0, 3)),
+                "192.0.2.2:5000",
+            )
+            self.assertEqual(
+                model.headerData(
+                    2, Qt.Orientation.Horizontal),
+                "源地址:端口",
+            )
+            self.assertEqual(
+                model.format_endpoint("2001:db8::1", "443"),
+                "[2001:db8::1]:443",
+            )
+        finally:
+            capture.stop_tasks()
+            capture.deleteLater()
+            APP.processEvents()
 
     def test_packet_number_and_length_columns_are_centered(self):
         capture = PacketCaptureTool()
@@ -264,20 +326,45 @@ class CaptureTests(unittest.TestCase):
         capture = PacketCaptureTool()
         tool = capture._capture_tool
         try:
+            timestamp = datetime(2026, 11, 26, 15, 16, 22).timestamp()
             tool._append_capture_packet({
                 "number": 1,
-                "time": 123456.123456,
+                "time": timestamp,
                 "source": "192.0.2.1",
+                "source_port": "32211",
                 "destination": "192.0.2.2",
+                "destination_port": "5000",
                 "protocol": "TCP",
                 "length": 66,
                 "info": "test",
             })
             APP.processEvents()
             expected = tool._capture_table.fontMetrics().horizontalAdvance(
-                tool._capture_model.format_time(123456.123456))
+                tool._capture_model.format_time(timestamp))
             self.assertGreaterEqual(
                 tool._capture_table.columnWidth(1), expected + 20)
+            source_width = tool._capture_table.fontMetrics().horizontalAdvance(
+                "192.0.2.1:32211")
+            destination_width = (
+                tool._capture_table.fontMetrics().horizontalAdvance(
+                    "192.0.2.2:5000"))
+            self.assertGreaterEqual(
+                tool._capture_table.columnWidth(2), source_width + 20)
+            self.assertGreaterEqual(
+                tool._capture_table.columnWidth(3), destination_width + 20)
+        finally:
+            capture.stop_tasks()
+            capture.deleteLater()
+            APP.processEvents()
+
+    def test_capture_time_uses_absolute_datetime(self):
+        timestamp = datetime(2026, 11, 26, 15, 16, 22).timestamp()
+        capture = PacketCaptureTool()
+        try:
+            self.assertEqual(
+                capture._capture_tool._capture_model.format_time(timestamp),
+                "2026-11-26 15:16:22",
+            )
         finally:
             capture.stop_tasks()
             capture.deleteLater()
@@ -484,6 +571,12 @@ class CaptureTests(unittest.TestCase):
             "host 192.168.2.188 and tcp port 9090")
         self.assertEqual(args[args.index("-Y") + 1], display)
         self.assertNotIn("-w", args)
+        self.assertIn("tcp.srcport", args)
+        self.assertIn("tcp.dstport", args)
+        self.assertIn("udp.srcport", args)
+        self.assertIn("udp.dstport", args)
+        self.assertIn("frame.time_epoch", args)
+        self.assertNotIn("frame.time_relative", args)
         dump_args = build_dumpcap_capture_args(
             "\\Device\\NPF_TEST",
             "capture.pcapng",
@@ -643,6 +736,42 @@ class CaptureTests(unittest.TestCase):
             self.assertTrue(tool._capture_driver_hint.isHidden())
             self.assertFalse(tool._capture_status.isHidden())
             self.assertEqual(tool._capture_interface.count(), 1)
+        finally:
+            capture.stop_tasks()
+            capture.deleteLater()
+            APP.processEvents()
+
+    def test_capture_interfaces_are_sorted_with_friendly_labels(self):
+        capture = PacketCaptureTool()
+        tool = capture._capture_tool
+        process = mock.MagicMock()
+        process.readAllStandardOutput.return_value = (
+            b"1. \\Device\\NPF_LOOP (Adapter for loopback traffic capture)\n"
+            b"2. \\Device\\NPF_WIFI (WLAN)\n"
+            b"3. \\Device\\NPF_ETH (Ethernet)\n"
+        )
+        process.readAllStandardError.return_value = b""
+        tool._capture_interface_proc = process
+        try:
+            tool._on_capture_interfaces_finished(process, 0)
+            labels = [
+                tool._capture_interface.itemText(index)
+                for index in range(tool._capture_interface.count())
+            ]
+            self.assertEqual(labels, [
+                "以太网（有线网卡）",
+                "WLAN（无线网卡）",
+                "本机回环（仅本机通信）",
+            ])
+            self.assertEqual(
+                tool._capture_interface.currentData(),
+                "\\Device\\NPF_ETH",
+            )
+            self.assertIn(
+                "\\Device\\NPF_ETH",
+                tool._capture_interface.itemData(
+                    0, Qt.ItemDataRole.ToolTipRole),
+            )
         finally:
             capture.stop_tasks()
             capture.deleteLater()
