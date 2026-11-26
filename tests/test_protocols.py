@@ -3308,7 +3308,7 @@ class ProtocolProjectTests(unittest.TestCase):
                 self.assertEqual(window.sidebar.current_mode, "serial")
                 self.assertIs(
                     window._comm_stack.currentWidget(),
-                    window._stream_pages["serial"])
+                    window._stream_workspaces["serial"])
                 self.assertEqual(
                     window.sidebar.cb_baud.currentText(), "57600")
                 self.assertEqual(

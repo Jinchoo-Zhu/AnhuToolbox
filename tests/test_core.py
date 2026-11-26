@@ -1233,7 +1233,7 @@ class PersistenceTests(unittest.TestCase):
                 ) as ask:
                     self.assertEqual(
                         window._running_modules(),
-                        ["TCP 服务端", "MQTT 服务端"],
+                        ["TCP 服务端 · 窗口1", "MQTT 服务端"],
                     )
                     self.assertFalse(window._confirm_exit())
                 message = ask.call_args.args[2]

@@ -286,6 +286,13 @@ class LogPanel(QWidget):
         super().showEvent(event)
         QTimer.singleShot(0, self._fit_toolbar_width)
 
+    def take_toolbar(self):
+        """Detach the editable toolbar so a split workspace can share it."""
+        layout = self.layout()
+        if layout is not None:
+            layout.removeWidget(self._toolbar_scroll)
+        return self._toolbar_scroll
+
     def _on_timestamp_toggled(self, checked):
         """勾选“时间戳和分包显示”后, 超时时间才可修改; 否则标签与输入框置灰禁用"""
         self.lbl_timeout.setEnabled(checked)

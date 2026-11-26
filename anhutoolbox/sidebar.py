@@ -221,6 +221,7 @@ class Sidebar(QWidget):
     """左侧侧边栏: 连接模式选择 + 对应设置面板 + 连接按钮"""
 
     mode_changed = Signal(str)
+    mode_changing = Signal(str, str)
     connect_clicked = Signal(str)
     disconnect_clicked = Signal(str)
     port_refresh_clicked = Signal()
@@ -242,6 +243,8 @@ class Sidebar(QWidget):
     mqtt_server_settings_changed = Signal()
     mqtt_server_start_requested = Signal()
     mqtt_server_stop_requested = Signal()
+    stream_layout_changed = Signal(str, str)
+    stream_window_changed = Signal(str, int)
 
     def __init__(self):
         super().__init__()
@@ -257,6 +260,9 @@ class Sidebar(QWidget):
         self._mqtt_server_users = []
         self._mqtt_server_tls_config = {}
         self._mqtt_client_tls_config = {}
+        self._stream_layout_combos = {}
+        self._stream_window_combos = {}
+        self._stream_window_labels = {}
         self._wheel_active_control = None
         self._http_pending_expand_ids = set()
         self._http_expanded_target_folder_id = None
@@ -842,6 +848,127 @@ class Sidebar(QWidget):
         for cat, btn in self._toolbox_buttons.items():
             btn.setVisible(text == "" or text in cat.lower())
 
+    @staticmethod
+    def _stream_int(value, default, minimum, maximum):
+        try:
+            number = int(value)
+        except (TypeError, ValueError, OverflowError):
+            number = int(default)
+        return max(minimum, min(maximum, number))
+
+    def _build_stream_window_controls(self, form, mode):
+        layout_label = QLabel("窗口布局")
+        layout_combo = QComboBox()
+        layout_combo.setStyleSheet(COMBO_STYLE)
+        layout_combo.addItem("单窗口", "single")
+        layout_combo.addItem("双窗口", "dual")
+        layout_combo.addItem("四窗口", "quad")
+        window_label = QLabel("当前窗口")
+        window_combo = QComboBox()
+        window_combo.setStyleSheet(COMBO_STYLE)
+        for index in range(4):
+            window_combo.addItem("窗口{}".format(index + 1), index)
+        form.addWidget(layout_label, 0, 0, Qt.AlignLeft)
+        form.addWidget(layout_combo, 0, 1)
+        form.addWidget(window_label, 1, 0, Qt.AlignLeft)
+        form.addWidget(window_combo, 1, 1)
+        self._stream_layout_combos[mode] = layout_combo
+        self._stream_window_combos[mode] = window_combo
+        self._stream_window_labels[mode] = (window_label, window_combo)
+        layout_combo.currentIndexChanged.connect(
+            lambda _index, key=mode, combo=layout_combo:
+            self.stream_layout_changed.emit(key, combo.currentData()))
+        window_combo.currentIndexChanged.connect(
+            lambda _index, key=mode, combo=window_combo:
+            self.stream_window_changed.emit(
+                key, int(combo.currentData()) + 1))
+        self.set_stream_workspace_controls(mode, "single", 1)
+        return 2
+
+    def set_stream_workspace_controls(self, mode, layout, active_window):
+        layout = str(layout or "single").lower()
+        if layout not in ("single", "dual", "quad"):
+            layout = "single"
+        count = {"single": 1, "dual": 2, "quad": 4}[layout]
+        active_window = max(1, min(count, int(active_window or 1)))
+        layout_combo = self._stream_layout_combos.get(mode)
+        window_combo = self._stream_window_combos.get(mode)
+        if layout_combo is None or window_combo is None:
+            return
+        layout_combo.blockSignals(True)
+        layout_combo.setCurrentIndex(
+            max(0, layout_combo.findData(layout)))
+        layout_combo.blockSignals(False)
+        window_combo.blockSignals(True)
+        window_combo.clear()
+        for index in range(count):
+            window_combo.addItem("窗口{}".format(index + 1), index)
+        window_combo.setCurrentIndex(active_window - 1)
+        window_combo.blockSignals(False)
+        window_label, _ = self._stream_window_labels[mode]
+        visible = layout != "single"
+        window_label.setVisible(visible)
+        window_combo.setVisible(visible)
+
+    def stream_layout(self, mode):
+        combo = self._stream_layout_combos.get(mode)
+        return combo.currentData() if combo is not None else "single"
+
+    def stream_active_window(self, mode):
+        combo = self._stream_window_combos.get(mode)
+        if combo is None:
+            return 1
+        return int(combo.currentData()) + 1
+
+    def stream_window_config(self, mode):
+        if mode == "serial":
+            return {
+                "port": self._cb_port.currentText(),
+                "baud": self._cb_baud.currentText(),
+                "data": self._cb_data.currentText(),
+                "stop": self._cb_stop.currentText(),
+                "parity": self._cb_parity.currentText(),
+                "flow": self._cb_flow.currentText(),
+            }
+        if mode == "tcpserver":
+            return {
+                "port": self._sp_server_port.value(),
+                "client_timeout": self._sp_client_timeout.value(),
+            }
+        if mode == "tcpclient":
+            return {
+                "host": self._le_client_host.text(),
+                "port": self._sp_client_port.value(),
+                "local_port": self._le_local_port.text().strip(),
+            }
+        return {}
+
+    def set_stream_window_config(self, mode, data):
+        data = data if isinstance(data, dict) else {}
+        if mode == "serial":
+            self._cb_port.setCurrentText(
+                str(data.get("port", "COM1")))
+            self._cb_baud.setCurrentText(
+                str(data.get("baud", "115200")))
+            self._cb_data.setCurrentText(str(data.get("data", "8")))
+            self._cb_stop.setCurrentText(str(data.get("stop", "1")))
+            self._cb_parity.setCurrentText(
+                str(data.get("parity", "None")))
+            self._cb_flow.setCurrentText(str(data.get("flow", "None")))
+        elif mode == "tcpserver":
+            self._sp_server_port.setValue(self._stream_int(
+                data.get("port", 8888), 8888, 1, 65535))
+            self._sp_client_timeout.setValue(self._stream_int(
+                data.get("client_timeout", 30), 30, 0, 3600))
+        elif mode == "tcpclient":
+            self._le_client_host.setText(
+                str(data.get("host", "127.0.0.1") or "127.0.0.1"))
+            self._sp_client_port.setValue(self._stream_int(
+                data.get("port", 8888), 8888, 1, 65535))
+            local_port = str(data.get("local_port", "") or "")
+            self._le_local_port.setText(
+                local_port if local_port.isdigit() else "")
+
     def _build_serial_page(self) -> QWidget:
         w = QWidget()
         outer = QVBoxLayout(w)
@@ -853,6 +980,8 @@ class Sidebar(QWidget):
         form.setHorizontalSpacing(8)
         form.setVerticalSpacing(5)
         form.setColumnStretch(1, 1)
+        row_offset = self._build_stream_window_controls(
+            form, "serial")
 
         labels = ["串口号", "波特率", "数据位", "停止位", "校验位", "流控"]
         lab_widgets = [QLabel(t) for t in labels]
@@ -894,8 +1023,8 @@ class Sidebar(QWidget):
                 self._cb_stop, self._cb_parity, self._cb_flow],
                 strict=False)):
             combo.setStyleSheet(COMBO_STYLE)   # 与项目下拉框同一套样式
-            form.addWidget(lab, i, 0, Qt.AlignLeft)
-            form.addWidget(combo, i, 1)
+            form.addWidget(lab, i + row_offset, 0, Qt.AlignLeft)
+            form.addWidget(combo, i + row_offset, 1)
 
         outer.addLayout(form)
         outer.addStretch(1)
@@ -914,6 +1043,8 @@ class Sidebar(QWidget):
         form.setHorizontalSpacing(8)
         form.setVerticalSpacing(5)
         form.setColumnStretch(1, 1)
+        row_offset = self._build_stream_window_controls(
+            form, "tcpserver")
 
         lab_port = QLabel("监听端口")
         lab_tmo = QLabel("超时(s)")
@@ -933,10 +1064,10 @@ class Sidebar(QWidget):
         self._sp_client_timeout.setToolTip(
             "客户端连接后超过该时间(s)未收到任何数据则判定为断开\n(适用于拔网线等不发 RST/FIN 的场景)\n0 = 禁用超时检测")
 
-        form.addWidget(lab_port, 0, 0, Qt.AlignLeft)
-        form.addWidget(self._sp_server_port, 0, 1)
-        form.addWidget(lab_tmo, 1, 0, Qt.AlignLeft)
-        form.addWidget(self._sp_client_timeout, 1, 1)
+        form.addWidget(lab_port, row_offset, 0, Qt.AlignLeft)
+        form.addWidget(self._sp_server_port, row_offset, 1)
+        form.addWidget(lab_tmo, row_offset + 1, 0, Qt.AlignLeft)
+        form.addWidget(self._sp_client_timeout, row_offset + 1, 1)
 
         outer.addLayout(form)
         outer.addStretch()
@@ -953,6 +1084,8 @@ class Sidebar(QWidget):
         form.setHorizontalSpacing(8)
         form.setVerticalSpacing(5)
         form.setColumnStretch(1, 1)
+        row_offset = self._build_stream_window_controls(
+            form, "tcpclient")
 
         lab_host = QLabel("远端地址")
         lab_port = QLabel("远端端口")
@@ -982,12 +1115,12 @@ class Sidebar(QWidget):
             "客户端连接时使用的本地端口.\n"
             "留空 = 由系统自动分配; 填具体数字(1-65535) = 固定使用该端口")
 
-        form.addWidget(lab_host, 0, 0, Qt.AlignLeft)
-        form.addWidget(self._le_client_host, 0, 1)
-        form.addWidget(lab_port, 1, 0, Qt.AlignLeft)
-        form.addWidget(self._sp_client_port, 1, 1)
-        form.addWidget(lab_lport, 2, 0, Qt.AlignLeft)
-        form.addWidget(self._le_local_port, 2, 1)
+        form.addWidget(lab_host, row_offset, 0, Qt.AlignLeft)
+        form.addWidget(self._le_client_host, row_offset, 1)
+        form.addWidget(lab_port, row_offset + 1, 0, Qt.AlignLeft)
+        form.addWidget(self._sp_client_port, row_offset + 1, 1)
+        form.addWidget(lab_lport, row_offset + 2, 0, Qt.AlignLeft)
+        form.addWidget(self._le_local_port, row_offset + 2, 1)
 
         outer.addLayout(form)
         outer.addStretch()
@@ -2070,6 +2203,9 @@ class Sidebar(QWidget):
             "serial", "tcpserver", "tcpclient",
             "mqtt", "websocket", "http",
         ]
+        previous_mode = self._current_mode
+        if previous_mode != modes[idx]:
+            self.mode_changing.emit(previous_mode, modes[idx])
         self._current_mode = modes[idx]
         if self._current_mode == "mqtt" and self._mqtt_server_mode:
             self._settings_stack.setCurrentWidget(
@@ -2191,6 +2327,24 @@ class Sidebar(QWidget):
             and not self._mqtt_server_mode
         ):
             self._set_mqtt_client_fields_enabled(False)
+
+    def set_stream_parameters_enabled(self, mode, enabled):
+        widgets = {
+            "serial": (
+                self._cb_port, self._cb_baud, self._cb_data,
+                self._cb_stop, self._cb_parity, self._cb_flow,
+                self._btn_refresh,
+            ),
+            "tcpserver": (
+                self._sp_server_port, self._sp_client_timeout,
+            ),
+            "tcpclient": (
+                self._le_client_host, self._sp_client_port,
+                self._le_local_port,
+            ),
+        }.get(mode, ())
+        for widget in widgets:
+            widget.setEnabled(bool(enabled))
 
     def _set_mqtt_client_fields_enabled(self, enabled):
         for widget in (

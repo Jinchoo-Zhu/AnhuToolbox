@@ -16,7 +16,7 @@ from .secret_store import (
 PROJECT_SUBDIR = "projects"
 PROJECT_EXT = ".json"
 DEFAULT_PROJECT_NAME = "默认项目"
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
 
 _ILLEGAL = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
 

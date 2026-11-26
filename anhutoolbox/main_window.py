@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """AnhuToolbox 主窗口 -- 带配置持久化 + 预设面板可折叠"""
 
+import copy
 import os, json, shutil, socket, sys, time
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
@@ -22,7 +23,7 @@ from .mqtt_broker import (
 )
 from .process_metrics import ProcessMetrics
 from .process_guard import close_child_processes
-from .stream_views import StreamPage
+from .stream_views import StreamModeWorkspace
 from .tools import (
     TimestampTool, QRTool, JsonTool, BaseTool, RegexTool, DiffTool, SortTool,
     EncodeTool, ChecksumTool, AmountTool, HardwareInfoPage, NetworkTool,
@@ -147,27 +148,18 @@ class MainWindow(QMainWindow):
 
         cfg.init(os.path.join(self._data_dir, "settings.json"))
 
-        self._serial_worker = SerialReadWorker()
-        self._serial_worker.data_received.connect(self._on_rx_data)
-        self._serial_worker.error_occurred.connect(self._on_error)
-        self._serial_worker.disconnected.connect(self._on_serial_disconnected)
-
-        self._tcp_server = TCPServerWorker()
-        self._tcp_server.data_received.connect(self._on_rx_data)
-        self._tcp_server.error_occurred.connect(self._on_error)
-        self._tcp_server.client_connected.connect(self._on_tcp_server_client_connected)
-        self._tcp_server.client_disconnected.connect(self._on_tcp_server_client_disconnected)
-        self._tcp_server.started.connect(self._on_tcp_server_started)
-        self._tcp_server.start_failed.connect(self._on_tcp_server_start_failed)
-        self._tcp_server.log_message.connect(self._log)
-
-        self._tcp_client = TCPClientWorker()
-        self._tcp_client.data_received.connect(self._on_rx_data)
-        self._tcp_client.error_occurred.connect(self._on_error)
-        self._tcp_client.connected.connect(self._on_tcp_connected)
-        self._tcp_client.disconnected.connect(self._on_tcp_disconnected)
-        self._tcp_client.connect_failed.connect(self._on_tcp_client_connect_failed)
-        self._tcp_client.log_message.connect(self._log)
+        self._stream_workers = {
+            "serial": [SerialReadWorker() for _ in range(4)],
+            "tcpserver": [TCPServerWorker() for _ in range(4)],
+            "tcpclient": [TCPClientWorker() for _ in range(4)],
+        }
+        self._stream_worker_context = {}
+        for mode, workers in self._stream_workers.items():
+            for index, worker in enumerate(workers):
+                self._stream_worker_context[id(worker)] = (mode, index)
+        self._serial_worker = self._stream_workers["serial"][0]
+        self._tcp_server = self._stream_workers["tcpserver"][0]
+        self._tcp_client = self._stream_workers["tcpclient"][0]
 
         self._mqtt_worker = MQTTWorker()
         self._mqtt_worker.connected.connect(self._on_mqtt_connected)
@@ -201,6 +193,11 @@ class MainWindow(QMainWindow):
         self._mqtt_auto_reconnect = True
         self._websocket_auto_reconnect = True
         self._active_stream_key = "serial"
+        self._stream_active_indices = {
+            "serial": 0,
+            "tcpserver": 0,
+            "tcpclient": 0,
+        }
 
         # 项目管理: 一个项目 = 一整套连接参数 + 发送/显示配置 + 预设命令
         self._pm = ProjectManager(self._data_root)
@@ -219,6 +216,7 @@ class MainWindow(QMainWindow):
         self._about_dialog = None
 
         self._build_ui()
+        self._reset_stream_workspace_state()
         self._restore_global()
         self._connect_signals()
         self._init_projects()
@@ -260,6 +258,71 @@ class MainWindow(QMainWindow):
     def _btn_toggle_preset(self):
         return self._stream_page().btn_toggle_preset
 
+    @staticmethod
+    def _default_stream_mode_config(mode):
+        if mode == "serial":
+            return {
+                "port": "COM1",
+                "baud": "115200",
+                "data": "8",
+                "stop": "1",
+                "parity": "None",
+                "flow": "None",
+            }
+        if mode == "tcpserver":
+            return {"port": 8888, "client_timeout": 30}
+        if mode == "tcpclient":
+            return {
+                "host": "127.0.0.1",
+                "port": 8888,
+                "local_port": "",
+            }
+        return {}
+
+    def _reset_stream_workspace_state(self):
+        self._stream_workspace_state = {}
+        for mode in ("serial", "tcpserver", "tcpclient"):
+            self._stream_workspace_state[mode] = {
+                "layout": "single",
+                "active_window": 1,
+                "windows": [
+                    {
+                        "config": self._default_stream_mode_config(mode),
+                        "stream": {},
+                        "has_dtr_rts": False,
+                    }
+                    for _ in range(4)
+                ],
+            }
+
+    def _stream_worker_for(self, mode, index):
+        return self._stream_workers[mode][int(index)]
+
+    def _stream_page_for(self, mode, index):
+        return self._stream_workspaces[mode].page(int(index))
+
+    def _stream_worker_running(self, worker):
+        return bool(worker is not None and worker.isRunning())
+
+    def _sync_stream_aliases(self):
+        for mode, workspace in self._stream_workspaces.items():
+            index = workspace.active_index
+            self._stream_active_indices[mode] = index
+            self._stream_pages[mode] = workspace.active_page
+        self._serial_worker = self._stream_worker_for(
+            "serial", self._stream_active_indices["serial"])
+        self._tcp_server = self._stream_worker_for(
+            "tcpserver", self._stream_active_indices["tcpserver"])
+        self._tcp_client = self._stream_worker_for(
+            "tcpclient", self._stream_active_indices["tcpclient"])
+        mode = self.sidebar.current_mode
+        if mode in self._stream_workspaces:
+            self._active_stream_key = mode
+            worker = self._stream_worker_for(
+                mode, self._stream_active_indices[mode])
+            self._active_worker = (
+                worker if self._stream_worker_running(worker) else None)
+
     def _build_ui(self):
         self.setStyleSheet(GLOBAL_STYLE)
         central = QWidget()
@@ -276,31 +339,33 @@ class MainWindow(QMainWindow):
         sep = QFrame(); sep.setObjectName("separator"); sep.setFixedWidth(1)
         body.addWidget(sep)
 
-        # 串口、TCP 服务端、TCP 客户端各自拥有独立日志和发送栏。
-        self._stream_pages = {
-            "serial": StreamPage(),
-            "tcpserver": StreamPage(),
-            "tcpclient": StreamPage(),
+        # 串口、TCP 服务端、TCP 客户端各自拥有 1～4 个独立会话。
+        prefixes = {
+            "serial": "serial",
+            "tcpserver": "tcp_server",
+            "tcpclient": "tcp_client",
         }
-        self._main_area = self._stream_pages["serial"]
+        self._stream_workspaces = {
+            mode: StreamModeWorkspace(
+                mode, self._log_dir, prefixes[mode])
+            for mode in ("serial", "tcpserver", "tcpclient")
+        }
+        self._stream_pages = {
+            mode: workspace.active_page
+            for mode, workspace in self._stream_workspaces.items()
+        }
+        self._main_area = self._stream_workspaces["serial"]
 
         self._mqtt_page = MQTTPage()
         self._websocket_page = WebSocketPage()
         self._http_page = HTTPPage()
-        for key, page in self._stream_pages.items():
-            prefix = {
-                "serial": "serial",
-                "tcpserver": "tcp_server",
-                "tcpclient": "tcp_client",
-            }[key]
-            page.log_panel.set_log_directory(self._log_dir, prefix)
         self._mqtt_page.set_log_directory(self._log_dir, "mqtt")
         self._websocket_page.set_log_directory(
             self._log_dir, "websocket")
         self._comm_stack = QStackedWidget()
-        self._comm_stack.addWidget(self._main_area)
-        self._comm_stack.addWidget(self._stream_pages["tcpserver"])
-        self._comm_stack.addWidget(self._stream_pages["tcpclient"])
+        self._comm_stack.addWidget(self._stream_workspaces["serial"])
+        self._comm_stack.addWidget(self._stream_workspaces["tcpserver"])
+        self._comm_stack.addWidget(self._stream_workspaces["tcpclient"])
         self._comm_stack.addWidget(self._mqtt_page)
         self._comm_stack.addWidget(self._websocket_page)
         self._comm_stack.addWidget(self._http_page)
@@ -608,29 +673,10 @@ class MainWindow(QMainWindow):
         if page is not None:
             self._toolbox_stack.setCurrentWidget(page)
 
-    def _on_toggle_preset(self, checked):
-        for page in self._stream_pages.values():
-            page.btn_toggle_preset.blockSignals(True)
-            page.btn_toggle_preset.setChecked(checked)
-            page.btn_toggle_preset.blockSignals(False)
-        stream_mode = self.sidebar.current_mode in (
-            "serial", "tcpserver", "tcpclient")
-        self.preset_panel.setVisible(checked and stream_mode)
-        if checked:
-            # 展开时给预设面板合理的初始宽度
-            tw = self._preset_splitter.width()
-            left = tw // 2
-            self._preset_splitter.setSizes([left, tw - left])
-            if stream_mode:
-                # 等分屏布局稳定后再补满数据列，避免展开时留下右侧空白。
-                QTimer.singleShot(
-                    0, self.preset_panel.fit_data_column_on_expand)
-        cfg.set("preset_visible", checked)
-        cfg.save()
-
     def _restore_global(self):
         """恢复与项目无关的全局偏好(项目内容由 _load_project 负责)"""
         show_preset = cfg.get("preset_visible", False)
+        self._preset_visible_preference = bool(show_preset)
         self.preset_panel.setVisible(show_preset)
         for page in self._stream_pages.values():
             page.btn_toggle_preset.setChecked(show_preset)
@@ -1099,6 +1145,7 @@ class MainWindow(QMainWindow):
     def _connect_signals(self):
         self._btn_about.clicked.connect(self._show_about)
         self._btn_update_available.clicked.connect(self._prompt_for_update)
+        self.sidebar.mode_changing.connect(self._on_mode_changing)
         self.sidebar.mode_changed.connect(self._on_mode_changed)
         self.sidebar.connect_clicked.connect(self._on_connect)
         self.sidebar.disconnect_clicked.connect(self._on_disconnect)
@@ -1120,6 +1167,10 @@ class MainWindow(QMainWindow):
             self._on_mqtt_server_start_requested)
         self.sidebar.mqtt_server_stop_requested.connect(
             self._on_mqtt_server_stop_requested)
+        self.sidebar.stream_layout_changed.connect(
+            self._on_stream_layout_requested)
+        self.sidebar.stream_window_changed.connect(
+            self._on_stream_window_requested)
         self.sidebar.set_mqtt_server_mode(
             self._mqtt_page.is_server_mode())
         self._refresh_mqtt_server_runtime_availability()
@@ -1165,17 +1216,304 @@ class MainWindow(QMainWindow):
             self._http_page.delete_interface)
         self.sidebar.http_delete_folder_requested.connect(
             self._http_page.delete_folder)
-        for page in self._stream_pages.values():
-            page.send_bar.send_data.connect(self._on_send_data)
-            page.send_bar.repeat_tick.connect(self._on_repeat_tick)
-            page.send_bar.chk_dtr.toggled.connect(self._on_dtr_toggled)
-            page.send_bar.chk_rts.toggled.connect(self._on_rts_toggled)
-            page.log_panel.cleared.connect(self._on_log_cleared)
-            page.log_panel.file_error.connect(self._on_error)
-            page.preset_toggled.connect(self._on_toggle_preset)
+        self._connect_stream_worker_signals()
+        for mode, workspace in self._stream_workspaces.items():
+            workspace.active_changed.connect(
+                lambda index, key=mode:
+                self._on_stream_workspace_active_changed(key, index))
+            workspace.preset_toggled.connect(
+                lambda index, checked, key=mode:
+                self._on_stream_preset_toggled(key, index, checked))
+            workspace.page_created.connect(
+                lambda index, page, key=mode:
+                self._wire_stream_page(key, index, page))
+            for index, page in workspace._pages.items():
+                self._wire_stream_page(mode, index, page)
         self._sync_timer = QTimer()
         self._sync_timer.timeout.connect(self._sync_preset_text)
         self._sync_timer.start(500)
+
+    def _connect_stream_worker_signals(self):
+        for index, worker in enumerate(self._stream_workers["serial"]):
+            worker.data_received.connect(
+                lambda data, i=index:
+                self._on_stream_rx_data("serial", i, data))
+            worker.error_occurred.connect(
+                lambda message, i=index:
+                self._on_stream_error("serial", i, message))
+            worker.disconnected.connect(
+                lambda message, i=index:
+                self._on_stream_serial_disconnected(i, message))
+        for index, worker in enumerate(self._stream_workers["tcpserver"]):
+            worker.data_received.connect(
+                lambda data, i=index:
+                self._on_stream_rx_data("tcpserver", i, data))
+            worker.error_occurred.connect(
+                lambda message, i=index:
+                self._on_stream_error("tcpserver", i, message))
+            worker.log_message.connect(
+                lambda message, i=index:
+                self._on_stream_log("tcpserver", i, message))
+            worker.started.connect(
+                lambda port, i=index:
+                self._on_stream_tcp_server_started(i, port))
+            worker.start_failed.connect(
+                lambda message, i=index:
+                self._on_stream_tcp_server_start_failed(i, message))
+            worker.client_connected.connect(
+                lambda host, port, i=index:
+                self._on_stream_tcp_server_client_connected(
+                    i, host, port))
+            worker.client_disconnected.connect(
+                lambda host, port, i=index:
+                self._on_stream_tcp_server_client_disconnected(
+                    i, host, port))
+        for index, worker in enumerate(self._stream_workers["tcpclient"]):
+            worker.data_received.connect(
+                lambda data, i=index:
+                self._on_stream_rx_data("tcpclient", i, data))
+            worker.error_occurred.connect(
+                lambda message, i=index:
+                self._on_stream_error("tcpclient", i, message))
+            worker.log_message.connect(
+                lambda message, i=index:
+                self._on_stream_log("tcpclient", i, message))
+            worker.connected.connect(
+                lambda host, port, i=index:
+                self._on_stream_tcp_connected(i, host, port))
+            worker.disconnected.connect(
+                lambda i=index:
+                self._on_stream_tcp_disconnected(i))
+            worker.connect_failed.connect(
+                lambda message, i=index:
+                self._on_stream_tcp_client_connect_failed(i, message))
+
+    def _wire_stream_page(self, mode, index, page):
+        page.send_bar.send_data.connect(
+            lambda data, m=mode, i=index:
+            self._on_stream_send_data(m, i, data))
+        page.send_bar.repeat_tick.connect(
+            lambda m=mode, i=index:
+            self._on_stream_repeat_tick(m, i))
+        page.send_bar.chk_dtr.toggled.connect(
+            lambda checked, m=mode, i=index:
+            self._on_stream_dtr_toggled(m, i, checked))
+        page.send_bar.chk_rts.toggled.connect(
+            lambda checked, m=mode, i=index:
+            self._on_stream_rts_toggled(m, i, checked))
+        page.log_panel.cleared.connect(
+            lambda m=mode, i=index:
+            self._on_stream_log_cleared(m, i))
+        page.log_panel.file_error.connect(
+            lambda message, m=mode, i=index:
+            self._on_stream_error(m, i, message))
+
+    def _capture_stream_window(self, mode=None, index=None):
+        if mode is None:
+            mode = self.sidebar.current_mode
+        if mode not in self._stream_workspaces:
+            return
+        workspace = self._stream_workspaces[mode]
+        state = self._stream_workspace_state[mode]
+        if index is None:
+            index = workspace.active_index
+        index = int(index)
+        window = state["windows"][index]
+        state["layout"] = workspace.layout_mode
+        state["active_window"] = workspace.active_index + 1
+        if (
+            self.sidebar.current_mode == mode
+            and self._stream_active_indices.get(mode, 0) == index
+        ):
+            window["config"] = self.sidebar.stream_window_config(mode)
+            for other_mode in ("serial", "tcpserver", "tcpclient"):
+                if other_mode == mode:
+                    continue
+                other_workspace = self._stream_workspaces[other_mode]
+                if other_workspace.active_index != 0:
+                    continue
+                self._stream_workspace_state[other_mode]["windows"][0][
+                    "config"] = self.sidebar.stream_window_config(
+                        other_mode)
+            page = workspace.page(index)
+            window["stream"] = self._snapshot_stream(page)
+            window["has_dtr_rts"] = bool(self._has_dtr_rts)
+
+    def _apply_stream_window_state(self, mode, index):
+        workspace = self._stream_workspaces[mode]
+        state = self._stream_workspace_state[mode]
+        window = state["windows"][int(index)]
+        page = workspace.page(index)
+        self.sidebar.set_stream_window_config(
+            mode, window.get("config"))
+        stream = _profile_dict(window.get("stream"))
+        self._apply_stream_config(
+            page,
+            _profile_dict(stream.get("send")),
+            _profile_dict(stream.get("log")),
+        )
+        self.preset_panel.stop_loops()
+        self._has_dtr_rts = bool(window.get("has_dtr_rts", False))
+        preset_visible = bool(self._preset_visible_preference)
+        page.btn_toggle_preset.blockSignals(True)
+        page.btn_toggle_preset.setChecked(preset_visible)
+        page.btn_toggle_preset.blockSignals(False)
+        self.preset_panel.setVisible(preset_visible)
+        worker = self._stream_worker_for(mode, index)
+        if mode == "tcpserver" and worker.isRunning():
+            status = "已启动"
+        elif (
+            mode == "tcpclient" and worker.isRunning()
+            and not worker.is_connected
+        ):
+            status = "连接中…"
+        else:
+            status = "已连接" if worker.isRunning() else "未连接"
+        workspace.set_status(index, status)
+
+    def _apply_stream_page_state(self, mode, index):
+        workspace = self._stream_workspaces[mode]
+        window = self._stream_workspace_state[mode]["windows"][int(index)]
+        page = workspace.page(index)
+        stream = _profile_dict(window.get("stream"))
+        self._apply_stream_config(
+            page,
+            _profile_dict(stream.get("send")),
+            _profile_dict(stream.get("log")),
+        )
+        worker = self._stream_worker_for(mode, index)
+        workspace.set_status(
+            index, "已连接" if worker.isRunning() else "未连接")
+
+    def _bind_stream_workspace(self, mode):
+        workspace = self._stream_workspaces[mode]
+        state = self._stream_workspace_state[mode]
+        layout = str(state.get("layout", "single")).lower()
+        if layout not in workspace.LAYOUT_COUNTS:
+            layout = "single"
+        active = max(
+            0, min(
+                workspace.LAYOUT_COUNTS[layout] - 1,
+                int(state.get("active_window", 1)) - 1,
+            ))
+        workspace.set_layout(
+            layout, active=active, emit=False)
+        self._stream_active_indices[mode] = workspace.active_index
+        self.sidebar.set_stream_workspace_controls(
+            mode, workspace.layout_mode, workspace.active_index + 1)
+        for index in workspace.visible_indices():
+            if index != workspace.active_index:
+                self._apply_stream_page_state(mode, index)
+        self._apply_stream_window_state(mode, workspace.active_index)
+        self._sync_stream_aliases()
+        worker = self._stream_worker_for(mode, workspace.active_index)
+        running = self._stream_worker_running(worker)
+        self.sidebar.set_connected(running)
+        self.sidebar.set_stream_parameters_enabled(mode, not running)
+        self._update_stream_info_bar(mode, workspace.active_index, worker)
+
+    def _on_stream_workspace_active_changed(self, mode, index):
+        old_index = self._stream_active_indices.get(mode, 0)
+        if index == old_index:
+            return
+        self._capture_stream_window(mode, old_index)
+        self._stream_active_indices[mode] = int(index)
+        self._stream_workspace_state[mode]["active_window"] = int(index) + 1
+        if self.sidebar.current_mode == mode:
+            self._bind_stream_workspace(mode)
+            self._update_stats()
+            self._project_autosave_soon()
+
+    def _on_stream_preset_toggled(self, mode, index, checked):
+        self._preset_visible_preference = bool(checked)
+        cfg.set("preset_visible", bool(checked))
+        if (
+            self.sidebar.current_mode == mode
+            and self._stream_workspaces[mode].active_index == index
+        ):
+            self.preset_panel.setVisible(bool(checked))
+            if checked:
+                total = self._preset_splitter.width()
+                left = total // 2
+                self._preset_splitter.setSizes([left, total - left])
+                page = self._stream_page_for(mode, index)
+                QTimer.singleShot(
+                    0, page.send_bar._fit_controls_scroll)
+                QTimer.singleShot(
+                    0, self.preset_panel.fit_data_column_on_expand)
+            self._project_autosave_soon()
+
+    def _on_stream_layout_requested(self, mode, layout):
+        if mode not in self._stream_workspaces:
+            return
+        workspace = self._stream_workspaces[mode]
+        current = self.sidebar.stream_active_window(mode) - 1
+        count = workspace.LAYOUT_COUNTS.get(str(layout), 1)
+        hidden_running = [
+            index for index in range(count, 4)
+            if self._stream_worker_running(
+                self._stream_worker_for(mode, index))
+        ]
+        if hidden_running:
+            if not ask_yes_no(
+                self, "切换窗口布局",
+                "以下窗口正在运行：\n\n{}\n\n"
+                "切换布局将停止这些连接，是否继续？".format(
+                    "\n".join(
+                        "• 窗口{}".format(index + 1)
+                        for index in hidden_running)),
+                confirm_text="切换",
+            ):
+                self.sidebar.set_stream_workspace_controls(
+                    mode, workspace.layout_mode,
+                    workspace.active_index + 1)
+                return
+            failed = [
+                index for index in hidden_running
+                if not self._disconnect_stream_worker(mode, index)
+            ]
+            if failed:
+                self.sidebar.set_stream_workspace_controls(
+                    mode, workspace.layout_mode,
+                    workspace.active_index + 1)
+                show_warning(
+                    self, "无法切换窗口布局",
+                    "以下窗口未能完全停止，请稍后重试：\n\n{}".format(
+                        "\n".join(
+                            "• 窗口{}".format(index + 1)
+                            for index in failed)),
+                )
+                return
+        self._capture_stream_window(mode, current)
+        active = min(current, count - 1)
+        workspace.set_layout(layout, active=active, emit=False)
+        self._stream_active_indices[mode] = active
+        state = self._stream_workspace_state[mode]
+        state["layout"] = workspace.layout_mode
+        state["active_window"] = active + 1
+        if self.sidebar.current_mode == mode:
+            self._bind_stream_workspace(mode)
+            self._project_autosave_soon()
+
+    def _on_stream_window_requested(self, mode, active_window):
+        if mode not in self._stream_workspaces:
+            return
+        workspace = self._stream_workspaces[mode]
+        old_index = workspace.active_index
+        new_index = max(
+            0, min(
+                workspace.LAYOUT_COUNTS[workspace.layout_mode] - 1,
+                int(active_window) - 1,
+            ))
+        if old_index == new_index:
+            return
+        self._capture_stream_window(mode, old_index)
+        workspace.set_active(new_index, emit=False)
+        self._stream_active_indices[mode] = new_index
+        self._stream_workspace_state[mode]["active_window"] = new_index + 1
+        if self.sidebar.current_mode == mode:
+            self._bind_stream_workspace(mode)
+            self._project_autosave_soon()
 
     @Slot(str, str, str)
     def _rename_http_item(self, kind, item_id, name):
@@ -1298,27 +1636,33 @@ class MainWindow(QMainWindow):
 
     def _snapshot_ui(self):
         """把当前界面状态打包成项目数据"""
+        self._capture_stream_window()
+        for mode in ("serial", "tcpserver", "tcpclient"):
+            if self._stream_workspaces[mode].active_index == 0:
+                self._stream_workspace_state[mode]["windows"][0][
+                    "config"] = self.sidebar.stream_window_config(mode)
+        for mode, workspace in self._stream_workspaces.items():
+            state = self._stream_workspace_state[mode]
+            for index in workspace.visible_indices():
+                page = workspace.page(index)
+                state["windows"][index]["stream"] = (
+                    self._snapshot_stream(page))
         active_stream = self._snapshot_stream(self._stream_page())
+        serial_state = self._stream_workspace_state["serial"]
+        server_state = self._stream_workspace_state["tcpserver"]
+        client_state = self._stream_workspace_state["tcpclient"]
+        serial_config = copy.deepcopy(
+            serial_state["windows"][0]["config"])
+        server_config = copy.deepcopy(
+            server_state["windows"][0]["config"])
+        client_config = copy.deepcopy(
+            client_state["windows"][0]["config"])
         return {
-            "format": 1,
+            "format": 2,
             "mode": self.sidebar.current_mode,
-            "serial": {
-                "port": self.sidebar.cb_port.currentText(),
-                "baud": self.sidebar.cb_baud.currentText(),
-                "data": self.sidebar.cb_data.currentText(),
-                "stop": self.sidebar.cb_stop.currentText(),
-                "parity": self.sidebar.cb_parity.currentText(),
-                "flow": self.sidebar.cb_flow.currentText(),
-            },
-            "tcpserver": {
-                "port": self.sidebar.sp_server_port.value(),
-                "client_timeout": self.sidebar.sp_client_timeout.value(),
-            },
-            "tcpclient": {
-                "host": self.sidebar.le_client_host.text(),
-                "port": self.sidebar.sp_client_port.value(),
-                "local_port": self.sidebar.le_local_port.text().strip(),
-            },
+            "serial": serial_config,
+            "tcpserver": server_config,
+            "tcpclient": client_config,
             "mqtt": {
                 "host": self.sidebar.le_mqtt_host.text(),
                 "port": self.sidebar.sp_mqtt_port.value(),
@@ -1344,9 +1688,15 @@ class MainWindow(QMainWindow):
             },
             "http": self._http_page.snapshot(),
             "streams": {
-                key: self._snapshot_stream(page)
-                for key, page in self._stream_pages.items()
+                "serial": copy.deepcopy(
+                    serial_state["windows"][0]["stream"]),
+                "tcpserver": copy.deepcopy(
+                    server_state["windows"][0]["stream"]),
+                "tcpclient": copy.deepcopy(
+                    client_state["windows"][0]["stream"]),
             },
+            "stream_workspaces": copy.deepcopy(
+                self._stream_workspace_state),
             # 保留旧字段，兼容已有项目和旧版程序。
             "send": active_stream["send"],
             "log": active_stream["log"],
@@ -1442,6 +1792,100 @@ class MainWindow(QMainWindow):
         log.sp_timeout.setValue(
             _profile_int(g.get("timeout", 0), 0, 0, 9999))
 
+    def _load_stream_workspace_state(self, profile):
+        self._reset_stream_workspace_state()
+        saved = _profile_dict(profile.get("stream_workspaces"))
+        legacy_streams = _profile_dict(profile.get("streams"))
+        legacy_send = _profile_dict(profile.get("send"))
+        legacy_log = _profile_dict(profile.get("log"))
+        legacy_presets = _profile_list(profile.get("presets"))
+        for mode in ("serial", "tcpserver", "tcpclient"):
+            state = self._stream_workspace_state[mode]
+            source = _profile_dict(saved.get(mode))
+            if source:
+                layout = str(source.get("layout", "single")).lower()
+                if layout not in self._stream_workspaces[mode].LAYOUT_COUNTS:
+                    layout = "single"
+                count = self._stream_workspaces[mode].LAYOUT_COUNTS[layout]
+                state["layout"] = layout
+                state["active_window"] = max(
+                    1, min(
+                        count,
+                        _profile_int(
+                            source.get("active_window", 1), 1, 1, 4),
+                    ))
+                windows = _profile_list(source.get("windows"))
+                for index in range(4):
+                    item = _profile_dict(
+                        windows[index] if index < len(windows) else {})
+                    state["windows"][index] = {
+                        "config": _profile_dict(item.get("config")),
+                        "stream": _profile_dict(item.get("stream")),
+                        "has_dtr_rts": _profile_bool(
+                            item.get("has_dtr_rts", False), False),
+                    }
+                continue
+
+            legacy_config = _profile_dict(profile.get(mode))
+            if not legacy_config:
+                legacy_config = self._default_stream_mode_config(mode)
+            stream = _profile_dict(legacy_streams.get(mode))
+            send_data = stream.get("send")
+            log_data = stream.get("log")
+            state["layout"] = "single"
+            state["active_window"] = 1
+            state["windows"][0] = {
+                "config": legacy_config,
+                "stream": {
+                    "send": (
+                        send_data if isinstance(send_data, dict)
+                        else legacy_send),
+                    "log": (
+                        log_data if isinstance(log_data, dict)
+                        else legacy_log),
+                },
+                "has_dtr_rts": (
+                    "dtr" in _profile_dict(send_data)
+                    or "rts" in _profile_dict(send_data)
+                ),
+            }
+
+        for mode, workspace in self._stream_workspaces.items():
+            state = self._stream_workspace_state[mode]
+            active = state["active_window"] - 1
+            workspace.set_layout(
+                state["layout"], active=active, emit=False)
+            self._stream_active_indices[mode] = active
+            for index in workspace.visible_indices():
+                page = workspace.page(index)
+                stream = state["windows"][index]["stream"]
+                self._apply_stream_config(
+                    page,
+                    _profile_dict(stream.get("send")),
+                    _profile_dict(stream.get("log")),
+                )
+        for mode in ("serial", "tcpserver", "tcpclient"):
+            if mode == self.sidebar.current_mode:
+                continue
+            self.sidebar.set_stream_window_config(
+                mode,
+                self._stream_workspace_state[mode]["windows"][0]["config"],
+            )
+        if not legacy_presets and saved:
+            for mode_state in saved.values():
+                windows = _profile_list(
+                    _profile_dict(mode_state).get("windows"))
+                for window in windows:
+                    migrated = _profile_list(
+                        _profile_dict(window).get("presets"))
+                    if migrated:
+                        legacy_presets = migrated
+                        break
+                if legacy_presets:
+                    break
+        self.preset_panel.load_from_project(legacy_presets)
+        self._sync_stream_aliases()
+
     def _apply_profile(self, p):
         """把项目数据写进各个控件(调用方负责置 _applying 抑制自动保存)"""
         p = _profile_dict(p)
@@ -1449,29 +1893,10 @@ class MainWindow(QMainWindow):
         idx = COMM_MODE_INDEX.get(mode, 0)
         self.sidebar._mode_group.button(idx).setChecked(True)
         self.sidebar._on_mode_changed(idx)
-
-        s = _profile_dict(p.get("serial"))
-        self.sidebar.cb_port.setCurrentText(str(s.get("port", "COM1")))
-        self.sidebar.cb_baud.setCurrentText(str(s.get("baud", "115200")))
-        self.sidebar.cb_data.setCurrentText(str(s.get("data", "8")))
-        self.sidebar.cb_stop.setCurrentText(str(s.get("stop", "1")))
-        self.sidebar.cb_parity.setCurrentText(str(s.get("parity", "None")))
-        self.sidebar.cb_flow.setCurrentText(str(s.get("flow", "None")))
-
-        t = _profile_dict(p.get("tcpserver"))
-        self.sidebar.sp_server_port.setValue(
-            _profile_int(t.get("port", 8888), 8888, 1, 65535))
-        self.sidebar.sp_client_timeout.setValue(
-            _profile_int(t.get("client_timeout", 30), 30, 0, 3600))
-        c = _profile_dict(p.get("tcpclient"))
-        host = str(c.get("host", "127.0.0.1") or "127.0.0.1").strip()
-        self.sidebar.le_client_host.setText(host)
-        self.sidebar.sp_client_port.setValue(
-            _profile_int(c.get("port", 8888), 8888, 1, 65535))
-        lp = str(c.get("local_port", "") or "")
-        local_port = _profile_int(lp, 0, 0, 65535) if lp.isdigit() else 0
-        self.sidebar.le_local_port.setText(
-            str(local_port) if local_port > 0 else "")
+        self._connection_mode = mode
+        if mode in self._stream_workspaces:
+            self._active_stream_key = mode
+        self._load_stream_workspace_state(p)
 
         mq = _profile_dict(p.get("mqtt"))
         self.sidebar.le_mqtt_host.setText(
@@ -1514,31 +1939,23 @@ class MainWindow(QMainWindow):
 
         self._http_page.apply(_profile_dict(p.get("http")))
 
-        legacy_send = _profile_dict(p.get("send"))
-        legacy_log = _profile_dict(p.get("log"))
-        streams = _profile_dict(p.get("streams"))
-        for key, page in self._stream_pages.items():
-            stream = _profile_dict(streams.get(key))
-            send_data = stream.get("send")
-            log_data = stream.get("log")
-            if not isinstance(send_data, dict):
-                send_data = legacy_send
-            if not isinstance(log_data, dict):
-                log_data = legacy_log
-            self._apply_stream_config(page, send_data, log_data)
-        serial_send = _profile_dict(
-            _profile_dict(streams.get("serial")).get("send")
-            or legacy_send)
-        self._has_dtr_rts = (
-            "dtr" in serial_send or "rts" in serial_send)
-
-        self.preset_panel.load_from_project(_profile_list(p.get("presets")))
+        if mode in self._stream_workspaces:
+            self._bind_stream_workspace(mode)
 
     def _switch_project(self, name, confirm=True):
         """切换项目: 存旧项目 -> 停自动动作 -> 断开 -> 应用新项目"""
         if name == self._current_project:
             return True
-        if confirm and (self._active_worker or self._mqtt_broker.is_running):
+        stream_running = any(
+            worker.isRunning()
+            for _mode, _index, worker in self._iter_stream_workers())
+        non_stream_running = bool(
+            self._active_worker
+            and self.sidebar.current_mode not in self._stream_workspaces)
+        if confirm and (
+            stream_running or non_stream_running
+            or self._mqtt_broker.is_running
+        ):
             message = "切换项目会断开当前连接"
             if self._mqtt_broker.is_running:
                 message += "并停止当前 MQTT 服务端"
@@ -1552,16 +1969,20 @@ class MainWindow(QMainWindow):
         self._save_current_project()
         self._mqtt_broker.stop()
         # 停掉所有"会自己动"的东西, 免得老节奏打到新连接上
-        for page in self._stream_pages.values():
-            if page.send_bar.chk_repeat.isChecked():
-                page.send_bar.chk_repeat.setChecked(False)
-            page.send_bar.stop_repeat()
-            page.log_panel.reset_runtime_state()
+        for workspace in self._stream_workspaces.values():
+            for page in workspace._pages.values():
+                if page.send_bar.chk_repeat.isChecked():
+                    page.send_bar.chk_repeat.setChecked(False)
+                page.send_bar.stop_repeat()
+                page.log_panel.reset_runtime_state()
         self._mqtt_page.reset_runtime_state()
         self._websocket_page.reset_runtime_state()
         self.preset_panel.stop_loops()
-        if self._active_worker:
+        self._stop_all_stream_workers()
+        if self._active_worker and (
+                self.sidebar.current_mode in ("mqtt", "websocket")):
             self._on_disconnect(self.sidebar.current_mode)
+        self._active_worker = None
         self._load_project(name)
         return True
 
@@ -1686,16 +2107,20 @@ class MainWindow(QMainWindow):
         ):
             return
         self._mqtt_broker.stop()
-        for page in self._stream_pages.values():
-            if page.send_bar.chk_repeat.isChecked():
-                page.send_bar.chk_repeat.setChecked(False)
-            page.send_bar.stop_repeat()
-            page.log_panel.reset_runtime_state()
+        for workspace in self._stream_workspaces.values():
+            for page in workspace._pages.values():
+                if page.send_bar.chk_repeat.isChecked():
+                    page.send_bar.chk_repeat.setChecked(False)
+                page.send_bar.stop_repeat()
+                page.log_panel.reset_runtime_state()
         self._mqtt_page.reset_runtime_state()
         self._websocket_page.reset_runtime_state()
         self.preset_panel.stop_loops()
-        if self._active_worker:
+        self._stop_all_stream_workers()
+        if self._active_worker and (
+                self.sidebar.current_mode in ("mqtt", "websocket")):
             self._on_disconnect(self.sidebar.current_mode)
+        self._active_worker = None
         self._pm.delete(old)
         self._current_project = None
         self._reload_project_list()
@@ -1745,47 +2170,83 @@ class MainWindow(QMainWindow):
         except Exception as e:
             show_warning(self, "提示", "无法打开项目文件夹：\n{}".format(e))
 
+    @Slot(str, str)
+    def _on_mode_changing(self, previous_mode, _next_mode):
+        if self._applying:
+            return
+        if previous_mode in self._stream_workspaces:
+            self._capture_stream_window(previous_mode)
+
     @Slot(str)
     def _on_mode_changed(self, mode: str):
+        previous_mode = self._connection_mode
+        if (
+            previous_mode in ("mqtt", "websocket")
+            and self._active_worker is not None
+            and self._active_worker.isRunning()
+        ):
+            self._on_disconnect(previous_mode)
         self._connection_mode = mode
-        if self._active_worker: self._on_disconnect(mode)
-        old_page = self._stream_page()
-        if old_page is not None:
-            if old_page.send_bar.chk_repeat.isChecked():
-                old_page.send_bar.chk_repeat.setChecked(False)
-            old_page.send_bar.stop_repeat()
         self.preset_panel.stop_loops()
-        if mode in self._stream_pages:
+        if mode in self._stream_workspaces:
+            if mode == previous_mode:
+                self._capture_stream_window(mode)
             self._active_stream_key = mode
-        pages = {
-            "serial": self._stream_pages["serial"],
-            "tcpserver": self._stream_pages["tcpserver"],
-            "tcpclient": self._stream_pages["tcpclient"],
-            "mqtt": self._mqtt_page,
-            "websocket": self._websocket_page,
-            "http": self._http_page,
-        }
-        page = pages.get(mode, self._stream_pages["serial"])
-        self._comm_stack.setCurrentWidget(page)
-        stream_mode = mode in ("serial", "tcpserver", "tcpclient")
-        self.preset_panel.setVisible(
-            stream_mode and self._stream_page(mode).btn_toggle_preset.isChecked())
-        labels = {
-            "serial": "串口", "tcpserver": "TCPServer",
-            "tcpclient": "TCPClient", "mqtt": "MQTT",
-            "websocket": "WebSocket", "http": "HTTP",
-        }
-        self._lbl_conn_type.setText(labels.get(mode,mode))
-        self._lbl_local.setText(""); self._lbl_arrow.setText("")
-        self._lbl_remote.setText(""); self._lbl_stats.setText("")
-        self._lbl_dot.setStyleSheet("color:#AAA;font-size:12px")
-        self._lbl_status_text.setText(
-            "就绪" if mode == "http" else "未连接")
-        cfg.set("mode", mode); cfg.save()
+            workspace = self._stream_workspaces[mode]
+            if mode != previous_mode:
+                self._bind_stream_workspace(mode)
+            self._comm_stack.setCurrentWidget(workspace)
+            page = workspace.active_page
+            self.preset_panel.setVisible(
+                page.btn_toggle_preset.isChecked())
+            worker = self._stream_worker_for(
+                mode, workspace.active_index)
+            self._update_stream_info_bar(mode, workspace.active_index, worker)
+        else:
+            pages = {
+                "mqtt": self._mqtt_page,
+                "websocket": self._websocket_page,
+                "http": self._http_page,
+            }
+            self._comm_stack.setCurrentWidget(
+                pages.get(mode, self._mqtt_page))
+            self.preset_panel.setVisible(False)
+            self._active_worker = (
+                self._mqtt_worker if mode == "mqtt"
+                and self._mqtt_worker.isRunning() else
+                self._websocket_worker if mode == "websocket"
+                and self._websocket_worker.isRunning() else None
+            )
+            if mode == "mqtt" and self._mqtt_page.is_server_mode():
+                self.sidebar.set_mqtt_server_mode(True)
+                self.sidebar.set_mqtt_server_running(
+                    self._mqtt_broker.is_running)
+            elif mode in ("mqtt", "websocket"):
+                connected = bool(self._active_worker)
+                self.sidebar.set_connected(connected)
+                self.sidebar.set_controls_enabled(not connected)
+            labels = {
+                "mqtt": "MQTT", "websocket": "WebSocket",
+                "http": "HTTP",
+            }
+            self._lbl_conn_type.setText(labels.get(mode, mode))
+            self._lbl_local.setText("")
+            self._lbl_arrow.setText("")
+            self._lbl_remote.setText("")
+            self._lbl_stats.setText("")
+            self._lbl_dot.setStyleSheet("color:#AAA;font-size:12px")
+            self._lbl_status_text.setText(
+                "就绪" if mode == "http" else
+                ("已连接" if self._active_worker else "未连接"))
+        cfg.set("mode", mode)
+        cfg.save()
         self._project_autosave_soon()
 
     @Slot(str)
     def _on_connect(self, mode: str):
+        if mode in self._stream_workspaces:
+            self._capture_stream_window(
+                mode, self._stream_workspaces[mode].active_index)
         if mode == "serial": self._connect_serial()
         elif mode == "tcpserver": self._connect_tcp_server()
         elif mode == "tcpclient": self._connect_tcp_client()
@@ -1793,10 +2254,16 @@ class MainWindow(QMainWindow):
         elif mode == "websocket": self._connect_websocket()
 
     def _connect_serial(self):
+        mode = "serial"
+        index = self._stream_workspaces[mode].active_index
+        worker = self._stream_worker_for(mode, index)
+        page = self._stream_page_for(mode, index)
         port = self.sidebar.cb_port.currentText().strip()
         if not port:
             show_warning(self, "提示", "请选择串口号"); return
         try:
+            if worker.isRunning():
+                worker.stop()
             parity_map = {"None":"N","Even":"E","Odd":"O","Mark":"M","Space":"S"}
             ser = serial.Serial(
                 port=port, baudrate=int(self.sidebar.cb_baud.currentText()),
@@ -1807,43 +2274,51 @@ class MainWindow(QMainWindow):
                 rtscts=(self.sidebar.cb_flow.currentText()=="RTS/CTS"),
                 xonxoff=(self.sidebar.cb_flow.currentText()=="XON/XOFF")
             )
-            self._serial_worker.set_serial(ser); self._serial_worker.start()
-            self._active_worker = self._serial_worker
-            self.sidebar.set_connected(True); self.sidebar.set_controls_enabled(False)
-            self.send_bar.chk_dtr.setEnabled(True); self.send_bar.chk_rts.setEnabled(True)
+            worker.set_serial(ser)
+            worker.start()
+            self._active_worker = worker
+            self._serial_worker = worker
+            self.sidebar.set_connected(True)
+            self.sidebar.set_stream_parameters_enabled(mode, False)
+            page.send_bar.chk_dtr.setEnabled(True)
+            page.send_bar.chk_rts.setEnabled(True)
             # DTR/RTS 优先用项目里保存的值; 项目没记录过才回落到硬件初始值
             if self._has_dtr_rts:
-                ser.dtr = self.send_bar.chk_dtr.isChecked()
-                ser.rts = self.send_bar.chk_rts.isChecked()
+                ser.dtr = page.send_bar.chk_dtr.isChecked()
+                ser.rts = page.send_bar.chk_rts.isChecked()
             else:
-                self.send_bar.chk_dtr.setChecked(ser.dtr)
-                self.send_bar.chk_rts.setChecked(ser.rts)
-            self._lbl_conn_type.setText("串口")
-            self._lbl_dot.setStyleSheet("color:#107C10;font-size:12px")
-            self._lbl_status_text.setText("已连接")
-            self._lbl_local.setText("{} {}bps,{},{},{}".format(port,self.sidebar.cb_baud.currentText(),self.sidebar.cb_data.currentText(),self.sidebar.cb_parity.currentText(),self.sidebar.cb_stop.currentText()))
+                page.send_bar.chk_dtr.setChecked(ser.dtr)
+                page.send_bar.chk_rts.setChecked(ser.rts)
+            self._stream_workspaces[mode].set_status(index, "已连接")
+            self._update_stream_info_bar(mode, index, worker)
             self.status_bar.showMessage("串口已打开: {}".format(port),3000)
         except Exception as e:
             show_error(self, "错误", "无法打开串口:\n{}".format(e))
 
     def _connect_tcp_server(self):
+        mode = "tcpserver"
+        index = self._stream_workspaces[mode].active_index
+        worker = self._stream_worker_for(mode, index)
         port = self.sidebar.sp_server_port.value()
         timeout_s = self.sidebar.sp_client_timeout.value()
-        if self._tcp_server.isRunning():
-            self._tcp_server.stop()
-        self._tcp_server.set_client_timeout(timeout_s)
-        self._tcp_server.configure(port); self._tcp_server.start()
-        self._active_worker = self._tcp_server
-        self.sidebar.set_connected(True); self.sidebar.set_controls_enabled(False)
-        lip = self._get_local_ip(); self._local_addr = "{}:{}".format(lip,port)
-        self._lbl_conn_type.setText("TCPServer")
-        # bind/listen 的结果来自后台线程；成功前不能提前显示“已启动”。
-        self._lbl_dot.setStyleSheet("color:#AAA;font-size:12px")
-        self._lbl_status_text.setText("启动中...")
-        self._lbl_local.setText("本地IP={}".format(self._local_addr))
+        if worker.isRunning():
+            worker.stop()
+        worker.set_client_timeout(timeout_s)
+        worker.configure(port)
+        worker.start()
+        self._active_worker = worker
+        self._tcp_server = worker
+        self.sidebar.set_connected(True)
+        self.sidebar.set_stream_parameters_enabled(mode, False)
+        self._stream_workspaces[mode].set_status(index, "启动中…")
+        self._update_stream_info_bar(mode, index, worker)
+        lip = self._get_local_ip()
         self.status_bar.showMessage("正在启动 TCP服务器 {}:{}...".format(lip,port),3000)
 
     def _connect_tcp_client(self):
+        mode = "tcpclient"
+        index = self._stream_workspaces[mode].active_index
+        worker = self._stream_worker_for(mode, index)
         host = self.sidebar.le_client_host.text().strip()
         port = self.sidebar.sp_client_port.value()
         # 本地端口: 留空 = 随机(0); 填数字 = 固定端口
@@ -1851,16 +2326,16 @@ class MainWindow(QMainWindow):
         local_port = int(_lp) if _lp.isdigit() else 0
         if not host: show_warning(self, "提示", "请输入远端地址"); return
         # 若旧连接仍在重试/运行中, 先停止再重新连接 (QThread 不能对运行中的线程重复 start)
-        if self._tcp_client.isRunning():
-            self._tcp_client.stop()
-        self._tcp_client.configure(host, port, local_port); self._tcp_client.start()
-        self._active_worker = self._tcp_client
-        self.sidebar.set_connected(True); self.sidebar.set_controls_enabled(False)
-        self._remote_addr = "{}:{}".format(host,port)
-        self._lbl_conn_type.setText("TCPClient")
-        self._lbl_dot.setStyleSheet("color:#D83B01;font-size:12px")
-        self._lbl_status_text.setText("连接中...")
-        self._lbl_remote.setText(self._remote_addr)
+        if worker.isRunning():
+            worker.stop()
+        worker.configure(host, port, local_port)
+        worker.start()
+        self._active_worker = worker
+        self._tcp_client = worker
+        self.sidebar.set_connected(True)
+        self.sidebar.set_stream_parameters_enabled(mode, False)
+        self._stream_workspaces[mode].set_status(index, "连接中…")
+        self._update_stream_info_bar(mode, index, worker)
         self.status_bar.showMessage("TCP客户端连接中 {}:{}...".format(host,port),3000)
 
     def _connect_mqtt(self):
@@ -2221,84 +2696,220 @@ class MainWindow(QMainWindow):
         if self._active_worker is self._websocket_worker:
             self._websocket_worker.ping()
 
+    def _on_stream_rx_data(self, mode, index, data):
+        page = self._stream_page_for(mode, index)
+        page.log_panel.append_data("rx", data)
+        if (
+            self.sidebar.current_mode == mode
+            and self._stream_workspaces[mode].active_index == index
+        ):
+            self._update_stats()
+
+    def _on_stream_error(self, mode, index, message):
+        self._stream_workspaces[mode].set_status(
+            index, "错误")
+        self.status_bar.showMessage(
+            "窗口{} 错误: {}".format(index + 1, message), 8000)
+        if self._applying:
+            return
+
+    def _on_stream_log(self, mode, index, message):
+        if (
+            self.sidebar.current_mode == mode
+            and self._stream_workspaces[mode].active_index == index
+        ):
+            self.status_bar.showMessage(message, 5000)
+
+    def _on_stream_serial_disconnected(self, index, message=""):
+        worker = self._stream_worker_for("serial", index)
+        page = self._stream_page_for("serial", index)
+        page.send_bar.chk_repeat.setChecked(False)
+        page.send_bar.stop_repeat()
+        if worker._serial is not None:
+            try:
+                worker._serial.close()
+            except Exception:
+                pass
+        self._stream_workspaces["serial"].set_status(
+            index, "串口已断开")
+        self._refresh_stream_connection_ui(
+            "serial", index, "串口已断开")
+        self.status_bar.showMessage(
+            "窗口{} 串口连接已断开: {}".format(
+                index + 1, message), 8000)
+
+    def _refresh_stream_connection_ui(
+            self, mode, index, status_text=None):
+        worker = self._stream_worker_for(mode, index)
+        running = self._stream_worker_running(worker)
+        page = self._stream_page_for(mode, index)
+        page.send_bar.chk_dtr.setEnabled(False)
+        page.send_bar.chk_rts.setEnabled(False)
+        if status_text is not None:
+            self._stream_workspaces[mode].set_status(
+                index, status_text)
+        if (
+            self.sidebar.current_mode != mode
+            or self._stream_workspaces[mode].active_index != index
+        ):
+            return
+        self._active_worker = worker if running else None
+        self.sidebar.set_connected(running)
+        self.sidebar.set_stream_parameters_enabled(mode, not running)
+        self._update_stream_info_bar(mode, index, worker)
+        if status_text is not None:
+            self._lbl_status_text.setText(status_text)
+        self._project_autosave_soon()
+
+    def _update_stream_info_bar(self, mode, index, worker):
+        if (
+            self.sidebar.current_mode != mode
+            or self._stream_workspaces[mode].active_index != index
+        ):
+            return
+        labels = {
+            "serial": "串口",
+            "tcpserver": "TCPServer",
+            "tcpclient": "TCPClient",
+        }
+        page = self._stream_page_for(mode, index)
+        state = self._stream_workspace_state[mode]["windows"][index]
+        config = _profile_dict(state.get("config"))
+        self._lbl_conn_type.setText(labels[mode])
+        self._lbl_stats.setText("Rx:{} | Tx:{}".format(
+            page.log_panel._rx_total, page.log_panel._tx_total))
+        connected = self._stream_worker_running(worker)
+        if mode == "serial":
+            if connected:
+                self._lbl_dot.setStyleSheet(
+                    "color:#107C10;font-size:12px")
+                self._lbl_status_text.setText("已连接")
+                self._lbl_local.setText(
+                    "{} {}bps,{},{},{}".format(
+                        config.get("port", ""),
+                        config.get("baud", ""),
+                        config.get("data", ""),
+                        config.get("parity", ""),
+                        config.get("stop", ""),
+                    ))
+            else:
+                self._lbl_dot.setStyleSheet(
+                    "color:#AAA;font-size:12px")
+                self._lbl_status_text.setText("未连接")
+                self._lbl_local.setText("")
+            self._lbl_remote.setText("")
+        elif mode == "tcpserver":
+            listening = bool(getattr(worker, "_running", False))
+            self._lbl_dot.setStyleSheet(
+                "color:#107C10;font-size:12px"
+                if listening else "color:#AAA;font-size:12px")
+            self._lbl_status_text.setText(
+                "已启动" if listening else "未启动")
+            self._lbl_local.setText(
+                "监听端口={}".format(config.get("port", ""))
+                if listening else "")
+            addresses = worker.client_addresses if listening else []
+            self._lbl_arrow.setText("←" if addresses else "")
+            self._lbl_remote.setText(
+                "客户端={}:{}".format(*addresses[-1])
+                if addresses else "")
+        else:
+            self._lbl_dot.setStyleSheet(
+                "color:#107C10;font-size:12px"
+                if connected else "color:#D83B01;font-size:12px"
+                if worker.isRunning() else "color:#AAA;font-size:12px")
+            self._lbl_status_text.setText(
+                "已连接" if connected else
+                "连接中…" if worker.isRunning() else "未连接")
+            self._lbl_remote.setText(
+                "远端={}:{}".format(
+                    config.get("host", ""), config.get("port", "")))
+            self._lbl_local.setText("")
+            self._lbl_arrow.setText("↔" if connected else "")
+
     def _project_autosave_soon(self):
         if not self._applying and self._current_project:
             self._save_current_project()
 
+    def _on_stream_tcp_server_started(self, index, port=0):
+        self._stream_workspaces["tcpserver"].set_status(
+            index, "已启动 · 待连接")
+        self._refresh_stream_connection_ui(
+            "tcpserver", index)
+        self.status_bar.showMessage(
+            "窗口{} TCP服务器监听端口 {}".format(
+                index + 1, port), 3000)
+
+    def _on_stream_tcp_server_start_failed(self, index, message=""):
+        self._stream_workspaces["tcpserver"].set_status(
+            index, "启动失败")
+        self._refresh_stream_connection_ui(
+            "tcpserver", index, "启动失败")
+        self.status_bar.showMessage(
+            "窗口{} TCP服务器启动失败: {}".format(
+                index + 1, message), 8000)
+
+    def _on_stream_tcp_client_connect_failed(self, index, message=""):
+        self._stream_workspaces["tcpclient"].set_status(
+            index, "连接失败")
+        self._refresh_stream_connection_ui(
+            "tcpclient", index, "连接失败")
+        self.status_bar.showMessage(
+            "窗口{} TCP客户端连接失败: {}".format(
+                index + 1, message), 8000)
+
+    def _on_stream_tcp_connected(self, index, host="", port=0):
+        self._stream_workspaces["tcpclient"].set_status(
+            index, "已连接")
+        self._refresh_stream_connection_ui("tcpclient", index)
+        self.status_bar.showMessage(
+            "窗口{} 已连接 {}:{}".format(index + 1, host, port), 3000)
+
+    def _on_stream_tcp_disconnected(self, index):
+        worker = self._stream_worker_for("tcpclient", index)
+        if self._active_worker is worker:
+            self._active_worker = None
+        self._stream_workspaces["tcpclient"].set_status(
+            index, "已断开")
+        self._refresh_stream_connection_ui(
+            "tcpclient", index, "已断开")
+        self.status_bar.showMessage(
+            "窗口{} TCP远端已断开".format(index + 1), 3000)
+
+    def _on_stream_tcp_server_client_connected(
+            self, index, host="", port=0):
+        self._stream_workspaces["tcpserver"].set_status(
+            index, "已启动 · 已连接")
+        self._refresh_stream_connection_ui("tcpserver", index)
+
+    def _on_stream_tcp_server_client_disconnected(
+            self, index, host="", port=0):
+        worker = self._stream_worker_for("tcpserver", index)
+        status = (
+            "已启动 · 已连接"
+            if worker.client_addresses else "已启动 · 待连接")
+        self._stream_workspaces["tcpserver"].set_status(index, status)
+        self._refresh_stream_connection_ui("tcpserver", index)
+
     @Slot(int)
     def _on_tcp_server_started(self, port=0):
-        if self._active_worker is not self._tcp_server:
-            return
-        self._lbl_dot.setStyleSheet("color:#107C10;font-size:12px")
-        self._lbl_status_text.setText("已启动 · 待连接")
-        self.status_bar.showMessage("TCP服务器监听端口 {}".format(port), 3000)
+        index = self._stream_workspaces["tcpserver"].active_index
+        self._on_stream_tcp_server_started(index, port)
 
     @Slot(str)
     def _on_tcp_server_start_failed(self, message=""):
-        if self._active_worker is not self._tcp_server:
-            return
-        self._active_worker = None
-        self.sidebar.set_connected(False)
-        self.sidebar.set_controls_enabled(True)
-        self.send_bar.chk_dtr.setEnabled(False)
-        self.send_bar.chk_rts.setEnabled(False)
-        self._lbl_dot.setStyleSheet("color:#D83B01;font-size:12px")
-        self._lbl_status_text.setText("启动失败")
-        self._lbl_local.setText("")
-        self._lbl_arrow.setText("")
-        self._lbl_remote.setText("")
-        self._lbl_stats.setText("")
-        self._local_addr = ""
-        self._remote_addr = ""
-        self.status_bar.showMessage("TCP服务器启动失败: {}".format(message), 8000)
+        index = self._stream_workspaces["tcpserver"].active_index
+        self._on_stream_tcp_server_start_failed(index, message)
 
     @Slot(str)
     def _on_tcp_client_connect_failed(self, message=""):
-        if self._active_worker is not self._tcp_client:
-            return
-        self._active_worker = None
-        self.sidebar.set_connected(False)
-        self.sidebar.set_controls_enabled(True)
-        self.send_bar.chk_dtr.setEnabled(False)
-        self.send_bar.chk_rts.setEnabled(False)
-        self._lbl_dot.setStyleSheet("color:#D83B01;font-size:12px")
-        self._lbl_status_text.setText("连接失败")
-        self._lbl_local.setText("")
-        self._lbl_arrow.setText("")
-        self._lbl_remote.setText("")
-        self._lbl_stats.setText("")
-        self._local_addr = ""
-        self._remote_addr = ""
-        self.status_bar.showMessage("TCP客户端连接失败: {}".format(message), 8000)
+        index = self._stream_workspaces["tcpclient"].active_index
+        self._on_stream_tcp_client_connect_failed(index, message)
 
     @Slot(str)
     def _on_serial_disconnected(self, message=""):
-        if self._active_worker is not self._serial_worker:
-            return
-        self.send_bar.chk_repeat.setChecked(False)
-        self.send_bar.stop_repeat()
-        self.preset_panel.stop_loops()
-        ser = self._serial_worker._serial
-        if ser is not None:
-            try:
-                ser.close()
-            except Exception:
-                pass
-        self._active_worker = None
-        self.sidebar.set_connected(False)
-        self.sidebar.set_controls_enabled(True)
-        self.send_bar.chk_dtr.setEnabled(False)
-        self.send_bar.chk_rts.setEnabled(False)
-        self._lbl_dot.setStyleSheet("color:#D83B01;font-size:12px")
-        self._lbl_status_text.setText("串口已断开")
-        self._lbl_local.setText("")
-        self._lbl_arrow.setText("")
-        self._lbl_remote.setText("")
-        self._lbl_stats.setText("")
-        self._local_addr = ""
-        self._remote_addr = ""
-        self.status_bar.showMessage(
-            "串口连接已断开: {}".format(message), 8000)
+        index = self._stream_workspaces["serial"].active_index
+        self._on_stream_serial_disconnected(index, message)
 
     def _get_local_ip(self):
         try:
@@ -2306,9 +2917,38 @@ class MainWindow(QMainWindow):
             s.connect(("8.8.8.8",80)); ip = s.getsockname()[0]; s.close(); return ip
         except: return "127.0.0.1"
 
+    def _disconnect_stream_worker(self, mode, index):
+        worker = self._stream_worker_for(mode, index)
+        page = self._stream_page_for(mode, index)
+        page.send_bar.stop_repeat()
+        stopped = True
+        if worker.isRunning():
+            stopped = worker.stop()
+        if isinstance(worker, SerialReadWorker) and worker._serial:
+            try:
+                worker._serial.close()
+            except Exception:
+                pass
+        if worker.isRunning():
+            return False
+        self._stream_workspaces[mode].set_status(index, "未连接")
+        self._refresh_stream_connection_ui(mode, index, "未连接")
+        return stopped is not False
+
     @Slot(str)
     def _on_disconnect(self, mode: str):
-        self.send_bar.stop_repeat()
+        if mode in self._stream_workspaces:
+            index = self._stream_workspaces[mode].active_index
+            if not self._disconnect_stream_worker(mode, index):
+                show_warning(
+                    self, "停止失败",
+                    "当前通信模块未能完全停止，端口或连接可能仍被占用。"
+                    "请稍后重试。",
+                )
+                return False
+            self.status_bar.showMessage("已断开", 3000)
+            return True
+
         worker = self._active_worker
         if worker:
             if worker is self._mqtt_worker:
@@ -2325,13 +2965,9 @@ class MainWindow(QMainWindow):
                     "请稍后重试。",
                 )
                 return False
-            if isinstance(worker, SerialReadWorker):
-                if worker._serial:
-                    try: self._active_worker._serial.close()
-                    except: pass
             self._active_worker = None
-        self.sidebar.set_connected(False); self.sidebar.set_controls_enabled(True)
-        self.send_bar.chk_dtr.setEnabled(False); self.send_bar.chk_rts.setEnabled(False)
+        self.sidebar.set_connected(False)
+        self.sidebar.set_controls_enabled(True)
         self._lbl_dot.setStyleSheet("color:#AAA;font-size:12px")
         self._lbl_status_text.setText("未连接")
         self._lbl_local.setText(""); self._lbl_arrow.setText("")
@@ -2342,7 +2978,51 @@ class MainWindow(QMainWindow):
 
     @Slot(bytes)
     def _on_rx_data(self, data: bytes):
-        self.log_panel.append_data("rx", data); self._update_stats()
+        mode, index = self._active_stream_context()
+        self._on_stream_rx_data(mode, index, data)
+
+    def _active_stream_context(self, worker=None):
+        worker = worker or self._active_worker
+        if worker is not None:
+            context = self._stream_worker_context.get(id(worker))
+            if context is not None:
+                return context
+        mode = self.sidebar.current_mode
+        if mode not in self._stream_workspaces:
+            mode = self._active_stream_key
+        return mode, self._stream_workspaces[mode].active_index
+
+    def _can_send_for(self, worker, notify=True):
+        available = self._stream_worker_running(worker)
+        if isinstance(worker, TCPClientWorker):
+            available = available or bool(worker.is_connected)
+        elif isinstance(worker, SerialReadWorker):
+            available = available or bool(
+                worker._serial is not None
+                and worker._serial.is_open)
+        elif isinstance(worker, TCPServerWorker):
+            available = available or bool(
+                getattr(worker, "_running", False))
+        if not available:
+            if notify:
+                show_warning(self, "提示", "请先建立连接")
+            return False
+        if (
+            isinstance(worker, TCPClientWorker)
+            and not worker.is_connected
+        ):
+            return False
+        if (
+            isinstance(worker, TCPServerWorker)
+            and worker.client_count == 0
+        ):
+            if notify:
+                show_warning(self, "提示", "当前没有已连接的 TCP 客户端")
+            return False
+        if isinstance(worker, SerialReadWorker):
+            if worker._serial is None or not worker._serial.is_open:
+                return False
+        return True
 
     def _can_send(self, notify: bool = True) -> bool:
         """统一检查当前是否真正可发送数据.
@@ -2351,138 +3031,141 @@ class MainWindow(QMainWindow):
         - TCP 客户端"连接中/重试中"(尚未真正连上): 拒绝发送, 由 worker 兜底限频提示
         notify=False 用于定时/循环等自动触发路径, 避免高频弹窗或刷屏.
         """
-        if not self._active_worker:
-            if notify:
-                show_warning(self, "提示", "请先建立连接")
-            return False
-        if isinstance(self._active_worker, TCPClientWorker) and not self._tcp_client.is_connected:
-            return False
-        if (isinstance(self._active_worker, TCPServerWorker)
-                and self._tcp_server.client_count == 0):
-            if notify:
-                show_warning(self, "提示", "当前没有已连接的 TCP 客户端")
-            return False
-        return True
+        return self._can_send_for(self._active_worker, notify)
 
     @Slot(bytes)
     def _on_send_data(self, data: bytes):
-        if not self._can_send(): return
-        if self._send_raw(data):
-            self._record_tx(data)
+        mode, index = self._active_stream_context()
+        self._on_stream_send_data(mode, index, data)
 
-    def _send_raw(self, data: bytes):
+    def _on_stream_send_data(self, mode, index, data):
+        worker = self._stream_worker_for(mode, index)
+        if not self._can_send_for(worker):
+            return
+        if self._send_raw_for(worker, data):
+            self._record_tx_for(mode, index, data)
+
+    def _send_raw_for(self, worker, data: bytes):
         try:
-            if isinstance(self._active_worker, SerialReadWorker):
-                ser = self._active_worker._serial
+            if isinstance(worker, SerialReadWorker):
+                ser = worker._serial
                 if ser and ser.is_open:
                     return ser.write(data) == len(data)
-            elif isinstance(self._active_worker, TCPServerWorker):
-                return self._active_worker.send(data) > 0
-            elif isinstance(self._active_worker, TCPClientWorker):
-                return self._active_worker.send(data)
+            elif isinstance(worker, TCPServerWorker):
+                return worker.send(data) > 0
+            elif isinstance(worker, TCPClientWorker):
+                return worker.send(data)
         except Exception as e:
             self._on_error("发送失败: {}".format(e))
         return False
 
-    def _record_tx(self, data: bytes):
+    def _send_raw(self, data: bytes):
+        return self._send_raw_for(self._active_worker, data)
+
+    def _record_tx_for(self, mode, index, data: bytes):
         """只在数据真正进入至少一个发送通道后更新发送日志和统计。"""
-        self.log_panel.append_data("tx", data)
-        self.send_bar._tx_total += len(data)
-        self.send_bar.lbl_tx_count.setText("Tx: {}".format(
-            self.send_bar._tx_total))
-        self._update_stats()
+        page = self._stream_page_for(mode, index)
+        page.log_panel.append_data("tx", data)
+        page.send_bar._tx_total += len(data)
+        page.send_bar.lbl_tx_count.setText("Tx: {}".format(
+            page.send_bar._tx_total))
+        if (
+            self.sidebar.current_mode == mode
+            and self._stream_workspaces[mode].active_index == index
+        ):
+            self._update_stats()
+
+    def _record_tx(self, data: bytes):
+        mode, index = self._active_stream_context()
+        self._record_tx_for(mode, index, data)
 
     @Slot()
     def _on_log_cleared(self):
-        self.send_bar._tx_total = 0
-        self.send_bar.lbl_tx_count.setText("Tx: 0")
-        self._update_stats()
+        mode, index = self._active_stream_context()
+        self._on_stream_log_cleared(mode, index)
+
+    def _on_stream_log_cleared(self, mode, index):
+        page = self._stream_page_for(mode, index)
+        page.send_bar._tx_total = 0
+        page.send_bar.lbl_tx_count.setText("Tx: 0")
+        if (
+            self.sidebar.current_mode == mode
+            and self._stream_workspaces[mode].active_index == index
+        ):
+            self._update_stats()
 
     def _update_stats(self):
-        self._lbl_stats.setText("Rx:{} | Tx:{}".format(self.log_panel._rx_total, self.log_panel._tx_total))
+        if self.sidebar.current_mode not in self._stream_workspaces:
+            return
+        page = self._stream_workspaces[
+            self.sidebar.current_mode].active_page
+        self._lbl_stats.setText("Rx:{} | Tx:{}".format(
+            page.log_panel._rx_total, page.log_panel._tx_total))
 
     @Slot(bytes)
     def _on_send_preset(self, data: bytes):
         # 未连接时直接丢弃, 不记录日志/统计 (预设循环 tick 每 100ms 会走到这里)
-        if not self._can_send(notify=False): return
+        mode, index = self._active_stream_context()
+        worker = self._stream_worker_for(mode, index)
+        if not self._can_send_for(worker, notify=False):
+            return
+        page = self._stream_page_for(mode, index)
         # Apply current checksum rules from send bar
-        data = self.send_bar._build_data_for_preset(data)
-        if data and self._send_raw(data):
-            self._record_tx(data)
+        data = page.send_bar._build_data_for_preset(data)
+        if data and self._send_raw_for(worker, data):
+            self._record_tx_for(mode, index, data)
 
     @Slot()
     def _on_repeat_tick(self):
-        if not self._can_send(notify=False): return
-        data = self.send_bar._build_data(silent=True)
-        if data and self._send_raw(data):
-            self._record_tx(data)
+        mode, index = self._active_stream_context()
+        self._on_stream_repeat_tick(mode, index)
+
+    def _on_stream_repeat_tick(self, mode, index):
+        worker = self._stream_worker_for(mode, index)
+        if not self._can_send_for(worker, notify=False):
+            return
+        page = self._stream_page_for(mode, index)
+        data = page.send_bar._build_data(silent=True)
+        if data and self._send_raw_for(worker, data):
+            self._record_tx_for(mode, index, data)
 
     def _on_dtr_toggled(self, checked):
-        if isinstance(self._active_worker, SerialReadWorker):
-            if self._active_worker._serial: self._active_worker._serial.dtr = checked
+        mode, index = self._active_stream_context()
+        self._on_stream_dtr_toggled(mode, index, checked)
 
     def _on_rts_toggled(self, checked):
-        if isinstance(self._active_worker, SerialReadWorker):
-            if self._active_worker._serial: self._active_worker._serial.rts = checked
+        mode, index = self._active_stream_context()
+        self._on_stream_rts_toggled(mode, index, checked)
+
+    def _on_stream_dtr_toggled(self, mode, index, checked):
+        if self._applying or mode != "serial":
+            return
+        worker = self._stream_worker_for(mode, index)
+        if isinstance(worker, SerialReadWorker) and worker._serial:
+            worker._serial.dtr = checked
+
+    def _on_stream_rts_toggled(self, mode, index, checked):
+        if self._applying or mode != "serial":
+            return
+        worker = self._stream_worker_for(mode, index)
+        if isinstance(worker, SerialReadWorker) and worker._serial:
+            worker._serial.rts = checked
 
     def _on_tcp_connected(self, host="", port=0):
-        if self._active_worker is not self._tcp_client:
-            return
-        self._lbl_dot.setStyleSheet("color:#107C10;font-size:12px")
-        self._lbl_status_text.setText("已连接")
-        lip, lport = "127.0.0.1", 0
-        if self._tcp_client._sock:
-            try:
-                lip, lport = self._tcp_client._sock.getsockname()
-            except Exception:
-                pass
-        # 0 表示系统分配; UI 上展示真实端口, 区分于远端端口
-        self._local_addr = "{}:{}".format(lip, lport)
-        self._lbl_local.setText("本地IP={}".format(self._local_addr))
-        self._lbl_arrow.setText("↔")
-        self._lbl_remote.setText("远端IP={}".format(self._remote_addr))
-        self.status_bar.showMessage("已连接 {}:{}".format(host,port),3000)
+        index = self._stream_workspaces["tcpclient"].active_index
+        self._on_stream_tcp_connected(index, host, port)
 
     def _on_tcp_server_client_connected(self, host="", port=0):
-        if self._active_worker is not self._tcp_server:
-            return
-        self._lbl_arrow.setText("←")
-        self._lbl_remote.setText("客户端={}:{}".format(host,port))
-        self._lbl_status_text.setText("已启动 · 已连接")
-        self.status_bar.showMessage("客户端连接: {}:{}".format(host,port),3000)
+        index = self._stream_workspaces["tcpserver"].active_index
+        self._on_stream_tcp_server_client_connected(index, host, port)
 
     def _on_tcp_server_client_disconnected(self, host="", port=0):
-        if self._active_worker is not self._tcp_server:
-            return
-        disconnected_host, disconnected_port = host, port
-        # 多客户端时优先展示仍在线的一个；全部断开才恢复“待连接”。
-        addresses = self._tcp_server.client_addresses
-        if addresses:
-            host, port = addresses[-1]
-            self._lbl_arrow.setText("←")
-            self._lbl_remote.setText("客户端={}:{}".format(host, port))
-            self._lbl_status_text.setText("已启动 · 已连接")
-        else:
-            self._lbl_arrow.setText("")
-            self._lbl_remote.setText("")
-            self._lbl_status_text.setText("已启动 · 待连接")
-        self.status_bar.showMessage(
-            "客户端断开: {}:{}".format(
-                disconnected_host, disconnected_port), 3000)
+        index = self._stream_workspaces["tcpserver"].active_index
+        self._on_stream_tcp_server_client_disconnected(index, host, port)
 
     def _on_tcp_disconnected(self):
-        if self._active_worker is not self._tcp_client:
-            return
-        # TCP 客户端网络断开: 客户端 Socket 已断, 但本地 UI 应停在"已断开"状态
-        # 而不是"未连接" (用户可能想重新连接; 重连前不应清空所有标签)
-        self._lbl_dot.setStyleSheet("color:#D83B01;font-size:12px")
-        self._lbl_status_text.setText("已断开")
-        self._lbl_arrow.setText("")
-        self._lbl_remote.setText("")
-        self._remote_addr = ""
-        self._active_worker = None
-        self.sidebar.set_connected(False); self.sidebar.set_controls_enabled(True)
-        self.status_bar.showMessage("远端已断开", 3000)
+        index = self._stream_workspaces["tcpclient"].active_index
+        self._on_stream_tcp_disconnected(index)
 
     @Slot(str)
     def _on_error(self, msg: str):
@@ -2508,16 +3191,55 @@ class MainWindow(QMainWindow):
             print("[AnhuToolbox] 刷新串口列表失败:", e)
         self._check_port_exists()
 
+    @staticmethod
+    def _stream_mode_label(mode):
+        return {
+            "serial": "串口",
+            "tcpserver": "TCP 服务端",
+            "tcpclient": "TCP 客户端",
+        }.get(mode, mode)
+
+    def _iter_stream_workers(self):
+        for mode in ("serial", "tcpserver", "tcpclient"):
+            for index, worker in enumerate(self._stream_workers[mode]):
+                yield mode, index, worker
+
+    def _stop_all_stream_workers(self):
+        failed = []
+        for mode, index, worker in self._iter_stream_workers():
+            page = self._stream_workspaces[mode]._pages.get(index)
+            if page is not None:
+                page.send_bar.stop_repeat()
+                page.send_bar.chk_dtr.setEnabled(False)
+                page.send_bar.chk_rts.setEnabled(False)
+            if worker.isRunning():
+                worker.stop()
+            if worker.isRunning():
+                failed.append((mode, index))
+                continue
+            if isinstance(worker, SerialReadWorker) and worker._serial:
+                try:
+                    worker._serial.close()
+                except Exception:
+                    pass
+            self._stream_workspaces[mode].set_status(
+                index, "未连接")
+        self._stream_pages = {
+            mode: workspace.active_page
+            for mode, workspace in self._stream_workspaces.items()
+        }
+        return failed
+
     def _running_modules(self):
         modules = []
-        worker_names = (
-            (self._serial_worker, "串口"),
-            (self._tcp_server, "TCP 服务端"),
-            (self._tcp_client, "TCP 客户端"),
+        for mode, index, worker in self._iter_stream_workers():
+            if worker.isRunning():
+                modules.append("{} · 窗口{}".format(
+                    self._stream_mode_label(mode), index + 1))
+        for worker, name in (
             (self._mqtt_worker, "MQTT 客户端"),
             (self._websocket_worker, "WebSocket"),
-        )
-        for worker, name in worker_names:
+        ):
             if worker.isRunning():
                 modules.append(name)
         if self._mqtt_broker.has_active_process:
@@ -2586,8 +3308,20 @@ class MainWindow(QMainWindow):
             self._close_authorized = False
             event.ignore()
             return
-        if self._active_worker and self._on_disconnect(
-                self.sidebar.current_mode) is False:
+        failed_streams = self._stop_all_stream_workers()
+        if failed_streams:
+            self._close_authorized = False
+            show_warning(
+                self, "无法安全退出",
+                "部分串口或 TCP 窗口尚未完全停止，请稍后重试。",
+            )
+            event.ignore()
+            return
+        if (
+            self._active_worker
+            and self.sidebar.current_mode in ("mqtt", "websocket")
+            and self._on_disconnect(self.sidebar.current_mode) is False
+        ):
             self._close_authorized = False
             event.ignore()
             return
@@ -2601,9 +3335,8 @@ class MainWindow(QMainWindow):
         if (self._update_check_worker is not None
                 and self._update_check_worker.isRunning()):
             self._update_check_worker.stop()
-        for page in self._stream_pages.values():
-            page.send_bar.stop_repeat()
-            page.log_panel.cleanup()
+        for workspace in self._stream_workspaces.values():
+            workspace.cleanup()
         self._mqtt_broker.cleanup()
         self._mqtt_page.cleanup()
         self._websocket_page.cleanup()
